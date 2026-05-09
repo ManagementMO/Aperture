@@ -8,31 +8,55 @@ import { ComposingSpinner } from "@/components/ComposingSpinner";
 
 interface Step {
   tool: string;
-  tool_label: string;
-  arguments: Record<string, unknown>;
-  successful: boolean;
-  error: string | null;
+  tool_label?: string;
+  arguments?: Record<string, unknown>;
+  successful?: boolean;
+  error?: string | null;
   raw_tokens: number;
   sent_tokens: number;
   saved_tokens: number;
-  saved_percent: number;
-  raw_bytes: number;
-  sent_bytes: number;
-  strategy: string;
-  llm_format: string;
-  omitted_fields: string[];
-  policy_reason_counts: Record<string, number>;
-  policy_promotions: { name: string; reason: string }[];
-  classifier_used: boolean;
-  classifier_keeps: string[];
-  raw_preview: string;
-  compressed_preview: string;
-  elapsed_ms: number;
+  saved_percent?: number;
+  raw_bytes?: number;
+  sent_bytes?: number;
+  strategy?: string;
+  llm_format?: string;
+  omitted_fields?: string[];
+  policy_reason_counts?: Record<string, number>;
+  policy_promotions?: { name: string; reason: string }[];
+  classifier_used?: boolean;
+  classifier_keeps?: string[];
+  raw_preview?: string;
+  compressed_preview?: string;
+  elapsed_ms?: number;
   ultra_summary?: string | null;
   tier?: "full" | "degraded" | "passthrough";
   cache_status?: "miss" | "hit" | "write_uncached" | "blocked_write";
   cache_age_seconds?: number;
   composio_cost_avoided_usd?: number;
+  breakdown?: TokenBreakdown;
+}
+
+interface TokenBreakdown {
+  token_math: string;
+  strategy: string;
+  llm_format: string;
+  remaining_sentence: string;
+  all_api_fields_removed: string[];
+  items: BreakdownItem[];
+}
+
+interface BreakdownItem {
+  label: string;
+  tokens: number;
+  kind: "saved" | "added";
+  description: string;
+  fields?: string[];
+  occurrences?: number;
+  paths?: string[];
+  details?: string[];
+  format?: string;
+  json_tokens?: number;
+  sent_tokens?: number;
 }
 
 interface Summary {
@@ -454,9 +478,17 @@ function StepCard({
   open: boolean;
   onToggle: () => void;
 }) {
-  const argsKeys = Object.keys(step.arguments);
+  const args = step.arguments ?? {};
+  const argsKeys = Object.keys(args);
+  const successful = step.successful !== false;
+  const classifierKeeps = step.classifier_keeps ?? [];
+  const omittedFields = step.omitted_fields ?? step.breakdown?.all_api_fields_removed ?? [];
+  const policyPromotions = step.policy_promotions ?? [];
+  const savedPercent = step.saved_percent ?? roundSavedPercent(step);
+  const strategy = step.strategy ?? step.breakdown?.strategy ?? "balanced";
+  const llmFormat = step.llm_format ?? step.breakdown?.llm_format ?? "json";
   return (
-    <Card className={step.successful ? "" : "border-rose-500/40"}>
+    <Card className={successful ? "" : "border-rose-500/40"}>
       <CardContent className="pt-4 pb-4 space-y-3">
         <button
           type="button"
@@ -467,7 +499,7 @@ function StepCard({
             <span className="font-mono text-[11px] text-foreground truncate">
               {step.tool}
             </span>
-            {!step.successful && (
+            {!successful && (
               <Badge variant="destructive" className="text-[10px]">error</Badge>
             )}
             {step.cache_status === "hit" && (
@@ -497,13 +529,13 @@ function StepCard({
                 {step.tier}
               </span>
             )}
-            {step.classifier_used && step.classifier_keeps.length > 0 && (
+            {step.classifier_used && classifierKeeps.length > 0 && (
               <span
                 className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded border border-primary/30 bg-primary/5 text-[9px] font-mono text-primary"
-                title={`Small-LLM classifier rescued: ${step.classifier_keeps.join(", ")}`}
+                title={`Small-LLM classifier rescued: ${classifierKeeps.join(", ")}`}
               >
                 <span className="lime-dot" />
-                brain · +{step.classifier_keeps.length}
+                brain · +{classifierKeeps.length}
               </span>
             )}
           </div>
@@ -514,18 +546,18 @@ function StepCard({
               {step.raw_tokens.toLocaleString()}
             </span>
             <Badge variant="default" className="text-[10px]">
-              {step.saved_percent}% saved
+              {savedPercent}% saved
             </Badge>
             {open ? <ChevronUp className="w-3.5 h-3.5 text-muted-foreground" />
                   : <ChevronDown className="w-3.5 h-3.5 text-muted-foreground" />}
           </div>
         </button>
 
-        {!step.successful && step.error && (
+        {!successful && step.error && (
           <p className="text-[11px] text-rose-300 font-mono">{step.error}</p>
         )}
 
-        {open && step.successful && (
+        {open && successful && (
           <div className="space-y-3 pt-1 border-t border-border/40">
             {step.ultra_summary && (
               <div className="rounded-md border border-primary/30 bg-primary/[0.04] px-2.5 py-2">
@@ -538,30 +570,30 @@ function StepCard({
               </div>
             )}
             <div className="grid grid-cols-3 gap-2 pt-3">
-              <KV label="Strategy" value={step.strategy} />
-              <KV label="Encoding" value={step.llm_format} />
-              <KV label="Latency" value={`${Math.round(step.elapsed_ms)} ms`} />
-              <KV label="Raw bytes" value={step.raw_bytes.toLocaleString()} />
-              <KV label="Sent bytes" value={step.sent_bytes.toLocaleString()} />
+              <KV label="Strategy" value={strategy} />
+              <KV label="Encoding" value={llmFormat} />
+              <KV label="Latency" value={typeof step.elapsed_ms === "number" ? `${Math.round(step.elapsed_ms)} ms` : "not tracked"} />
+              <KV label="Raw bytes" value={typeof step.raw_bytes === "number" ? step.raw_bytes.toLocaleString() : "not tracked"} />
+              <KV label="Sent bytes" value={typeof step.sent_bytes === "number" ? step.sent_bytes.toLocaleString() : "not tracked"} />
               <KV label="Saved" value={`${step.saved_tokens.toLocaleString()} tok`} primary />
             </div>
 
             {argsKeys.length > 0 && (
               <Collapsible label={`Arguments · ${argsKeys.length}`}>
                 <pre className="text-[11px] font-mono bg-muted/40 p-2 rounded overflow-auto">
-                  {JSON.stringify(step.arguments, null, 2)}
+                  {JSON.stringify(args, null, 2)}
                 </pre>
               </Collapsible>
             )}
 
-            {step.omitted_fields.length > 0 && (
+            {omittedFields.length > 0 && (
               <div>
                 <p className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground mb-1.5">
-                  Aperture dropped {step.omitted_fields.length} bookkeeping field
-                  {step.omitted_fields.length === 1 ? "" : "s"}
+                  Aperture dropped {omittedFields.length} bookkeeping field
+                  {omittedFields.length === 1 ? "" : "s"}
                 </p>
                 <div className="flex flex-wrap gap-1">
-                  {step.omitted_fields.slice(0, 18).map((f) => (
+                  {omittedFields.slice(0, 18).map((f) => (
                     <span
                       key={f}
                       className="inline-flex items-center px-1.5 py-0.5 rounded border border-rose-500/30 bg-rose-500/5 text-[10px] font-mono text-rose-300"
@@ -569,23 +601,23 @@ function StepCard({
                       {f}
                     </span>
                   ))}
-                  {step.omitted_fields.length > 18 && (
+                  {omittedFields.length > 18 && (
                     <span className="text-[10px] text-muted-foreground">
-                      +{step.omitted_fields.length - 18} more
+                      +{omittedFields.length - 18} more
                     </span>
                   )}
                 </div>
               </div>
             )}
 
-            {step.policy_promotions.length > 0 && (
+            {policyPromotions.length > 0 && (
               <div>
                 <p className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground mb-1.5">
-                  Aperture rescued {step.policy_promotions.length} field
-                  {step.policy_promotions.length === 1 ? "" : "s"} the ask asked for
+                  Aperture rescued {policyPromotions.length} field
+                  {policyPromotions.length === 1 ? "" : "s"} the ask asked for
                 </p>
                 <div className="flex flex-wrap gap-1">
-                  {step.policy_promotions.slice(0, 12).map((p, i) => (
+                  {policyPromotions.slice(0, 12).map((p, i) => (
                     <span
                       key={i}
                       className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded border border-primary/30 bg-primary/10 text-[10px] font-mono text-primary"
@@ -602,13 +634,13 @@ function StepCard({
               <PreviewPane
                 label="Composio returned"
                 tokens={step.raw_tokens}
-                content={step.raw_preview}
+                content={step.raw_preview ?? ""}
                 tone="muted"
               />
               <PreviewPane
                 label="What we sent the model"
                 tokens={step.sent_tokens}
-                content={step.compressed_preview}
+                content={step.compressed_preview ?? step.breakdown?.remaining_sentence ?? ""}
                 tone="primary"
               />
             </div>
@@ -617,6 +649,11 @@ function StepCard({
       </CardContent>
     </Card>
   );
+}
+
+function roundSavedPercent(step: Step): number {
+  if (!step.raw_tokens) return 0;
+  return Math.round((step.saved_tokens / step.raw_tokens) * 1000) / 10;
 }
 
 function KV({ label, value, primary }: { label: string; value: string; primary?: boolean }) {
@@ -682,3 +719,4 @@ function PreviewPane({
     </div>
   );
 }
+
