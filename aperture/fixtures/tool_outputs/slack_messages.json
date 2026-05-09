@@ -1,0 +1,21 @@
+[
+  {
+    "channel_name": "auth-release",
+    "timestamp": "2026-05-08T17:00:00Z",
+    "thread_ts": "1715187600.000100",
+    "permalink": "https://slack.example/archives/auth-release/p1715187600000100",
+    "text": "Decision: do not ship the OAuth release until Safari regression passes. Backend owns the callback cookie fix, QA owns Safari and mobile browser validation, and support needs a customer update draft.",
+    "team": "T123",
+    "user": {
+      "id": "U123",
+      "profile": {
+        "real_name": "Alex",
+        "image_24": "https://slack-cdn/img24.png",
+        "image_32": "https://slack-cdn/img32.png",
+        "image_48": "https://slack-cdn/img48.png",
+        "avatar_hash": "abc"
+      }
+    }
+  }
+]
+

@@ -1,0 +1,2 @@
+{"task_id":"gmail_001","category":"gmail","user_prompt":"Summarize customer emails about OAuth failures.","tool_slug":"GMAIL_SEARCH_EMAILS","params":{"query":"oauth failure newer_than:30d"},"fixture":"gmail_emails.json","expected_fields":["subject","from","date","snippet","body"],"critical_fields":["subject","from","snippet"],"evaluation_type":"field_presence"}
+

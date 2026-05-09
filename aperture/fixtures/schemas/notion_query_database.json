@@ -1,0 +1,13 @@
+{
+  "slug": "NOTION_QUERY_DATABASE",
+  "description": "Queries a Notion database for pages that match a filter or search term. You must provide the database identifier and may include filtering or sorting options.",
+  "parameters": {
+    "type": "object",
+    "required": ["database_id"],
+    "properties": {
+      "database_id": {"type": "string", "description": "The Notion database identifier to query."},
+      "query": {"type": "string", "description": "Optional search text or filter expression for database rows."}
+    }
+  }
+}
+

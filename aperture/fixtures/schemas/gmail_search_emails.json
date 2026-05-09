@@ -1,0 +1,13 @@
+{
+  "slug": "GMAIL_SEARCH_EMAILS",
+  "description": "Searches Gmail messages for the connected user account. You must provide a Gmail query string and may include pagination options to retrieve matching email conversations.",
+  "parameters": {
+    "type": "object",
+    "required": ["query"],
+    "properties": {
+      "query": {"type": "string", "description": "A string containing the Gmail search query to execute for the connected account."},
+      "limit": {"type": "integer", "description": "Maximum number of email messages to return from the search operation."}
+    }
+  }
+}
+

@@ -1,0 +1,35 @@
+[
+  {
+    "id": 123456,
+    "node_id": "I_kwDOExample",
+    "url": "https://api.github.com/repos/acme/app/issues/42",
+    "repository_url": "https://api.github.com/repos/acme/app",
+    "labels_url": "https://api.github.com/repos/acme/app/issues/42/labels{/name}",
+    "comments_url": "https://api.github.com/repos/acme/app/issues/42/comments",
+    "events_url": "https://api.github.com/repos/acme/app/issues/42/events",
+    "html_url": "https://github.com/acme/app/issues/42",
+    "number": 42,
+    "state": "open",
+    "title": "Login fails after OAuth redirect",
+    "body": "Safari users complete the OAuth redirect but remain unauthenticated. Customer reports show the session cookie is not persisted after callback. The issue affects enterprise onboarding and appears tied to SameSite cookie settings in the callback handler. QA reproduced on Safari and mobile browsers. The current workaround is to retry in Chrome, which is not acceptable for managed enterprise environments.",
+    "user": {
+      "login": "nikos",
+      "id": 999,
+      "avatar_url": "https://avatars.githubusercontent.com/u/999",
+      "followers_url": "https://api.github.com/users/nikos/followers",
+      "repos_url": "https://api.github.com/users/nikos/repos"
+    },
+    "labels": [
+      {"id": 1, "url": "https://api.github.com/labels/bug", "name": "bug", "color": "d73a4a"},
+      {"id": 2, "url": "https://api.github.com/labels/auth", "name": "auth", "color": "0052cc"}
+    ],
+    "assignees": [{"login": "sarah", "avatar_url": "https://avatars.githubusercontent.com/u/111"}],
+    "created_at": "2026-05-01T10:00:00Z",
+    "updated_at": "2026-05-08T11:00:00Z",
+    "comments": 8,
+    "locked": false,
+    "active_lock_reason": null,
+    "performed_via_github_app": null
+  }
+]
+

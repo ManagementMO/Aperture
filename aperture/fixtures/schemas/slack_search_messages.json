@@ -1,0 +1,13 @@
+{
+  "slug": "SLACK_SEARCH_MESSAGES",
+  "description": "Searches Slack messages in channels available to the connected user account. You must provide the search query and can optionally specify a channel or date range.",
+  "parameters": {
+    "type": "object",
+    "required": ["query"],
+    "properties": {
+      "query": {"type": "string", "description": "A string containing the Slack search query to run."},
+      "channel": {"type": "string", "description": "Optional Slack channel name or identifier to narrow the search."}
+    }
+  }
+}
+

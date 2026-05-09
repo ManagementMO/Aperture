@@ -1,0 +1,102 @@
+version: 1
+
+default:
+  mode: safe
+  drop_nulls: true
+  drop_empty_strings: true
+  drop_empty_arrays: true
+  drop_obvious_api_urls: true
+  raw_reference: true
+  max_string_tokens_without_summary: 300
+  preserve_fields: []
+  drop_fields: []
+  flatten: {}
+  compact_lists: {}
+  summarize_fields: {}
+  deduplicate: []
+
+tools:
+  GITHUB_LIST_ISSUES:
+    mode: balanced
+    preserve_fields: [number, title, state, html_url, created_at, updated_at, comments, body]
+    flatten:
+      user.login: author
+    compact_lists:
+      labels: name
+      assignees: login
+    summarize_fields:
+      body:
+        max_tokens: 80
+        strategy: extractive
+    drop_fields: [id, node_id, url, repository_url, labels_url, comments_url, events_url, locked, active_lock_reason, performed_via_github_app]
+    deduplicate: [repository, user]
+    raw_reference: true
+
+  GITHUB_LIST_REPOSITORY_ISSUES:
+    mode: balanced
+    preserve_fields: [number, title, state, html_url, created_at, updated_at, comments, body]
+    flatten:
+      user.login: author
+    compact_lists:
+      labels: name
+      assignees: login
+    summarize_fields:
+      body:
+        max_tokens: 80
+        strategy: extractive
+    drop_fields: [id, node_id, url, repository_url, labels_url, comments_url, events_url, locked, active_lock_reason, performed_via_github_app]
+    deduplicate: [repository, user]
+    raw_reference: true
+
+  GITHUB_LIST_PULL_REQUESTS:
+    mode: balanced
+    preserve_fields: [number, title, state, html_url, created_at, updated_at, merged_at, draft, body]
+    flatten:
+      user.login: author
+    compact_lists:
+      labels: name
+      assignees: login
+      requested_reviewers: login
+    summarize_fields:
+      body:
+        max_tokens: 80
+        strategy: extractive
+    drop_fields: [id, node_id, url, diff_url, patch_url, issue_url, commits_url, review_comments_url, comments_url, statuses_url]
+    deduplicate: [head.repo, base.repo, user]
+    raw_reference: true
+
+  GMAIL_SEARCH_EMAILS:
+    mode: balanced
+    preserve_fields: [id, thread_id, subject, from, to, date, snippet, body]
+    summarize_fields:
+      body:
+        max_tokens: 120
+        strategy: extractive
+    drop_fields: [raw_headers, internal_date, size_estimate, history_id]
+    deduplicate: []
+    raw_reference: true
+
+  SLACK_SEARCH_MESSAGES:
+    mode: balanced
+    preserve_fields: [channel_name, user_name, text, timestamp, thread_ts, permalink]
+    flatten:
+      user.profile.real_name: user_name
+    summarize_fields:
+      text:
+        max_tokens: 120
+        strategy: extractive
+    drop_fields: [team, user.profile.image_24, user.profile.image_32, user.profile.image_48, user.profile.avatar_hash]
+    deduplicate: [user, channel]
+    raw_reference: true
+
+  NOTION_QUERY_DATABASE:
+    mode: balanced
+    preserve_fields: [id, title, url, created_time, last_edited_time, properties]
+    drop_fields: [object, archived, in_trash, request_id, public_url, created_by, last_edited_by]
+    compact_lists: {}
+    summarize_fields:
+      content:
+        max_tokens: 120
+        strategy: extractive
+    deduplicate: []
+    raw_reference: true

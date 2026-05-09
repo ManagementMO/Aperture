@@ -1,0 +1,17 @@
+[
+  {
+    "id": "msg_001",
+    "thread_id": "thr_001",
+    "subject": "OAuth login failure blocking rollout",
+    "from": "customer@example.com",
+    "to": "support@acme.test",
+    "date": "2026-05-08T15:30:00Z",
+    "snippet": "Our Safari users are redirected but remain logged out after OAuth.",
+    "body": "We are seeing repeated OAuth login failures for Safari users. The redirect appears to complete, but the dashboard returns to a logged-out state. This is blocking onboarding for our enterprise pilot group and we need a timeline for resolution. Several users tried clearing cookies and retrying with no improvement.",
+    "raw_headers": {"received": "very long header data", "dkim": "signature"},
+    "internal_date": "1715182200000",
+    "size_estimate": 18422,
+    "history_id": "9941"
+  }
+]
+

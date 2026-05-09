@@ -1,0 +1,2 @@
+{"task_id":"notion_001","category":"notion","user_prompt":"Read release notes and identify OAuth launch risks.","tool_slug":"NOTION_QUERY_DATABASE","params":{"database_id":"release_risks","query":"oauth"},"fixture":"notion_database.json","expected_fields":["id","title","url","properties"],"critical_fields":["title","properties"],"evaluation_type":"field_presence"}
+

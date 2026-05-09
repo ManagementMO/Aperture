@@ -1,0 +1,2 @@
+{"task_id":"slack_001","category":"slack","user_prompt":"Find Slack decisions about OAuth release readiness.","tool_slug":"SLACK_SEARCH_MESSAGES","params":{"query":"OAuth release readiness","channel":"auth-release"},"fixture":"slack_messages.json","expected_fields":["channel_name","user_name","text","permalink"],"critical_fields":["channel_name","text"],"evaluation_type":"field_presence"}
+

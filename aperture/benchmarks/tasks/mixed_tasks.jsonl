@@ -1,0 +1,2 @@
+{"task_id":"mixed_001","category":"github","user_prompt":"Link customer OAuth complaints to engineering work.","tool_slug":"GITHUB_LIST_PULL_REQUESTS","params":{"owner":"acme","repo":"app","query":"oauth"},"fixture":"github_prs.json","expected_fields":["number","title","state","labels","body"],"critical_fields":["title","state"],"evaluation_type":"field_presence"}
+

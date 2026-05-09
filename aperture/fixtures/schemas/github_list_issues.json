@@ -1,0 +1,13 @@
+{
+  "slug": "GITHUB_LIST_REPOSITORY_ISSUES",
+  "description": "Retrieves a list of issues in a specified GitHub repository. You must provide the repository owner username and repository name. Optionally, you may include state, labels, assignee, and search terms to filter the returned issues.",
+  "parameters": {
+    "type": "object",
+    "required": ["owner", "repo"],
+    "properties": {
+      "owner": {"type": "string", "description": "A string containing the GitHub repository owner username or organization name."},
+      "repo": {"type": "string", "description": "A string containing the repository name where issues should be listed."},
+      "state": {"type": "string", "description": "The issue state to filter by. Use open, closed, or all."}
+    }
+  }
+}

@@ -1,0 +1,23 @@
+[
+  {
+    "object": "page",
+    "id": "notion_001",
+    "title": "OAuth Release Risk Review",
+    "url": "https://notion.example/oauth-risk",
+    "public_url": null,
+    "created_time": "2026-05-05T12:00:00Z",
+    "last_edited_time": "2026-05-08T12:00:00Z",
+    "archived": false,
+    "in_trash": false,
+    "created_by": {"id": "user_1", "object": "user"},
+    "last_edited_by": {"id": "user_2", "object": "user"},
+    "properties": {
+      "risk": "Safari/mobile OAuth regression",
+      "severity": "high",
+      "owner": "QA",
+      "release_blocker": true
+    },
+    "content": "The OAuth release should remain blocked until Safari and mobile regression passes. The highest risk is that callback cookies are not persisted after redirect, causing users to appear logged out even after successful authorization."
+  }
+]
+

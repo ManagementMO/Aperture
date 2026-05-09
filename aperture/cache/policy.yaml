@@ -1,0 +1,75 @@
+version: 1
+
+default:
+  cacheable: false
+  operation_type: unknown
+  privacy_scope: none
+  ttl_seconds: null
+  matching: none
+  reason: deny_by_default
+
+tools:
+  GITHUB_GET_REPO:
+    cacheable: true
+    operation_type: read
+    privacy_scope: public
+    ttl_seconds: 7200
+    matching: exact
+
+  GITHUB_LIST_ISSUES:
+    cacheable: true
+    operation_type: read
+    privacy_scope: account
+    ttl_seconds: 900
+    matching: exact
+
+  GITHUB_LIST_REPOSITORY_ISSUES:
+    cacheable: true
+    operation_type: read
+    privacy_scope: account
+    ttl_seconds: 900
+    matching: exact
+
+  GITHUB_LIST_PULL_REQUESTS:
+    cacheable: true
+    operation_type: read
+    privacy_scope: account
+    ttl_seconds: 900
+    matching: exact
+
+  GMAIL_SEARCH_EMAILS:
+    cacheable: true
+    operation_type: read
+    privacy_scope: account
+    ttl_seconds: 300
+    matching: exact
+
+  SLACK_SEARCH_MESSAGES:
+    cacheable: true
+    operation_type: read
+    privacy_scope: account
+    ttl_seconds: 300
+    matching: exact
+
+  NOTION_QUERY_DATABASE:
+    cacheable: true
+    operation_type: read
+    privacy_scope: account
+    ttl_seconds: 600
+    matching: exact
+
+  GMAIL_SEND_EMAIL:
+    cacheable: false
+    operation_type: write
+    privacy_scope: account
+    ttl_seconds: null
+    matching: none
+    reason: write_operation
+
+  OAUTH_REFRESH_TOKEN:
+    cacheable: false
+    operation_type: auth
+    privacy_scope: account
+    ttl_seconds: null
+    matching: none
+    reason: auth_operation

@@ -1,0 +1,8 @@
+.aperture/
+.pytest_cache/
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+reports/events.jsonl
+reports/live_composio_check.json

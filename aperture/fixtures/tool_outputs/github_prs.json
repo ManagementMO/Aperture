@@ -1,0 +1,27 @@
+[
+  {
+    "id": 8800,
+    "node_id": "PR_kwDOExample",
+    "url": "https://api.github.com/repos/acme/app/pulls/88",
+    "html_url": "https://github.com/acme/app/pull/88",
+    "diff_url": "https://github.com/acme/app/pull/88.diff",
+    "patch_url": "https://github.com/acme/app/pull/88.patch",
+    "issue_url": "https://api.github.com/repos/acme/app/issues/88",
+    "comments_url": "https://api.github.com/repos/acme/app/issues/88/comments",
+    "review_comments_url": "https://api.github.com/repos/acme/app/pulls/88/comments",
+    "number": 88,
+    "state": "open",
+    "title": "Patch OAuth callback cookie settings",
+    "body": "This pull request updates callback cookie options for Safari and mobile browsers. It changes SameSite and secure handling, adds regression coverage, and includes a rollout note for customer support. QA must verify Safari, iOS Chrome, and Android Chrome before release.",
+    "draft": false,
+    "merged_at": null,
+    "created_at": "2026-05-07T09:00:00Z",
+    "updated_at": "2026-05-09T09:00:00Z",
+    "user": {"login": "nikos", "avatar_url": "https://avatars.githubusercontent.com/u/999"},
+    "labels": [{"name": "auth"}, {"name": "release-blocker"}],
+    "requested_reviewers": [{"login": "alex"}, {"login": "sarah"}],
+    "head": {"repo": {"id": 50, "name": "app", "full_name": "acme/app", "url": "https://api.github.com/repos/acme/app"}},
+    "base": {"repo": {"id": 50, "name": "app", "full_name": "acme/app", "url": "https://api.github.com/repos/acme/app"}}
+  }
+]
+
