@@ -1,4 +1,4 @@
-"""Streamlit dashboard for Aperture token-efficiency demo."""
+"""Streamlit dashboard for Aperture agent workflow demo."""
 
 import json
 import uuid
@@ -6,338 +6,178 @@ from pathlib import Path
 
 import streamlit as st
 
-# Must be first Streamlit call
 st.set_page_config(page_title="Aperture Dashboard", page_icon="🔭", layout="wide")
 
-from aperture.contracts import ApertureRunConfig
-from aperture.integration import ApertureRunner
-from aperture.tokenization import count_tokens
+import sys
+
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent
+if str(_PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(_PROJECT_ROOT))
+
+from aperture.demo.agent_simulator import (
+    run_workflow_with_aperture,
+    run_workflow_without_aperture,
+)
+from aperture.demo.scenarios import SCENARIOS
 
 st.title("🔭 Aperture — Context Engineering for Composio")
-st.caption("Token-efficiency layer: measure, compact, compress, cache")
+st.caption("Agent workflows: measure, compact, compress, cache")
 
-# --- Sidebar: Configuration ---
+# --- Sidebar ---
 with st.sidebar:
-    st.header("⚙️ Run Configuration")
-    effort_mode = st.selectbox("Effort Mode", ["off", "low", "medium", "high"], index=2)
-    use_cache = st.toggle("Enable Cache", value=True)
-    model = st.selectbox("Model", ["gpt-4o", "gpt-4", "gpt-3.5-turbo"], index=0)
-
-    st.divider()
-    st.header("🛠️ Tool Selection")
-    tool_family = st.selectbox("Tool Family", ["GitHub", "Gmail", "Slack"])
-
-    if tool_family == "GitHub":
-        tool_slug = st.selectbox(
-            "Tool",
-            ["GITHUB_GET_REPO", "GITHUB_LIST_ISSUES", "GITHUB_GET_ISSUE"],
-        )
-        owner = st.text_input("Owner", value="composioHQ")
-        repo = st.text_input("Repo", value="composio")
-        args = {"owner": owner, "repo": repo}
-        if "LIST_ISSUES" in tool_slug:
-            args["state"] = "open"
-            args["per_page"] = 5
-
-    elif tool_family == "Gmail":
-        tool_slug = "GMAIL_SEARCH_EMAILS"
-        args = {"query": "from:github", "max_results": 5}
-
-    else:
-        tool_slug = "SLACK_SEARCH_MESSAGES"
-        args = {"query": "hello", "count": 5}
-
-    run_button = st.button("🚀 Run with Aperture", type="primary", use_container_width=True)
-
-
-# --- Simulated outputs ---
-def simulate_output(tool_slug: str, arguments: dict):
-    """Return realistic tool output for demo."""
-    if "GITHUB_GET_REPO" in tool_slug:
-        return {
-            "id": 123456,
-            "node_id": "R_kgDOExample",
-            "name": arguments.get("repo", "repo"),
-            "full_name": f"{arguments.get('owner', 'owner')}/{arguments.get('repo', 'repo')}",
-            "private": False,
-            "owner": {
-                "login": arguments.get("owner", "owner"),
-                "id": 123,
-                "node_id": "U_kgDOExample",
-                "avatar_url": "https://avatars.githubusercontent.com/u/123?v=4",
-                "gravatar_id": "",
-                "url": "https://api.github.com/users/example",
-                "html_url": "https://github.com/example",
-                "followers_url": "https://api.github.com/users/example/followers",
-                "following_url": "https://api.github.com/users/example/following{/other_user}",
-                "gists_url": "https://api.github.com/users/example/gists{/gist_id}",
-                "starred_url": "https://api.github.com/users/example/starred{/owner}{/repo}",
-                "subscriptions_url": "https://api.github.com/users/example/subscriptions",
-                "organizations_url": "https://api.github.com/users/example/orgs",
-                "repos_url": "https://api.github.com/users/example/repos",
-                "events_url": "https://api.github.com/users/example/events{/privacy}",
-                "received_events_url": "https://api.github.com/users/example/received_events",
-                "type": "Organization",
-                "site_admin": False,
-            },
-            "html_url": f"https://github.com/{arguments.get('owner', 'owner')}/{arguments.get('repo', 'repo')}",
-            "description": "The tool framework for AI agents",
-            "fork": False,
-            "url": f"https://api.github.com/repos/{arguments.get('owner', 'owner')}/{arguments.get('repo', 'repo')}",
-            "forks_url": "https://api.github.com/repos/example/repo/forks",
-            "keys_url": "https://api.github.com/repos/example/repo/keys{/key_id}",
-            "collaborators_url": "https://api.github.com/repos/example/repo/collaborators{/collaborator}",
-            "teams_url": "https://api.github.com/repos/example/repo/teams",
-            "hooks_url": "https://api.github.com/repos/example/repo/hooks",
-            "issue_events_url": "https://api.github.com/repos/example/repo/issues/events{/number}",
-            "events_url": "https://api.github.com/repos/example/repo/events",
-            "assignees_url": "https://api.github.com/repos/example/repo/assignees{/user}",
-            "branches_url": "https://api.github.com/repos/example/repo/branches{/branch}",
-            "tags_url": "https://api.github.com/repos/example/repo/tags",
-            "blobs_url": "https://api.github.com/repos/example/repo/git/blobs{/sha}",
-            "git_tags_url": "https://api.github.com/repos/example/repo/git/tags{/sha}",
-            "git_refs_url": "https://api.github.com/repos/example/repo/git/refs{/sha}",
-            "trees_url": "https://api.github.com/repos/example/repo/git/trees{/sha}",
-            "statuses_url": "https://api.github.com/repos/example/repo/statuses/{sha}",
-            "languages_url": "https://api.github.com/repos/example/repo/languages",
-            "stargazers_url": "https://api.github.com/repos/example/repo/stargazers",
-            "contributors_url": "https://api.github.com/repos/example/repo/contributors",
-            "subscribers_url": "https://api.github.com/repos/example/repo/subscribers",
-            "subscription_url": "https://api.github.com/repos/example/repo/subscription",
-            "commits_url": "https://api.github.com/repos/example/repo/commits{/sha}",
-            "git_commits_url": "https://api.github.com/repos/example/repo/git/commits{/sha}",
-            "comments_url": "https://api.github.com/repos/example/repo/comments{/number}",
-            "issue_comment_url": "https://api.github.com/repos/example/repo/issues/comments{/number}",
-            "contents_url": "https://api.github.com/repos/example/repo/contents/{+path}",
-            "compare_url": "https://api.github.com/repos/example/repo/compare/{base}...{head}",
-            "merges_url": "https://api.github.com/repos/example/repo/merges",
-            "archive_url": "https://api.github.com/repos/example/repo/{archive_format}{/ref}",
-            "downloads_url": "https://api.github.com/repos/example/repo/downloads",
-            "issues_url": "https://api.github.com/repos/example/repo/issues{/number}",
-            "pulls_url": "https://api.github.com/repos/example/repo/pulls{/number}",
-            "milestones_url": "https://api.github.com/repos/example/repo/milestones{/number}",
-            "notifications_url": "https://api.github.com/repos/example/repo/notifications{?since,all,participating}",
-            "labels_url": "https://api.github.com/repos/example/repo/labels{/name}",
-            "releases_url": "https://api.github.com/repos/example/repo/releases{/id}",
-            "deployments_url": "https://api.github.com/repos/example/repo/deployments",
-            "created_at": "2023-01-15T10:30:00Z",
-            "updated_at": "2024-05-08T14:22:00Z",
-            "pushed_at": "2024-05-08T12:00:00Z",
-            "git_url": "git://github.com/example/repo.git",
-            "ssh_url": "git@github.com:example/repo.git",
-            "clone_url": "https://github.com/example/repo.git",
-            "svn_url": "https://github.com/example/repo",
-            "homepage": "https://example.com",
-            "size": 12345,
-            "stargazers_count": 4200,
-            "watchers_count": 4200,
-            "language": "Python",
-            "forks_count": 350,
-            "open_issues_count": 42,
-            "master_branch": "main",
-            "default_branch": "main",
-            "score": 1.0,
-        }
-
-    if "GITHUB_LIST_ISSUES" in tool_slug:
-        issues = []
-        for i in range(arguments.get("per_page", 5)):
-            issues.append(
-                {
-                    "id": 1000000 + i,
-                    "node_id": f"I_kwDOExample{i}",
-                    "url": f"https://api.github.com/repos/example/repo/issues/{i+1}",
-                    "repository_url": "https://api.github.com/repos/example/repo",
-                    "labels_url": f"https://api.github.com/repos/example/repo/issues/{i+1}/labels{{/name}}",
-                    "comments_url": f"https://api.github.com/repos/example/repo/issues/{i+1}/comments",
-                    "events_url": f"https://api.github.com/repos/example/repo/issues/{i+1}/events",
-                    "html_url": f"https://github.com/example/repo/issues/{i+1}",
-                    "number": i + 1,
-                    "title": f"Issue #{i+1}: Login fails after OAuth redirect" if i == 0 else f"Issue #{i+1}: Something else",
-                    "user": {
-                        "login": f"user{i}",
-                        "id": 1000 + i,
-                        "avatar_url": f"https://avatars.githubusercontent.com/u/{1000+i}?v=4",
-                        "gravatar_id": "",
-                        "url": f"https://api.github.com/users/user{i}",
-                        "html_url": f"https://github.com/user{i}",
-                        "followers_url": f"https://api.github.com/users/user{i}/followers",
-                        "following_url": f"https://api.github.com/users/user{i}/following{{/other_user}}",
-                        "gists_url": f"https://api.github.com/users/user{i}/gists{{/gist_id}}",
-                        "starred_url": f"https://api.github.com/users/user{i}/starred{{/owner}}{{/repo}}",
-                        "subscriptions_url": f"https://api.github.com/users/user{i}/subscriptions",
-                        "organizations_url": f"https://api.github.com/users/user{i}/orgs",
-                        "repos_url": f"https://api.github.com/users/user{i}/repos",
-                        "events_url": f"https://api.github.com/users/user{i}/events{{/privacy}}",
-                        "received_events_url": f"https://api.github.com/users/user{i}/received_events",
-                        "type": "User",
-                        "site_admin": False,
-                    },
-                    "labels": [
-                        {
-                            "id": i,
-                            "node_id": f"MDU6TGFiZWw{i}",
-                            "url": f"https://api.github.com/repos/example/repo/labels/bug",
-                            "name": "bug",
-                            "color": "d73a4a",
-                            "default": True,
-                            "description": "Something isn't working",
-                        }
-                    ],
-                    "state": "open",
-                    "locked": False,
-                    "assignee": None,
-                    "assignees": [],
-                    "milestone": None,
-                    "comments": 3,
-                    "created_at": "2024-05-01T10:00:00Z",
-                    "updated_at": "2024-05-08T14:00:00Z",
-                    "closed_at": None,
-                    "author_association": "NONE",
-                    "active_lock_reason": None,
-                    "body": "Very long markdown body describing the issue in detail...\n\n## Steps to reproduce\n1. Go to login page\n2. Click OAuth\n3. Redirect succeeds but session cookie not set\n\n## Expected behavior\nUser should be logged in after redirect.",
-                    "reactions": {
-                        "url": f"https://api.github.com/repos/example/repo/issues/{i+1}/reactions",
-                        "total_count": 2,
-                        "+1": 1,
-                        "-1": 0,
-                        "laugh": 0,
-                        "hooray": 0,
-                        "confused": 0,
-                        "heart": 0,
-                        "rocket": 0,
-                        "eyes": 1,
-                    },
-                    "timeline_url": f"https://api.github.com/repos/example/repo/issues/{i+1}/timeline",
-                    "performed_via_github_app": None,
-                    "state_reason": None,
-                }
-            )
-        return issues
-
-    return {"message": "Simulated output", "tool": tool_slug, "args": arguments}
-
-
-# --- Main content ---
-if run_button:
-    run_id = str(uuid.uuid4())[:8]
-
-    config = ApertureRunConfig(
-        run_id=run_id,
-        model=model,
-        effort_mode=effort_mode,
-        cache_bypass=not use_cache,
+    st.header("🎬 Scenario")
+    scenario_name = st.selectbox(
+        "Choose a scenario",
+        list(SCENARIOS.keys()),
+        format_func=lambda k: f"{k.replace('_', ' ').title()} — {SCENARIOS[k].description[:50]}...",
     )
 
-    # Progress
-    with st.spinner("Running Aperture..."):
-        # Baseline
-        raw_result = simulate_output(tool_slug, args)
-        raw_tokens = count_tokens(raw_result, model)
+    st.divider()
+    st.header("⚙️ Configuration")
+    effort_mode = st.selectbox("Effort Mode", ["off", "low", "medium", "high"], index=2)
+    use_cache = st.toggle("Enable Cache", value=True)
+    show_raw = st.toggle("Show Raw JSON", value=False)
 
-        # Aperture run
-        runner = ApertureRunner(config)
+    run_button = st.button("🚀 Run Agent Workflow", type="primary", use_container_width=True)
 
-        def executor():
-            return simulate_output(tool_slug, args)
+scenario = SCENARIOS[scenario_name]
 
-        result = runner.run_tool(
-            tool_slug=tool_slug,
-            arguments=args,
-            executor=executor,
-            toolkit_slug=tool_family.upper(),
+# --- Main ---
+if run_button:
+    with st.spinner("Simulating agent workflow..."):
+        # Clear cache for fresh demo
+        if use_cache:
+            try:
+                from upstash_redis import Redis
+                from aperture.config import Config
+                r = Redis(url=Config.UPSTASH_REDIS_REST_URL, token=Config.UPSTASH_REDIS_REST_TOKEN)
+                for k in r.keys("aperture:cache:*"):
+                    r.delete(k)
+            except Exception:
+                pass
+
+        raw_result = run_workflow_without_aperture(scenario_name)
+        opt_result = run_workflow_with_aperture(
+            scenario_name, mode=effort_mode, enable_cache=use_cache
         )
 
-        compression = result["compression"]
-        cache_event = result["cache_event"]
-        summary = runner.finish()
-
-    # --- Metrics Cards ---
-    st.subheader("📊 Results")
-
+    # --- Header stats ---
+    st.subheader(f"📊 {scenario.description}")
     cols = st.columns(4)
+    raw_total = raw_result.total_raw_tokens
+    opt_total = opt_result.total_compressed_tokens
+    saved = raw_total - opt_total
+    ratio = saved / raw_total if raw_total > 0 else 0
+
     with cols[0]:
-        st.metric("Raw Tokens", f"{compression.raw_tokens:,}")
+        st.metric("Raw Tokens", f"{raw_total:,}")
     with cols[1]:
-        st.metric("Compressed Tokens", f"{compression.compressed_tokens:,}")
+        st.metric("With Aperture", f"{opt_total:,}")
     with cols[2]:
-        st.metric("Tokens Saved", f"{compression.tokens_saved:,}", delta=f"-{compression.compression_ratio:.0%}")
+        st.metric("Tokens Saved", f"{saved:,}", delta=f"-{ratio:.0%}")
     with cols[3]:
-        st.metric("Cache Status", cache_event.cache_status)
+        st.metric("Cache Hits", f"{opt_result.cache_hits}/{len(opt_result.steps)}")
+
+    # --- Context Window Pressure ---
+    st.subheader("🌊 Context Window Pressure")
+    max_context = 128_000
+
+    raw_pct = min(raw_result.context_window_used / max_context, 1.0)
+    opt_pct = min(opt_result.context_window_used / max_context, 1.0)
+
+    col1, col2 = st.columns(2)
+    with col1:
+        st.progress(raw_pct, text=f"Without Aperture: {raw_result.context_window_used:,} tokens ({raw_pct:.1%})")
+    with col2:
+        st.progress(opt_pct, text=f"With Aperture: {opt_result.context_window_used:,} tokens ({opt_pct:.1%})")
+
+    if raw_pct > 0.5:
+        st.error("⚠️ Without Aperture, you're using >50% of your context window!")
+    if opt_pct < 0.1:
+        st.success("✅ With Aperture, context pressure is minimal.")
+
+    # --- Per-Step Breakdown ---
+    st.subheader("🔍 Per-Step Breakdown")
+
+    step_data = []
+    for i, step in enumerate(opt_result.steps):
+        step_data.append({
+            "Step": i + 1,
+            "Tool": step.tool_slug,
+            "Raw Tokens": step.raw_tokens,
+            "Compressed": step.compressed_tokens,
+            "Saved": step.tokens_saved,
+            "Cache": step.cache_status,
+            "Strategy": step.strategy,
+        })
+
+    st.dataframe(step_data, use_container_width=True, hide_index=True)
 
     # --- Token Waterfall ---
-    st.subheader("🌊 Token Waterfall")
-
-    waterfall_data = {
-        "Raw Output": compression.raw_tokens,
-        "Compressed Output": compression.compressed_tokens,
-        "Saved": compression.tokens_saved,
+    st.subheader("📉 Token Waterfall by Step")
+    chart_data = {
+        f"Step {i+1}": {
+            "Raw": step.raw_tokens,
+            "Compressed": step.compressed_tokens,
+        }
+        for i, step in enumerate(opt_result.steps)
     }
+    st.bar_chart({k: v for k, v in chart_data.items()})
 
-    st.bar_chart(waterfall_data)
+    # --- Before vs After JSON ---
+    if show_raw:
+        st.subheader("📄 Raw vs Compressed Output")
+        for i, (raw_step, opt_step) in enumerate(zip(raw_result.steps, opt_result.steps)):
+            with st.expander(f"Step {i+1}: {opt_step.tool_slug}"):
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.caption(f"Raw ({raw_step.raw_tokens:,} tokens)")
+                    # Get mock result for display
+                    from aperture.demo.scenarios import get_mock_result
+                    st.json(get_mock_result(opt_step.tool_slug, opt_step.arguments), expanded=False)
+                with col2:
+                    st.caption(f"Compressed ({opt_step.compressed_tokens:,} tokens)")
+                    # Show compressed payload
+                    from aperture.compression.engine import compress_tool_output
+                    from aperture.routing.effort_modes import get_effort_config
+                    effort = get_effort_config(effort_mode)
+                    compressed = compress_tool_output(
+                        raw_payload=get_mock_result(opt_step.tool_slug, opt_step.arguments),
+                        tool_slug=opt_step.tool_slug,
+                        mode=effort.compression_mode,
+                        model="gpt-4o",
+                    )
+                    st.json(compressed.compressed_payload, expanded=False)
 
-    # --- Comparison ---
-    st.subheader("🔍 Before vs After")
-
-    tab1, tab2 = st.tabs(["Raw Output", "Compressed Output"])
-
-    with tab1:
-        st.json(raw_result, expanded=False)
-        st.caption(f"{compression.raw_tokens:,} tokens")
-
-    with tab2:
-        st.json(compression.compressed_payload, expanded=False)
-        st.caption(f"{compression.compressed_tokens:,} tokens")
-
-    # --- Omitted Fields ---
-    if compression.omitted_fields:
-        with st.expander(f"🗑️ Omitted Fields ({len(compression.omitted_fields)})"):
-            st.write(", ".join(compression.omitted_fields[:20]))
-            if len(compression.omitted_fields) > 20:
-                st.caption(f"... and {len(compression.omitted_fields) - 20} more")
-
-    # --- Run Summary ---
-    st.subheader("📋 Run Summary")
-    st.json(summary)
-
-    # --- Run Again for Cache Demo ---
-    if use_cache and cache_event.cache_status != "hit":
+    # --- Cache Demo ---
+    if use_cache and opt_result.cache_misses > 0:
         st.divider()
         if st.button("🔄 Run Again (Test Cache)", use_container_width=True):
             with st.spinner("Checking cache..."):
-                runner2 = ApertureRunner(
-                    ApertureRunConfig(
-                        run_id=str(uuid.uuid4())[:8],
-                        model=model,
-                        effort_mode=effort_mode,
-                    )
-                )
-                result2 = runner2.run_tool(
-                    tool_slug=tool_slug,
-                    arguments=args,
-                    executor=executor,
-                    toolkit_slug=tool_family.upper(),
-                )
+                opt2 = run_workflow_with_aperture(scenario_name, mode=effort_mode, enable_cache=True)
 
-            if result2["cache_event"].cache_status == "hit":
-                st.success("✅ Cache hit! No API call made. Result served from Redis in milliseconds.")
+            if opt2.cache_hits > 0:
+                st.success(f"✅ {opt2.cache_hits}/{len(opt2.steps)} steps served from cache — zero API calls!")
             else:
-                st.error("❌ Cache miss — this shouldn't happen for identical calls.")
+                st.error("❌ Cache miss")
 
 else:
     # Default state
-    st.info("👈 Configure a tool run in the sidebar and click **Run with Aperture**")
+    st.info("👈 Choose a scenario and click **Run Agent Workflow**")
 
     st.markdown("""
-    ### What Aperture does
+    ### What Aperture does for agent workflows
 
-    1. **Measures** every token Composio adds to your context
-    2. **Compacts** verbose tool schemas before they hit the model
-    3. **Compresses** raw API outputs by 60-80%
-    4. **Caches** safe repeated reads in Redis
+    Composio returns **massive** tool outputs — a 4-step agent workflow can easily consume
+    **25,000+ tokens**. Aperture fixes this:
 
-    ### Demo tools
-    - **GitHub**: `GITHUB_GET_REPO`, `GITHUB_LIST_ISSUES`
-    - **Gmail**: `GMAIL_SEARCH_EMAILS`
-    - **Slack**: `SLACK_SEARCH_MESSAGES`
+    1. **Measures** every token added to the agent's context window
+    2. **Routes** tools through effort modes (`low`/`medium`/`high`) — only expose what's needed
+    3. **Compresses** raw API outputs by 70-80% — drops URLs, nulls, empty objects
+    4. **Caches** safe repeated reads in Redis — skip redundant API calls
+
+    ### Demo scenarios
+    - **Research Project**: GitHub repo → issues → PRs → commits (4 steps, ~25K raw tokens)
+    - **Triage Bugs**: GitHub issues → Gmail search → Slack search (3 steps, ~11K raw tokens)
+    - **Onboard User**: GitHub repo → commits → Slack activity (3 steps, ~7K raw tokens)
     """)
