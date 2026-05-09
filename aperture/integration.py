@@ -1,5 +1,6 @@
-"""High-level integration that wires tokenization, compression, and caching."""
+"""High-level runner that wires tokenization, compression, and caching."""
 
+from pathlib import Path
 from typing import Any, Callable
 
 from aperture.cache.interceptor import CachedExecutor
@@ -7,24 +8,23 @@ from aperture.compression.engine import compress_tool_output
 from aperture.contracts import ApertureRunConfig, CompressionResult
 from aperture.observability.trace import RunTrace
 from aperture.routing.effort_modes import get_effort_config
-from aperture.routing.intelligent_effort import select_effort
+from aperture.routing.intelligent_effort import EffortDecision, select_effort
 from aperture.tokenization import count_tokens
 from aperture.tokenization.budget_manager import ContextBudgetManager
 
 
 class ApertureRunner:
-    """Main entry point for running tools with Aperture optimization."""
+    """Run Composio tools with Aperture optimization."""
 
     def __init__(self, config: ApertureRunConfig):
         self.config = config
         self.trace = RunTrace(run_id=config.run_id, config=config)
         self.cache = CachedExecutor()
         self.budget = ContextBudgetManager()
-        self._auto_decisions: list[dict] = []
+        self._auto_decisions: list[dict[str, Any]] = []
 
-        # Resolve effort mode (auto = intelligent selection)
         if config.effort_mode == "auto":
-            self.effort = None  # Determined per-call
+            self.effort = None
             self._auto_mode = True
         else:
             self.effort = get_effort_config(config.effort_mode)
@@ -38,29 +38,21 @@ class ApertureRunner:
         toolkit_slug: str | None = None,
         user_query: str | None = None,
     ) -> dict[str, Any]:
-        """Execute a single tool with full Aperture optimization.
-
-        If effort_mode is 'auto', intelligently selects the best effort level
-        based on task complexity and context window pressure.
-
-        Returns:
-            Dict with 'result', 'compression', 'cache_event', 'token_event', 'effort_decision'
-        """
-        # Count argument tokens
-        arg_tokens = count_tokens(arguments, self.config.model)
+        """Execute a tool and return compressed result + observability data."""
+        arg_count = count_tokens(arguments, self.config.model)
         self.trace.events.emit_token(
             event_type="argument",
             toolkit_slug=toolkit_slug,
             tool_slug=tool_slug,
             payload_kind="argument",
             model=self.config.model,
-            raw_tokens=arg_tokens.tokens,
-            compressed_tokens=arg_tokens.tokens,
-            tokenizer=arg_tokens.tokenizer,
-            approximate=arg_tokens.approximate,
+            raw_tokens=arg_count.tokens,
+            compressed_tokens=arg_count.tokens,
+            tokenizer=arg_count.tokenizer,
+            approximate=arg_count.approximate,
         )
 
-        # Determine effort mode (auto or fixed)
+        decision: EffortDecision | None = None
         if self._auto_mode:
             decision = select_effort(
                 tool_slug=tool_slug,
@@ -70,27 +62,27 @@ class ApertureRunner:
                 previous_calls=self.budget.history(),
             )
             compression_mode = decision.compression_mode
-            self._auto_decisions.append({
-                "tool_slug": tool_slug,
-                "decision": decision,
-            })
+            self._auto_decisions.append({"tool_slug": tool_slug, "decision": decision})
         else:
-            decision = None
             compression_mode = self.effort.compression_mode
 
-        # Execute with cache
         raw_result, cache_event = self.cache.execute(
             tool_slug=tool_slug,
             arguments=arguments,
             executor=executor,
             config=self.config,
         )
-        self.trace.events._events.append({
-            "timestamp": self.trace.started_at,
-            **cache_event.__dict__,
-        })
+        self.trace.events.emit_cache(
+            toolkit_slug=toolkit_slug,
+            tool_slug=tool_slug,
+            cache_status=cache_event.cache_status,
+            cache_scope=cache_event.cache_scope,
+            cache_key_hash=cache_event.cache_key_hash,
+            api_call_avoided=cache_event.api_call_avoided,
+            tokens_saved_estimate=cache_event.tokens_saved_estimate,
+            reason=cache_event.reason,
+        )
 
-        # Compress result (skip if cache hit — already compressed)
         if cache_event.cache_status == "hit":
             compressed_result = CompressionResult(
                 compressed_payload=raw_result,
@@ -108,7 +100,6 @@ class ApertureRunner:
                 model=self.config.model,
             )
 
-        # Update budget tracker
         self.budget.add_tool_call(
             tool_slug=tool_slug,
             raw_payload=raw_result,
@@ -116,7 +107,6 @@ class ApertureRunner:
             cache_hit=cache_event.cache_status == "hit",
         )
 
-        # Record token event
         self.trace.events.emit_token(
             event_type="result",
             toolkit_slug=toolkit_slug,
@@ -130,7 +120,7 @@ class ApertureRunner:
             cache_status=cache_event.cache_status,
         )
 
-        result = {
+        result: dict[str, Any] = {
             "result": compressed_result.compressed_payload,
             "raw_result": raw_result,
             "compression": compressed_result,
@@ -141,7 +131,6 @@ class ApertureRunner:
         return result
 
     def finish(self) -> dict[str, Any]:
-        """Finish the run and return summary."""
         self.trace.finish()
         summary = self.trace.compute_summary()
         summary["budget"] = self.budget.snapshot.to_dict()
@@ -160,7 +149,4 @@ class ApertureRunner:
         return summary
 
     def export(self, path: str) -> None:
-        """Export run trace to JSONL."""
-        from pathlib import Path
-
         self.trace.export_jsonl(Path(path))

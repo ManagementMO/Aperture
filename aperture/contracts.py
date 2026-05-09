@@ -49,6 +49,11 @@ class CompressionResult:
     strategy: str = "safe"
     omitted_fields: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
+    # When the LLM-bound payload should be sent in a non-JSON format (TOON,
+    # caveman-prose, etc.) the engine fills `llm_format` + `llm_string`.
+    # `compressed_tokens` reflects the LLM-bound representation, not the JSON.
+    llm_format: str = "json"
+    llm_string: str | None = None
 
 
 @dataclass

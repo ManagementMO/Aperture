@@ -116,5 +116,26 @@ def get_mock_result(tool_slug: str, arguments: dict) -> object:
     if "SEARCH_MESSAGES" in tool_slug or "LIST_MESSAGES" in tool_slug:
         return slack_messages(arguments.get("query", ""), count=arguments.get("count", 4))
 
-    # Fallback
+    # Notion / Linear / Supabase — load full mock JSON files
+    import json
+    import os
+
+    DATA_DIR = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
+        "data",
+    )
+
+    dataset_files = {
+        "NOTION": "notion_pages_500.json",
+        "LINEAR": "linear_issues_200.json",
+        "SUPABASE": "supabase_users_1000.json",
+    }
+    for marker, filename in dataset_files.items():
+        if marker in tool_slug:
+            path = os.path.join(DATA_DIR, filename)
+            if os.path.exists(path):
+                with open(path) as f:
+                    return json.load(f)
+            break
+
     return {"message": f"Mock result for {tool_slug}", "arguments": arguments}

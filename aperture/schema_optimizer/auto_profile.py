@@ -7,14 +7,35 @@ It analyzes the tool's schema and generates optimal compression rules:
 - What the typical payload size is
 - What compression strategy works best
 
-This is how Aperture scales to 1000+ Composio tools without hand-tuning."""
+Detection is **value-shape first, name second**. The substring heuristics
+(e.g. `"url" in name`) miss anything that doesn't follow English naming —
+so we run regex classifiers on actual sampled values before falling back
+to the name. When two or more samples are available we also use
+cross-payload entropy to detect constants and identifiers.
+"""
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from typing import Any
 
 from aperture.tokenization import count_tokens
+
+# Value-shape regexes — check the actual data, not the field name.
+_URL_RE = re.compile(r"^https?://\S+$")
+_UUID_RE = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
+_OPAQUE_HEX_RE = re.compile(r"^[0-9a-f]{16,64}$")
+_NUMERIC_ID_RE = re.compile(r"^\d{6,}$")
+_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2}(?::\d{2})?(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?)?$")
+_EMAIL_RE = re.compile(r"^[\w.+\-]+@[\w.\-]+\.[a-zA-Z]{2,}$")
+
+_NAME_KEEP = {
+    "name", "title", "description", "status", "state", "message",
+    "body", "content", "text", "email", "login", "owner",
+    "created_at", "updated_at", "number", "count", "total", "summary",
+    "subject", "snippet", "from", "to", "label", "labels",
+}
 
 
 @dataclass
@@ -45,70 +66,80 @@ class ToolProfile:
     droppable_fields: list[str] = field(default_factory=list)
 
 
-def _analyze_field(name: str, value: Any, depth: int = 0) -> FieldProfile:
-    """Analyze a single field to determine its compression characteristics."""
-    # Determine type
-    if isinstance(value, str):
-        if name.endswith(("_url", "Url", "URL")) or "url" in name.lower():
-            field_type = "url"
-        elif name.endswith(("_id", "Id", "ID")) or "id" in name.lower():
-            field_type = "id"
-        elif len(value) > 200:
-            field_type = "long_text"
-        else:
-            field_type = "text"
-    elif isinstance(value, bool):
-        field_type = "boolean"
-    elif isinstance(value, (int, float)):
-        field_type = "number"
-    elif isinstance(value, list):
-        field_type = "array"
-    elif isinstance(value, dict):
-        field_type = "object"
-    else:
-        field_type = "unknown"
+def _classify_string(name: str, value: str) -> str:
+    """Classify a string value by *shape* (URL, UUID, opaque ID, date, email,
+    long_text, text). Falls back to the name only if the value is ambiguous."""
+    if _URL_RE.match(value):
+        return "url"
+    if _UUID_RE.match(value) or _OPAQUE_HEX_RE.match(value):
+        return "opaque_id"
+    if _NUMERIC_ID_RE.match(value):
+        return "id"
+    if _DATE_RE.match(value):
+        return "date"
+    if _EMAIL_RE.match(value):
+        return "email"
+    if len(value) > 200:
+        return "long_text"
+    if name.endswith(("_url", "Url", "URL")):
+        return "url"
+    if name.endswith(("_id", "Id", "ID")):
+        return "id"
+    return "text"
 
-    # Size analysis
+
+def _detect_field_type(name: str, value: Any) -> str:
+    if isinstance(value, bool):
+        return "boolean"
+    if isinstance(value, (int, float)):
+        return "number"
+    if isinstance(value, list):
+        return "array"
+    if isinstance(value, dict):
+        return "object"
+    if isinstance(value, str):
+        return _classify_string(name, value)
+    return "unknown"
+
+
+def _name_says_critical(name: str) -> bool:
+    leaf = name.split(".")[-1].lower()
+    return leaf in _NAME_KEEP or any(p in leaf for p in _NAME_KEEP)
+
+
+def _analyze_field(name: str, value: Any, depth: int = 0) -> FieldProfile:
+    """Analyze a single field — value-shape first, name fallback."""
+    field_type = _detect_field_type(name, value)
     typical_size = count_tokens(value).tokens if value is not None else 0
 
-    # Entropy heuristic: URLs and IDs are high-entropy but low-value to LLMs
-    if field_type in ("url", "id"):
-        value_entropy = 0.9
-    elif field_type == "boolean":
-        value_entropy = 0.1
-    elif field_type == "number":
-        value_entropy = 0.3
-    elif field_type == "long_text":
-        value_entropy = 0.8
-    else:
-        value_entropy = 0.5
+    # Entropy heuristic baked in by shape.
+    value_entropy = {
+        "url": 0.9,
+        "opaque_id": 0.95,
+        "id": 0.9,
+        "boolean": 0.1,
+        "number": 0.3,
+        "long_text": 0.8,
+        "date": 0.4,
+        "email": 0.6,
+    }.get(field_type, 0.5)
 
-    # Critical field heuristics
-    is_critical = False
-    critical_patterns = [
-        "name", "title", "description", "status", "state", "message",
-        "body", "content", "text", "email", "login", "owner",
-        "created_at", "updated_at", "number", "count", "total",
-    ]
-    for pattern in critical_patterns:
-        if pattern in name.lower():
-            is_critical = True
-            break
+    is_critical = _name_says_critical(name) and field_type not in ("url", "opaque_id")
 
-    # Compression rule
-    if is_critical:
+    # Compression rule — value shape wins over name.
+    if field_type in ("url", "opaque_id"):
+        compression_rule = "drop"
+    elif field_type == "id" and depth > 0 and not is_critical:
+        compression_rule = "drop"
+    elif is_critical:
         compression_rule = "keep"
-    elif field_type == "url":
-        compression_rule = "drop"
-    elif field_type == "id" and depth > 1:
-        compression_rule = "drop"
     elif field_type == "boolean" and name.startswith(("has_", "is_", "can_")):
         compression_rule = "keep"
     elif field_type == "object" and depth > 2:
         compression_rule = "flatten"
-    elif field_type == "array" and typical_size > 50:
+    elif field_type in ("array", "long_text") and typical_size > 50:
         compression_rule = "truncate"
-    elif typical_size > 100 and not is_critical:
+    elif typical_size > 100:
         compression_rule = "truncate"
     else:
         compression_rule = "keep"
@@ -121,6 +152,43 @@ def _analyze_field(name: str, value: Any, depth: int = 0) -> FieldProfile:
         value_entropy=value_entropy,
         is_critical=is_critical,
         compression_rule=compression_rule,
+    )
+
+
+def cross_sample_entropy(samples: list[Any]) -> float:
+    """How variable are these N values? 0.0 = identical (constant), 1.0 = all distinct."""
+    if not samples:
+        return 0.0
+    try:
+        unique = {repr(s) for s in samples}
+    except Exception:
+        return 1.0
+    return len(unique) / len(samples)
+
+
+def merge_profiles(profiles: list[FieldProfile]) -> FieldProfile:
+    """Combine multiple profiles for the same field across samples."""
+    base = profiles[0]
+    typical = max(p.typical_size for p in profiles)
+    nullable = all(p.is_nullable for p in profiles)
+    is_critical = any(p.is_critical for p in profiles)
+
+    # If the field is identical across all samples → it's a constant. Drop.
+    rules = [p.compression_rule for p in profiles]
+    rule = "drop" if "drop" in rules else (
+        "truncate" if "truncate" in rules else (
+            "flatten" if "flatten" in rules else "keep"
+        )
+    )
+
+    return FieldProfile(
+        name=base.name,
+        field_type=base.field_type,
+        is_nullable=nullable,
+        typical_size=typical,
+        value_entropy=max(p.value_entropy for p in profiles),
+        is_critical=is_critical,
+        compression_rule=rule,
     )
 
 

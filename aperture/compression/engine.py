@@ -1,13 +1,27 @@
-"""Schema-aware output compression engine."""
+"""Schema-aware output compression engine.
+
+Pipeline:
+1. Optional upstream field selection (Phase 4).
+2. Tool-specific normalization (Gmail headers → top-level fields, Slack noise drop).
+3. Tabular vs. record vs. object dispatch.
+4. Mode-driven pruning, flattening, list compaction with task-aware protection.
+"""
 
 from typing import Any
 
+from aperture.compression.field_profiles import apply_field_selection
+from aperture.compression.stopwords import prune_payload as caveman_prune_payload
+from aperture.compression.task_profiles import merge_required_fields
+from aperture.compression.toon import is_tabular_records, to_toon
 from aperture.contracts import CompressionResult
 from aperture.tokenization import count_tokens
 
-
-# Fields to drop from common tool outputs
-_OBVIOUS_API_FIELDS = {
+# Genuinely low-signal fields. URLs, node ids, and bookkeeping pointers an LLM
+# almost never needs. Anything that *might* carry semantic content (body,
+# headers, snippet, payload, parts, team, channel) is intentionally NOT here —
+# tool-specific normalizers handle those.
+_OBVIOUS_API_FIELDS: frozenset[str] = frozenset({
+    # GitHub bookkeeping URLs
     "node_id",
     "gravatar_id",
     "avatar_url",
@@ -62,34 +76,12 @@ _OBVIOUS_API_FIELDS = {
     "subscribers_url",
     "subscription_url",
     "raw_url",
-    "html_url",
-    "url",
-    "href",
-    "self",
-    "uri",
-    "permalink",
-    "api_url",
     "preview_url",
-    "download_url",
     "upload_url",
-    "video_html_url",
-    "image_url",
-    "thumbnail_url",
-    # Gmail/Slack specific
-    "history_id",
-    "internal_date",
-    "size_estimate",
-    "raw_headers",
-    "payload",
-    "parts",
-    "mimeType",
-    "filename",
-    "body.attachmentId",
-    "headers",
-    "thread_id",
-    "in_reply_to",
-    "references",
-    "delivery_status",
+    "git_url",
+    # Generic API bookkeeping URL — html_url stays because it's user-facing
+    "url",
+    # Slack/Gmail bookkeeping
     "image_24",
     "image_32",
     "image_48",
@@ -97,19 +89,18 @@ _OBVIOUS_API_FIELDS = {
     "image_192",
     "image_512",
     "avatar_hash",
-    "team",
-    "is_bot",
-    "is_app_user",
-    "updated",
-    "color",
-    "real_name",
-    "display_name",
-    "display_name_normalized",
-    "real_name_normalized",
-    "status_text",
-    "status_emoji",
-    "status_expiration",
-}
+    "size_estimate",
+    "sizeEstimate",
+    "internalDate",
+    "internal_date",
+    "history_id",
+    "historyId",
+    "client_msg_id",
+    "permalink_public",
+})
+
+
+_VALID_MODES: frozenset[str] = frozenset({"off", "safe", "balanced", "low", "aggressive"})
 
 
 def compress_tool_output(
@@ -117,18 +108,27 @@ def compress_tool_output(
     tool_slug: str,
     mode: str = "balanced",
     model: str | None = None,
+    task: str | None = None,
+    required_fields: list[str] | None = None,
+    apply_field_filter: list[str] | None = None,
 ) -> CompressionResult:
     """Compress a raw tool output into a compact model-facing payload.
 
     Args:
         raw_payload: The raw tool result from Composio.
-        tool_slug: Tool identifier for profile selection.
-        mode: Compression mode — safe, balanced, or aggressive.
-        model: Model hint for token counting.
-
-    Returns:
-        CompressionResult with compressed payload and metrics.
+        tool_slug: Tool identifier for profile + normalizer selection.
+        mode: off | safe | balanced | low | aggressive.
+        model: Optional model name for tokenizer selection.
+        task: Optional task name for task-aware field protection.
+        required_fields: Explicit dot-paths that must be preserved.
+        apply_field_filter: Phase 4 — simulate upstream field selection.
     """
+    if mode not in _VALID_MODES:
+        mode = "safe"
+
+    if apply_field_filter:
+        raw_payload = apply_field_selection(raw_payload, apply_field_filter)
+
     raw_count = count_tokens(raw_payload, model)
 
     if mode == "off":
@@ -139,124 +139,240 @@ def compress_tool_output(
             tokens_saved=0,
             compression_ratio=1.0,
             strategy="off",
-        )
-
-    # Detect tabular data (2D arrays from Google Sheets, Excel, etc.)
-    if _is_tabular(raw_payload):
-        compressed = _compress_tabular(raw_payload, mode=mode)
-        compressed_count = count_tokens(compressed, model)
-        tokens_saved = raw_count.tokens - compressed_count.tokens
-        return CompressionResult(
-            compressed_payload=compressed,
-            raw_tokens=raw_count.tokens,
-            compressed_tokens=compressed_count.tokens,
-            tokens_saved=max(0, tokens_saved),
-            compression_ratio=round(compressed_count.tokens / max(raw_count.tokens, 1), 3),
-            strategy=f"tabular_{mode}",
             omitted_fields=[],
         )
 
-    if mode == "safe":
-        compressed = _safe_compress(raw_payload)
-    elif mode == "balanced":
-        compressed = _balanced_compress(raw_payload)
-    else:
-        compressed = _safe_compress(raw_payload)
+    normalized = _normalize_for_tool(raw_payload, tool_slug)
+    protected_fields = merge_required_fields(tool_slug, task, required_fields)
 
-    compressed_count = count_tokens(compressed, model)
-    tokens_saved = raw_count.tokens - compressed_count.tokens
+    if _is_tabular(normalized):
+        is_small = (
+            isinstance(normalized, list)
+            and len(normalized) <= 10
+            and raw_count.tokens < 3000
+        )
+        if is_small:
+            compressed = _compress_records(
+                normalized, mode=mode, protected_fields=protected_fields, skip_wrapper=True
+            )
+            strategy = f"inplace_{mode}"
+        else:
+            compressed = _compress_tabular(
+                normalized, mode=mode, protected_fields=protected_fields
+            )
+            strategy = f"tabular_{mode}"
+    elif mode == "safe":
+        compressed = _safe_compress(normalized, protected_fields=protected_fields)
+        strategy = "safe"
+    elif mode == "balanced":
+        compressed = _balanced_compress(normalized, protected_fields=protected_fields)
+        strategy = "balanced"
+    elif mode == "low":
+        compressed = _low_compress(normalized, protected_fields=protected_fields)
+        strategy = "low"
+    else:  # aggressive
+        compressed = _aggressive_compress(normalized, protected_fields=protected_fields)
+        compressed = caveman_prune_payload(compressed, level="full")
+        strategy = "aggressive_caveman"
+
+    json_count = count_tokens(compressed, model)
+    llm_format = "json"
+    llm_string: str | None = None
+    llm_tokens = json_count.tokens
+
+    # TOON encoding for tabular output — denser than JSON for uniform records.
+    if mode in ("balanced", "low", "aggressive") and _toon_friendly(compressed):
+        toon_str = to_toon(compressed, name=tool_slug.lower())
+        toon_tokens = count_tokens(toon_str, model).tokens
+        if toon_tokens < json_count.tokens:
+            llm_format = "toon"
+            llm_string = toon_str
+            llm_tokens = toon_tokens
+
+    tokens_saved = max(0, raw_count.tokens - llm_tokens)
+    ratio = round(llm_tokens / max(raw_count.tokens, 1), 3)
+
+    warnings: list[str] = []
+    if task:
+        warnings.append(f"task_profile={task}")
+    if protected_fields:
+        warnings.append(f"protected_fields={len(protected_fields)}")
+    if llm_format == "toon":
+        warnings.append("encoding=toon")
 
     return CompressionResult(
         compressed_payload=compressed,
         raw_tokens=raw_count.tokens,
-        compressed_tokens=compressed_count.tokens,
-        tokens_saved=max(0, tokens_saved),
-        compression_ratio=round(compressed_count.tokens / max(raw_count.tokens, 1), 3),
-        strategy=mode,
+        compressed_tokens=llm_tokens,
+        tokens_saved=tokens_saved,
+        compression_ratio=ratio,
+        strategy=strategy if not task else f"{strategy}_task={task}",
         omitted_fields=_collect_omitted_fields(raw_payload, compressed),
+        warnings=warnings,
+        llm_format=llm_format,
+        llm_string=llm_string,
     )
 
 
-def _is_tabular(payload: object) -> bool:
-    """Detect if payload is tabular data (2D array from Sheets/Excel)."""
-    if not isinstance(payload, list):
-        return False
-    if not payload:
-        return False
-    # Check if it's a list of lists (rows)
-    return all(isinstance(row, list) for row in payload[:10])
+def _toon_friendly(payload: object) -> bool:
+    """Decide whether a compressed payload renders better as TOON than JSON."""
+    if isinstance(payload, list):
+        return is_tabular_records(payload)
+    if isinstance(payload, dict) and "_aperture_summary" in payload:
+        sample = payload.get("sample")
+        return isinstance(sample, list) and is_tabular_records(sample)
+    return False
 
 
-def _compress_tabular(payload: list[list], mode: str = "balanced") -> object:
-    """Compress tabular data: sample rows, drop empty cols, truncate cells.
+# ---------------------------------------------------------------------------
+# Tool-specific normalization
+# ---------------------------------------------------------------------------
 
-    For large datasets (10K+ rows), keeping all rows is pointless for an LLM.
-    We keep the header + representative sample + summary statistics.
+def _normalize_for_tool(payload: object, tool_slug: str) -> object:
+    """Apply tool-specific cleanups before generic compression."""
+    if "GMAIL" in tool_slug:
+        return _normalize_gmail(payload)
+    if "SLACK" in tool_slug:
+        return _normalize_slack(payload)
+    return payload
+
+
+def _normalize_gmail(payload: object) -> object:
+    """Lift Gmail message headers to top-level fields, drop raw MIME parts.
+
+    Gmail responses bury Subject/From/To inside payload.headers and dump huge
+    base64 parts under payload.parts[].body.data. The LLM only needs the
+    snippet plus the addressing headers — everything else is base64 noise.
     """
-    if not payload:
+    if isinstance(payload, list):
+        return [_normalize_gmail(item) for item in payload]
+
+    if not isinstance(payload, dict):
         return payload
 
+    if "messages" in payload and isinstance(payload["messages"], list):
+        return {
+            **{k: v for k, v in payload.items() if k != "messages"},
+            "messages": [_normalize_gmail_message(m) for m in payload["messages"]],
+        }
+
+    if "payload" in payload and isinstance(payload.get("payload"), dict):
+        return _normalize_gmail_message(payload)
+
+    return payload
+
+
+def _normalize_gmail_message(msg: dict) -> dict:
+    if not isinstance(msg, dict):
+        return msg
+
+    out: dict[str, Any] = {}
+    for key in ("id", "threadId", "snippet", "labelIds"):
+        if key in msg and msg[key] not in (None, "", []):
+            out[key] = msg[key]
+
+    payload = msg.get("payload")
+    if isinstance(payload, dict):
+        headers = payload.get("headers", [])
+        if isinstance(headers, list):
+            wanted = {"From", "To", "Cc", "Subject", "Date", "Reply-To"}
+            for header in headers:
+                if isinstance(header, dict):
+                    name = header.get("name")
+                    if name in wanted and header.get("value"):
+                        out[name.lower().replace("-", "_")] = header["value"]
+
+    return out
+
+
+def _normalize_slack(payload: object) -> object:
+    """Drop heavy Slack scaffolding (blocks, attachments, reactions noise)."""
+    if isinstance(payload, list):
+        return [_normalize_slack(item) for item in payload]
+
+    if not isinstance(payload, dict):
+        return payload
+
+    drop = {
+        "blocks",
+        "attachments",
+        "client_msg_id",
+        "subscribed",
+        "last_read",
+        "unread_count",
+        "reply_users",
+        "latest_reply",
+    }
+    out = {k: v for k, v in payload.items() if k not in drop}
+
+    channel = out.get("channel")
+    if isinstance(channel, dict) and "name" in channel:
+        out["channel"] = channel["name"]
+
+    reactions = out.get("reactions")
+    if isinstance(reactions, list):
+        out["reactions"] = [r.get("name") for r in reactions if isinstance(r, dict) and r.get("name")]
+
+    return out
+
+
+# ---------------------------------------------------------------------------
+# Tabular detection + compression
+# ---------------------------------------------------------------------------
+
+def _is_tabular(payload: object) -> bool:
+    if not isinstance(payload, list) or not payload:
+        return False
+    head = payload[:10]
+    if all(isinstance(row, list) for row in head):
+        return True
+    if all(isinstance(row, dict) for row in head):
+        if len(head) <= 1:
+            return True
+        keys = [set(row.keys()) for row in head]
+        common = set.intersection(*keys)
+        all_keys = set.union(*keys)
+        return len(common) / max(len(all_keys), 1) >= 0.8
+    return False
+
+
+def _compress_tabular(
+    payload: list, mode: str = "balanced", protected_fields: set[str] | None = None
+) -> object:
+    if not payload:
+        return payload
+    if isinstance(payload[0], dict):
+        return _compress_records(payload, mode, protected_fields=protected_fields)
+    return _compress_2d_array(payload, mode)
+
+
+def _compress_2d_array(payload: list[list], mode: str = "balanced") -> object:
     header = payload[0] if payload else []
     data_rows = payload[1:]
     total_rows = len(data_rows)
-
     if total_rows == 0:
         return payload
 
-    # Determine sample size based on mode and dataset size
-    if mode == "safe":
-        sample_size = min(500, total_rows)
-    elif mode == "balanced":
-        sample_size = min(200, total_rows)
-    else:  # aggressive / low
-        sample_size = min(50, total_rows)
+    sample, _ = _build_sample(data_rows, mode)
 
-    # For very large datasets, use even smaller samples
-    if total_rows > 5000:
-        if mode == "safe":
-            sample_size = min(200, total_rows)
-        elif mode == "balanced":
-            sample_size = min(100, total_rows)
-        else:
-            sample_size = min(20, total_rows)
-
-    # Build sample: first N rows + evenly distributed samples
-    if total_rows <= sample_size:
-        sample = data_rows
-    else:
-        step = total_rows // sample_size
-        indices = [0] + [i * step for i in range(1, sample_size)]
-        # Ensure we don't go out of bounds
-        indices = [min(i, total_rows - 1) for i in indices]
-        sample = [data_rows[i] for i in sorted(set(indices))]
-
-    # Drop empty columns
     col_count = len(header)
-    empty_cols = set()
+    empty_cols: set[int] = set()
     for col_idx in range(col_count):
         if all(not str(row[col_idx]).strip() for row in sample if col_idx < len(row)):
             empty_cols.add(col_idx)
 
-    def filter_row(row: list) -> list:
+    def keep_row(row: list) -> list:
         return [cell for i, cell in enumerate(row) if i not in empty_cols and i < col_count]
 
-    filtered_header = filter_row(header)
-    filtered_sample = [filter_row(row) for row in sample]
+    filtered_header = keep_row(header)
+    filtered_sample = [keep_row(row) for row in sample]
 
-    # Truncate long cells
-    max_cell_len = 200 if mode == "safe" else 100
-    truncated_sample = []
+    max_cell_len = 200 if mode == "safe" else 80
+    truncated_sample: list[list[str]] = []
     for row in filtered_sample:
-        truncated = []
-        for cell in row:
-            s = str(cell)
-            if len(s) > max_cell_len:
-                s = s[:max_cell_len - 3] + "..."
-            truncated.append(s)
-        truncated_sample.append(truncated)
+        truncated_sample.append([_truncate(cell, max_cell_len) for cell in row])
 
-    # Build result with summary
-    result = {
+    result: dict[str, Any] = {
         "_aperture_summary": {
             "total_rows": total_rows,
             "sampled_rows": len(truncated_sample),
@@ -268,109 +384,318 @@ def _compress_tabular(payload: list[list], mode: str = "balanced") -> object:
         "sample": truncated_sample,
     }
 
-    # Add simple stats for numeric columns
-    stats = {}
-    for col_idx, col_name in enumerate(filtered_header):
-        # Try to detect numeric column
-        numeric_values = []
-        for row in truncated_sample:
-            if col_idx < len(row):
-                try:
-                    v = float(str(row[col_idx]).replace(",", ""))
-                    numeric_values.append(v)
-                except (ValueError, TypeError):
-                    pass
-        if numeric_values and len(numeric_values) > len(truncated_sample) * 0.5:
-            stats[col_name] = {
-                "min": min(numeric_values),
-                "max": max(numeric_values),
-                "avg": round(sum(numeric_values) / len(numeric_values), 1),
-            }
-
+    stats = _column_stats(filtered_header, truncated_sample)
     if stats:
         result["stats"] = stats
-
     return result
 
 
-def _safe_compress(payload: object) -> object:
-    """Safe mode: drop nulls, empty values, and obvious API metadata."""
-    return _compress_value(payload, aggressive=False)
+def _column_stats(headers: list, sample: list[list]) -> dict[str, dict[str, float]]:
+    stats: dict[str, dict[str, float]] = {}
+    for col_idx, col_name in enumerate(headers):
+        numeric: list[float] = []
+        for row in sample:
+            if col_idx < len(row):
+                try:
+                    numeric.append(float(str(row[col_idx]).replace(",", "")))
+                except (ValueError, TypeError):
+                    pass
+        if numeric and len(numeric) > len(sample) * 0.5:
+            stats[col_name] = {
+                "min": min(numeric),
+                "max": max(numeric),
+                "avg": round(sum(numeric) / len(numeric), 1),
+            }
+    return stats
 
 
-def _balanced_compress(payload: object) -> object:
-    """Balanced mode: safe + flatten nested objects + compact lists."""
-    return _compress_value(payload, aggressive=True)
+def _truncate(cell: object, max_len: int) -> str:
+    s = str(cell)
+    if len(s) > max_len:
+        return s[: max_len - 3] + "..."
+    return s
 
 
-def _compress_value(value: object, aggressive: bool = False) -> object:
-    """Recursively compress a value."""
-    if value is None:
-        return None
+# ---------------------------------------------------------------------------
+# Record list compression
+# ---------------------------------------------------------------------------
 
-    if isinstance(value, bool):
+def _compress_records(
+    payload: list[dict],
+    mode: str = "balanced",
+    protected_fields: set[str] | None = None,
+    skip_wrapper: bool = False,
+) -> object:
+    total_rows = len(payload)
+    protected = protected_fields or set()
+
+    sample, _ = _build_sample(payload, mode)
+
+    all_keys: set[str] = set()
+    for row in payload[:100]:
+        if isinstance(row, dict):
+            all_keys.update(row.keys())
+
+    empty_fields = {
+        k for k in all_keys
+        if all(
+            isinstance(row, dict) and row.get(k) in (None, "", [], {})
+            for row in payload[: min(100, total_rows)]
+        )
+    }
+
+    fields_to_drop = empty_fields | _OBVIOUS_API_FIELDS
+
+    constant_fields = set()
+    for key in all_keys - fields_to_drop:
+        values = {
+            str(row.get(key)) for row in payload[: min(50, total_rows)]
+            if isinstance(row, dict)
+        }
+        if len(values) == 1:
+            constant_fields.add(key)
+    fields_to_drop |= constant_fields
+
+    max_str_len = 200 if mode in ("safe", "balanced") else 80
+    keep_list = {"low": 3, "aggressive": 2}.get(mode, 5)
+
+    def is_protected(key: str, parent_path: str = "") -> bool:
+        full_path = f"{parent_path}.{key}" if parent_path else key
+        if full_path in protected or key in protected:
+            return True
+        for p in protected:
+            if p.startswith(f"{full_path}.") or p.startswith(f"{key}."):
+                return True
+        return False
+
+    def compress_record(row: dict, parent_path: str = "") -> dict:
+        out: dict[str, Any] = {}
+        for key, val in row.items():
+            protected_key = is_protected(key, parent_path)
+            if not protected_key:
+                if key in fields_to_drop:
+                    continue
+                if val in (None, "", [], {}):
+                    continue
+            effective_max = max_str_len * 3 if protected_key else max_str_len
+            new_path = f"{parent_path}.{key}" if parent_path else key
+
+            if isinstance(val, str) and len(val) > effective_max:
+                out[key] = val[: effective_max - 3] + "..."
+            elif isinstance(val, dict):
+                if not protected_key:
+                    flat = _maybe_flatten(val)
+                    if flat is not None:
+                        out[key] = flat
+                        continue
+                inner = compress_record(val, new_path)
+                if inner:
+                    out[key] = inner
+            elif isinstance(val, list):
+                items = []
+                for item in val:
+                    if isinstance(item, dict):
+                        ci = compress_record(item, new_path)
+                        if ci:
+                            items.append(ci)
+                    elif item not in (None, ""):
+                        items.append(item)
+                if not items:
+                    continue
+                limit = keep_list * 3 if protected_key else keep_list
+                if len(items) <= limit:
+                    out[key] = items
+                else:
+                    out[key] = items[:limit] + [f"... ({len(items) - limit} more)"]
+            else:
+                out[key] = val
+        return out
+
+    compressed_sample = [compress_record(row) for row in sample if isinstance(row, dict)]
+    compressed_sample = [r for r in compressed_sample if r]
+
+    stats = _record_stats(sample, all_keys - fields_to_drop)
+
+    if skip_wrapper:
+        return compressed_sample
+
+    result: dict[str, Any] = {
+        "_aperture_summary": {
+            "total_rows": total_rows,
+            "sampled_rows": len(compressed_sample),
+            "fields_shown": len(all_keys - fields_to_drop),
+            "fields_dropped": len(fields_to_drop),
+            "sampling_method": f"{mode}_records",
+        },
+        "sample": compressed_sample,
+    }
+    if stats:
+        result["stats"] = stats
+    return result
+
+
+def _record_stats(sample: list, fields: set[str]) -> dict[str, dict[str, float]]:
+    stats: dict[str, dict[str, float]] = {}
+    for key in fields:
+        numeric: list[float] = []
+        for row in sample:
+            if not isinstance(row, dict):
+                continue
+            v = row.get(key)
+            if isinstance(v, bool):
+                continue
+            if isinstance(v, (int, float)):
+                numeric.append(v)
+            elif isinstance(v, str):
+                try:
+                    numeric.append(float(v.replace(",", "")))
+                except (ValueError, TypeError):
+                    pass
+        if numeric and len(numeric) > len(sample) * 0.3:
+            stats[key] = {
+                "min": min(numeric),
+                "max": max(numeric),
+                "avg": round(sum(numeric) / len(numeric), 2),
+            }
+    return stats
+
+
+def _build_sample(data_rows: list, mode: str) -> tuple[list, int]:
+    total_rows = len(data_rows)
+
+    sample_size = {
+        "safe": 500,
+        "balanced": 200,
+        "low": 50,
+        "aggressive": 25,
+    }.get(mode, 100)
+
+    if total_rows > 5000:
+        sample_size = {
+            "safe": 200,
+            "balanced": 100,
+            "low": 30,
+            "aggressive": 15,
+        }.get(mode, 50)
+
+    sample_size = min(sample_size, total_rows)
+    if total_rows <= sample_size:
+        return data_rows, sample_size
+
+    step = max(total_rows // sample_size, 1)
+    indices = sorted({min(i * step, total_rows - 1) for i in range(sample_size)})
+    return [data_rows[i] for i in indices], sample_size
+
+
+# ---------------------------------------------------------------------------
+# Generic value compression
+# ---------------------------------------------------------------------------
+
+def _safe_compress(payload: object, protected_fields: set[str] | None = None) -> object:
+    return _compress_value(payload, level="safe", protected_fields=protected_fields)
+
+
+def _balanced_compress(payload: object, protected_fields: set[str] | None = None) -> object:
+    return _compress_value(payload, level="balanced", protected_fields=protected_fields)
+
+
+def _low_compress(payload: object, protected_fields: set[str] | None = None) -> object:
+    return _compress_value(payload, level="low", protected_fields=protected_fields)
+
+
+def _aggressive_compress(payload: object, protected_fields: set[str] | None = None) -> object:
+    return _compress_value(payload, level="aggressive", protected_fields=protected_fields)
+
+
+def _compress_value(
+    value: object,
+    level: str = "balanced",
+    protected_fields: set[str] | None = None,
+    parent_path: str = "",
+) -> object:
+    if value is None or isinstance(value, (bool, int, float)):
         return value
-
-    if isinstance(value, (int, float, str)):
+    if isinstance(value, str):
+        max_len = {"safe": 800, "balanced": 400, "low": 200, "aggressive": 120}.get(level, 400)
+        if len(value) > max_len:
+            return value[: max_len - 3] + "..."
         return value
-
     if isinstance(value, list):
-        return _compress_list(value, aggressive)
-
+        return _compress_list(value, level, protected_fields, parent_path)
     if isinstance(value, dict):
-        return _compress_dict(value, aggressive)
-
+        return _compress_dict(value, level, protected_fields, parent_path)
     return value
 
 
-def _compress_dict(d: dict[str, Any], aggressive: bool) -> dict[str, Any]:
-    """Compress a dict by dropping low-value fields."""
-    result = {}
+def _compress_dict(
+    d: dict[str, Any],
+    level: str,
+    protected_fields: set[str] | None,
+    parent_path: str,
+) -> dict[str, Any]:
+    protected = protected_fields or set()
+    result: dict[str, Any] = {}
+    flatten = level in ("balanced", "low", "aggressive")
+
     for key, val in d.items():
-        # Skip nulls and empty values
-        if val is None:
-            continue
-        if val == "" or val == [] or val == {}:
-            continue
+        full_path = f"{parent_path}.{key}" if parent_path else key
+        is_protected = full_path in protected or key in protected
+        if not is_protected:
+            for p in protected:
+                if p.startswith(f"{full_path}.") or p.startswith(f"{key}."):
+                    is_protected = True
+                    break
 
-        # Skip obvious API metadata
-        if key in _OBVIOUS_API_FIELDS:
-            continue
-
-        # In aggressive mode, flatten simple nested objects
-        if aggressive and isinstance(val, dict):
-            # If it's a user/repo object with just a login/name, flatten it
-            if len(val) == 1 and "login" in val:
-                result[key] = val["login"]
+        if not is_protected:
+            if val is None or val == "" or val == [] or val == {}:
                 continue
-            if len(val) == 1 and "name" in val:
-                result[key] = val["name"]
-                continue
-            # If it has login/name alongside URLs, extract just the useful part
-            if "login" in val:
-                result[key] = val["login"]
-                continue
-            if "name" in val:
-                result[key] = val["name"]
+            if key in _OBVIOUS_API_FIELDS:
                 continue
 
-        result[key] = _compress_value(val, aggressive)
+        if flatten and isinstance(val, dict) and not is_protected:
+            short = _maybe_flatten(val)
+            if short is not None:
+                result[key] = short
+                continue
 
+        result[key] = _compress_value(val, level, protected, full_path)
     return result
 
 
-def _compress_list(lst: list, aggressive: bool) -> list:
-    """Compress a list by compressing each item."""
-    result = []
+def _compress_list(
+    lst: list,
+    level: str,
+    protected_fields: set[str] | None,
+    parent_path: str,
+) -> list:
+    out = []
     for item in lst:
-        compressed = _compress_value(item, aggressive)
-        if compressed is not None and compressed != {} and compressed != []:
-            result.append(compressed)
-    return result
+        compressed = _compress_value(item, level, protected_fields, parent_path)
+        if compressed not in (None, "", [], {}):
+            out.append(compressed)
+
+    cap = {"low": 5, "aggressive": 3}.get(level)
+    if cap and len(out) > cap:
+        return out[:cap] + [f"... ({len(out) - cap} more)"]
+    return out
+
+
+def _maybe_flatten(val: dict) -> object | None:
+    """If a dict has a single dominant identity field, return that value."""
+    if len(val) == 1:
+        only = next(iter(val.values()))
+        if isinstance(only, (str, int, float)):
+            return only
+        return None
+
+    for key in ("login", "name", "title"):
+        if key in val and isinstance(val[key], (str, int, float)):
+            if len(val) <= 4:
+                return val[key]
+    return None
 
 
 def _collect_omitted_fields(raw: object, compressed: object) -> list[str]:
-    """Collect top-level field names that were dropped."""
     if not isinstance(raw, dict) or not isinstance(compressed, dict):
         return []
     return [k for k in raw.keys() if k not in compressed]

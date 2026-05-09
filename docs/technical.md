@@ -17,47 +17,50 @@ This file defines the default technical stack for Aperture so the three implemen
 | Data contracts | Python dataclasses first, optional Pydantic later | Keeps shared interfaces lightweight while contracts are changing |
 | Token counting | `tiktoken` plus provider-specific adapters where available | Deterministic local token estimates for OpenAI-style tokenizers, adapter path for other providers |
 | Composio integration | `composio` Python SDK | Official SDK exposes tool fetch/execute APIs and modifier hooks |
-| Cache backend | In-memory for tests, Redis for integration/demo | Tests stay simple; Redis proves realistic repeated-read caching |
-| Dashboard | Next.js, React, TypeScript, App Router, Tailwind CSS | Interactive MVP dashboard for benchmark/demo analysis |
+| Cache backend | In-memory for tests, Upstash Redis for integration/demo | Tests stay simple; Redis proves realistic repeated-read caching |
+| Dashboard | Vite + React 19 + TypeScript + Tailwind CSS + shadcn/ui | Interactive MVP dashboard for benchmark/demo analysis (no SSR needed for local) |
 | Dashboard API | FastAPI and Uvicorn | Local JSON API over exported run traces and reports |
 | Reports | Markdown, JSONL, JSON summaries, and interactive dashboard | Reports remain source artifacts; dashboard is the primary review surface |
 | Tests | `pytest` | Standard Python test runner with simple fixture support |
 | Type checks | `mypy` or `pyright` after contracts stabilize | Useful once shared contracts stop changing daily |
 | Formatting | `ruff format` and `ruff check` | Single fast tool for formatting and linting |
-| Frontend tooling | Node 20+ and `pnpm` | Stable modern frontend runtime and fast package installation |
+| Frontend tooling | Node 20+ and `npm` | Stable modern frontend runtime; `npm` keeps onboarding zero-config |
 
 ## Repository Shape
 
-Target package layout:
+Current repo layout:
 
 ```text
-aperture/
+Aperture/
   pyproject.toml
   README.md
+  DEMO.md
+  TRANSFER.md
   .env.example
 
-  aperture/
+  aperture/                 # Python package
     contracts.py
     config.py
-
+    integration.py          # ApertureRunner — wires the layers
     tokenization/
     observability/
     routing/
     schema_optimizer/
-    compression/
+    compression/            # engine + 4 phase modules
     cache/
+    adapters/               # langgraph adapter pattern (optional)
+    benchmarks/             # benchmark harness
+    demo/                   # mock data + scenarios
 
-  benchmarks/
-  demo_agent/
-  dashboard_api/
-  dashboard/
+  api/                      # FastAPI dashboard backend (api/main.py)
+  frontend/                 # Vite + React dashboard (10 pages)
+  data/                     # real mock datasets
+  scripts/                  # CLI demo + benchmark scripts
   fixtures/
   reports/
   tests/
   docs/
 ```
-
-The current repo already has planning docs. The first implementation step should create this package structure without moving the planning docs unless the team agrees.
 
 ## Core Dependencies
 
@@ -109,37 +112,53 @@ dev = [
 
 The interactive dashboard is part of MVP.
 
-Use a dedicated Next.js app:
+Stack as actually shipped:
 
 ```text
-dashboard/
+frontend/
   package.json
-  next.config.ts
-  app/
-  components/
-  lib/
+  vite.config.ts
+  index.html
+  src/
+    App.tsx
+    main.tsx
+    components/    # Layout + shadcn/ui base components
+    pages/         # 10 dashboard pages
+    lib/           # api wrapper + utils
 ```
 
-Recommended frontend dependencies:
+Pinned dependencies (see `frontend/package.json` for exact versions):
 
 ```json
 {
   "dependencies": {
-    "@tanstack/react-table": "latest",
-    "lucide-react": "latest",
-    "next": "latest",
-    "react": "latest",
-    "react-dom": "latest",
-    "recharts": "latest"
+    "react": "^19",
+    "react-dom": "^19",
+    "react-router-dom": "^7",
+    "@base-ui/react": "^1",
+    "lucide-react": "^1",
+    "framer-motion": "^12",
+    "tailwind-merge": "^3",
+    "class-variance-authority": "^0.7",
+    "clsx": "^2",
+    "shadcn": "^4"
   },
   "devDependencies": {
-    "tailwindcss": "latest",
-    "typescript": "latest"
+    "vite": "^5",
+    "@vitejs/plugin-react": "^4",
+    "tailwindcss": "^3",
+    "tailwindcss-animate": "^1",
+    "tw-animate-css": "^1",
+    "autoprefixer": "^10",
+    "postcss": "^8",
+    "typescript": "~6",
+    "eslint": "^10"
   }
 }
 ```
 
-Use `shadcn/ui` for dashboard components. Treat the generated UI components as dashboard-owned code under Person 1's lane.
+Vite proxies `/api/*` to the FastAPI backend on `:8000`. shadcn/ui components are
+generated under `src/components/ui/` and edited in-tree.
 
 ## Composio Integration
 
@@ -353,14 +372,12 @@ The MVP includes an interactive, local-first dashboard.
 
 Use:
 
-- Next.js App Router
-- React
-- TypeScript
-- Tailwind CSS
-- `shadcn/ui`
-- `lucide-react`
-- `recharts`
-- `@tanstack/react-table`
+- Vite + React 19 + TypeScript
+- Tailwind CSS + `tailwindcss-animate`
+- `shadcn/ui` components in-tree under `src/components/ui/`
+- `lucide-react` icons
+- `framer-motion` for transitions
+- `react-router-dom` v7 for client routing
 
 Person 1 owns the dashboard app because it is part of the benchmark/demo presentation lane.
 

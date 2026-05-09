@@ -23,11 +23,13 @@ st.title("🔭 Aperture — Context Engineering for Composio")
 st.caption("Visual demo: measure, compact, compress, cache")
 
 # ============== TABS ==============
-tab_overview, tab_gsheets, tab_agent, tab_dynamic, tab_benchmarks = st.tabs([
+tab_overview, tab_gsheets, tab_mock, tab_agent, tab_dynamic, tab_live, tab_benchmarks = st.tabs([
     "📊 Overview",
     "📑 Google Sheets (10K Rows)",
+    "🗂️  Mock Datasets",
     "🤖 Agent Workflows",
     "🧠 Dynamic Agent",
+    "🎬 Live Agent",
     "📈 Benchmarks",
 ])
 
@@ -185,7 +187,71 @@ with tab_gsheets:
 
 
 # =============================================================================
-# TAB 3: AGENT WORKFLOWS
+# TAB 3: MOCK DATASETS (Notion / Linear / Supabase)
+# =============================================================================
+with tab_mock:
+    st.header("🗂️  Mock Datasets — Test Nonstop")
+    st.markdown("""
+    Live API writes are blocked by permissions (Notion pages not shared, Linear admin-only, Supabase no-insert tools).
+    
+    Instead, these **realistic mock datasets** match the exact shape of Composio API responses.
+    Run compression demos without API limits.
+    """)
+
+    import json as _json
+    DATA_DIR = PROJECT_ROOT / "data"
+
+    def _load_mock(name):
+        with open(DATA_DIR / name) as f:
+            return _json.load(f)
+
+    def _run_mock_demo(label, filename, tool_slug):
+        data = _load_mock(filename)
+        raw_tc = count_tokens(data)
+        raw_tokens = raw_tc.tokens
+
+        modes = ["off", "safe", "balanced", "low"]
+        rows = []
+        for mode in modes:
+            result = compress_tool_output(data, tool_slug, mode=mode, model="gpt-4o")
+            comp_tc = count_tokens(result.compressed_payload)
+            comp_tokens = comp_tc.tokens
+            rows.append({
+                "Mode": mode,
+                "Tokens": f"{comp_tokens:,}",
+                "Reduction": f"{(1 - comp_tokens / raw_tokens) * 100:.1f}%",
+                "Context %": f"{comp_tokens / 128_000 * 100:.1f}%",
+                "Strategy": result.strategy,
+            })
+
+        st.subheader(label)
+        st.caption(f"{filename} — {len(data):,} items — {raw_tokens:,} raw tokens")
+        st.dataframe(rows, width="stretch", hide_index=True)
+
+        # Show a sample record
+        balanced_result = compress_tool_output(data, tool_slug, mode="balanced", model="gpt-4o")
+        sample = balanced_result.compressed_payload.get("sample", [])
+        summary = balanced_result.compressed_payload.get("_aperture_summary", {})
+        stats = balanced_result.compressed_payload.get("stats", {})
+
+        c1, c2 = st.columns(2)
+        with c1:
+            with st.expander("Sample record (balanced mode)"):
+                if sample:
+                    st.json(sample[0])
+        with c2:
+            with st.expander("Summary & stats"):
+                st.json({"summary": summary, "stats": stats})
+
+        st.divider()
+
+    _run_mock_demo("📄 Notion — 500 Pages", "notion_pages_500.json", "NOTION_SEARCH_NOTION_PAGE")
+    _run_mock_demo("📌 Linear — 200 Issues", "linear_issues_200.json", "LINEAR_GET_LINEAR_USER_ISSUES")
+    _run_mock_demo("🗃️ Supabase — 1,000 Rows", "supabase_users_1000.json", "SUPABASE_FETCH_TABLE_ROWS")
+
+
+# =============================================================================
+# TAB 4: AGENT WORKFLOWS
 # =============================================================================
 with tab_agent:
     st.header("🤖 Multi-Step Agent Workflows")
@@ -266,7 +332,7 @@ with tab_agent:
                 "Strategy": step.strategy,
             })
 
-        st.dataframe(step_data, use_container_width=True, hide_index=True)
+        st.dataframe(step_data, width="stretch", hide_index=True)
 
         # Token waterfall
         st.subheader("Token Waterfall")
@@ -289,7 +355,7 @@ with tab_agent:
         # Cache re-run
         if enable_cache and opt_result.cache_misses > 0:
             st.divider()
-            if st.button("🔄 Run Again (Test Cache)", use_container_width=True):
+            if st.button("🔄 Run Again (Test Cache)"):
                 with st.spinner("Checking cache..."):
                     opt2 = run_workflow_with_aperture(scenario_name, mode=effort_mode, enable_cache=True)
 
@@ -345,7 +411,7 @@ with tab_dynamic:
                 "Reasoning": m.reasoning[:80] + "..." if len(m.reasoning) > 80 else m.reasoning,
             })
 
-        st.dataframe(match_data, use_container_width=True, hide_index=True)
+        st.dataframe(match_data, width="stretch", hide_index=True)
 
         st.subheader("Dynamic Toolkit Expansion")
         st.markdown("New toolkits are automatically available — no code changes needed.")
@@ -373,7 +439,382 @@ with tab_dynamic:
 
 
 # =============================================================================
-# TAB 5: BENCHMARKS
+# TAB 5: LIVE AGENT — Real-Time Thinking Demo
+# =============================================================================
+with tab_live:
+    import time
+
+    st.header("🎬 Live Agent — See the Thinking in Real Time")
+    st.markdown("""
+    Watch Aperture's agent **think through every decision** — from intent parsing
+to tool routing, effort selection, compression, and caching — step by step.
+    """)
+
+    intent = st.text_input(
+        "What should the agent do?",
+        value="Find all open bugs in composio and check if customers have reported them",
+        key="live_intent",
+    )
+
+    use_live_api = st.toggle("Use Live Composio API (GitHub only)", value=False,
+                              help=" Falls back to mock data if API fails or for non-GitHub tools.")
+    enable_cache = st.toggle("Enable Cache", value=True, key="live_cache")
+
+    if st.button("▶️  Run Live Agent", type="primary"):
+        # -----------------------------------------------------------------
+        # PHASE 0: Setup
+        # -----------------------------------------------------------------
+        from aperture.routing.semantic_selector import DynamicAgent, match_intent_to_tools
+        from aperture.routing.intelligent_effort import select_effort
+        from aperture.compression.engine import compress_tool_output
+        from aperture.cache.interceptor import CachedExecutor
+        from aperture.contracts import ApertureRunConfig, CompressionResult
+        from aperture.tokenization import count_tokens
+        from aperture.demo.scenarios import get_mock_result
+        from aperture.schema_optimizer.auto_profile import ProfileRegistry
+
+        AVAILABLE_TOOLS = [
+            "GITHUB_GET_A_REPOSITORY", "GITHUB_LIST_ISSUES", "GITHUB_LIST_PULL_REQUESTS",
+            "GITHUB_LIST_COMMITS", "GITHUB_GET_ISSUE", "GITHUB_GET_USER",
+            "GMAIL_SEARCH_EMAILS", "GMAIL_FETCH_EMAILS",
+            "SLACK_SEARCH_MESSAGES", "SLACK_LIST_CHANNELS", "SLACK_GET_CHANNEL",
+            "GOOGLE_CALENDAR_LIST_EVENTS", "GOOGLE_CALENDAR_GET_EVENT",
+            "HUBSPOT_GET_CONTACT", "HUBSPOT_LIST_CONTACTS",
+            "ZENDESK_LIST_TICKETS", "ZENDESK_GET_TICKET",
+            "SHOPIFY_LIST_PRODUCTS", "SHOPIFY_GET_ORDER",
+            "NOTION_SEARCH_NOTION_PAGE", "LINEAR_GET_LINEAR_USER_ISSUES",
+            "SUPABASE_FETCH_TABLE_ROWS",
+        ]
+
+        # Clear cache for fresh demo
+        if enable_cache:
+            try:
+                from upstash_redis import Redis
+                from aperture.config import Config
+                r = Redis(url=Config.UPSTASH_REDIS_REST_URL, token=Config.UPSTASH_REDIS_REST_TOKEN)
+                for k in r.keys("aperture:cache:*"):
+                    r.delete(k)
+            except Exception:
+                pass
+
+        cache = CachedExecutor()
+        registry = ProfileRegistry()
+
+        progress_bar = st.progress(0, text="Initializing...")
+        log_container = st.container()
+
+        def log(msg: str, icon: str = "", color: str = ""):
+            with log_container:
+                if color:
+                    st.markdown(f"<span style='color:{color};'>{icon} {msg}</span>", unsafe_allow_html=True)
+                else:
+                    st.markdown(f"{icon} {msg}")
+
+        # -----------------------------------------------------------------
+        # PHASE 1: Intent Analysis
+        # -----------------------------------------------------------------
+        progress_bar.progress(5, text="Phase 1/5: Analyzing intent...")
+        log("**Phase 1: Intent Analysis**", icon="🧠")
+
+        from aperture.routing.semantic_selector import _extract_domain, _extract_verbs
+        domains = _extract_domain(intent)
+        verbs = _extract_verbs(intent)
+
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            st.metric("Domains Detected", len(domains))
+            for d in domains:
+                st.markdown(f"<span style='background:#dbeafe;color:#1e40af;padding:2px 8px;border-radius:12px;font-size:12px;'>{d.capitalize()}</span>", unsafe_allow_html=True)
+        with c2:
+            st.metric("Verbs Detected", len(verbs))
+            for v in verbs:
+                st.markdown(f"<span style='background:#ede9fe;color:#5b21b6;padding:2px 8px;border-radius:12px;font-size:12px;'>{v.capitalize()}</span>", unsafe_allow_html=True)
+        with c3:
+            st.metric("Query Length", len(intent.split()))
+
+        time.sleep(0.4)
+
+        # -----------------------------------------------------------------
+        # PHASE 2: Semantic Routing
+        # -----------------------------------------------------------------
+        progress_bar.progress(20, text="Phase 2/5: Routing to tools...")
+        log("**Phase 2: Semantic Routing**", icon="🗺️")
+
+        matches = match_intent_to_tools(intent, AVAILABLE_TOOLS)
+        top_matches = [m for m in matches if m.score > 0.05][:5]
+
+        match_data = []
+        for i, m in enumerate(top_matches):
+            match_data.append({
+                "Rank": i + 1,
+                "Tool": m.tool_slug,
+                "Score": f"{m.score:.2f}",
+                "Effort": m.effort_mode,
+                "Reasoning": m.reasoning[:60] + "..." if len(m.reasoning) > 60 else m.reasoning,
+            })
+        st.dataframe(match_data, width="stretch", hide_index=True)
+
+        selected_tools = top_matches[:3]
+        st.success(f"Selected top {len(selected_tools)} tools for execution")
+        time.sleep(0.4)
+
+        # -----------------------------------------------------------------
+        # PHASE 3: Execution Plan
+        # -----------------------------------------------------------------
+        progress_bar.progress(35, text="Phase 3/5: Building execution plan...")
+        log("**Phase 3: Execution Plan**", icon="📋")
+
+        plan_cols = st.columns(len(selected_tools))
+        for i, match in enumerate(selected_tools):
+            with plan_cols[i]:
+                st.markdown(f"**{i+1}. {match.tool_slug}**")
+                st.caption(f"Score: {match.score:.2f}")
+                if match.suggested_arguments:
+                    st.json(match.suggested_arguments)
+                else:
+                    st.caption("No args suggested")
+
+        time.sleep(0.4)
+
+        # -----------------------------------------------------------------
+        # PHASE 4: Step-by-Step Execution
+        # -----------------------------------------------------------------
+        progress_bar.progress(50, text="Phase 4/5: Executing tools...")
+        log("**Phase 4: Live Execution**", icon="⚡")
+
+        total_raw = 0
+        total_comp = 0
+        total_saved = 0
+        step_results = []
+        cumulative_context = []
+        context_used = 0
+
+        for step_idx, match in enumerate(selected_tools):
+            step_container = st.container(border=True)
+
+            with step_container:
+                st.markdown(f"### Step {step_idx+1}: `{match.tool_slug}`")
+
+                # ---- 4a: Effort Selection ----
+                effort_col, exec_col, cache_col = st.columns(3)
+
+                with effort_col:
+                    st.markdown("🎯 **Effort Mode**")
+                    decision = select_effort(
+                        tool_slug=match.tool_slug,
+                        arguments=match.suggested_arguments or {},
+                        user_query=intent,
+                        context_used=context_used,
+                    )
+                    st.markdown(f"<span style='background:#ffedd5;color:#9a3412;padding:2px 8px;border-radius:12px;font-size:12px;'>{decision.compression_mode.upper()}</span>", unsafe_allow_html=True)
+                    st.caption(f"Confidence: {decision.confidence:.0%}")
+                    with st.expander("Why this mode?"):
+                        st.write(decision.reasoning)
+                        st.json({
+                            "complexity": decision.complexity.name,
+                            "schema_depth": decision.schema_depth,
+                            "estimated_savings": f"{decision.estimated_savings:,} tokens",
+                            "critical_fields": decision.critical_fields[:5],
+                        })
+
+                # ---- 4b: Tool Execution ----
+                with exec_col:
+                    st.markdown("🔧 **Tool Call**")
+                    st.code(f"{match.tool_slug}(\n  {match.suggested_arguments or {}}\n)", language="python")
+
+                    # Try live API first if enabled and it's a GitHub tool
+                    raw_result = None
+                    if use_live_api and match.tool_slug.startswith("GITHUB"):
+                        try:
+                            import composio
+                            c = composio.Composio()
+                            session = c.create(
+                                user_id="pg-test-77d7fa29-5fa4-4868-b9ba-39b07a17e2f6",
+                                toolkits=["github"],
+                                connected_accounts={"github": "ca_UZkzCbGtSDdE"},
+                            )
+                            raw_result = session.execute(
+                                tool_slug=match.tool_slug,
+                                arguments=match.suggested_arguments or {},
+                            )
+                            if hasattr(raw_result, "model_dump"):
+                                raw_result = raw_result.model_dump()
+                            st.caption("🟢 Live API")
+                        except Exception as e:
+                            st.caption(f"🔴 API failed: {e}")
+                            raw_result = None
+
+                    if raw_result is None:
+                        raw_result = get_mock_result(match.tool_slug, match.suggested_arguments or {})
+                        st.caption("🟡 Mock data")
+
+                    raw_tc = count_tokens(raw_result)
+                    st.metric("Raw Result", f"{raw_tc.tokens:,} tokens")
+                    total_raw += raw_tc.tokens
+
+                # ---- 4c: Cache + Compression ----
+                with cache_col:
+                    st.markdown("💾 **Cache & Compress**")
+
+                    config = ApertureRunConfig(
+                        run_id=f"live-{match.tool_slug}",
+                        model="gpt-4o",
+                        effort_mode="auto",
+                        cache_bypass=not enable_cache,
+                    )
+
+                    def _executor():
+                        return raw_result
+
+                    cached_result, cache_event = cache.execute(
+                        tool_slug=match.tool_slug,
+                        arguments=match.suggested_arguments or {},
+                        executor=_executor,
+                        config=config,
+                    )
+
+                    if cache_event.cache_status == "hit":
+                        st.markdown("<span style='background:#dcfce7;color:#166534;padding:2px 8px;border-radius:12px;font-size:12px;'>CACHE HIT</span>", unsafe_allow_html=True)
+                        comp_result = CompressionResult(
+                            compressed_payload=cached_result,
+                            raw_tokens=0, compressed_tokens=0,
+                            tokens_saved=0, compression_ratio=1.0,
+                            strategy="cache_hit",
+                        )
+                    else:
+                        st.markdown("<span style='background:#fee2e2;color:#991b1b;padding:2px 8px;border-radius:12px;font-size:12px;'>CACHE MISS</span>", unsafe_allow_html=True)
+                        comp_result = compress_tool_output(
+                            raw_payload=raw_result,
+                            tool_slug=match.tool_slug,
+                            mode=decision.compression_mode,
+                            model="gpt-4o",
+                        )
+                        st.markdown(f"<span style='background:#ffedd5;color:#9a3412;padding:2px 8px;border-radius:12px;font-size:12px;'>{comp_result.strategy}</span>", unsafe_allow_html=True)
+
+                    comp_tc = count_tokens(comp_result.compressed_payload)
+                    st.metric("Compressed", f"{comp_tc.tokens:,} tokens")
+                    saved = raw_tc.tokens - comp_tc.tokens
+                    if saved > 0:
+                        st.metric("Saved", f"{saved:,}", delta=f"-{saved/raw_tc.tokens:.0%}")
+                    total_comp += comp_tc.tokens
+                    total_saved += saved
+
+                # ---- 4d: Preview ----
+                preview_tab, summary_tab = st.tabs(["📄 Compressed Preview", "📊 Summary"])
+                with preview_tab:
+                    payload = comp_result.compressed_payload
+                    if isinstance(payload, dict) and "sample" in payload:
+                        sample = payload["sample"]
+                        st.json(sample[0] if sample else {})
+                        st.caption(f"Showing 1 of {len(sample)} sampled records")
+                    elif isinstance(payload, dict):
+                        st.json({k: v for k, v in list(payload.items())[:8]})
+                    else:
+                        st.json(payload)
+
+                with summary_tab:
+                    if isinstance(payload, dict):
+                        summary = payload.get("_aperture_summary", {})
+                        stats = payload.get("stats", {})
+                        st.json({"summary": summary, "stats": stats})
+                    else:
+                        st.json({"type": type(payload).__name__, "length": len(str(payload))})
+
+                # Update cumulative context
+                cumulative_context.append({"tool": match.tool_slug, "result": comp_result.compressed_payload})
+                context_used = count_tokens(cumulative_context).tokens
+                st.progress(min(context_used / 128_000, 1.0),
+                            text=f"Cumulative context: {context_used:,} / 128,000 tokens ({context_used/128_000*100:.1f}%)")
+
+                step_results.append({
+                    "tool": match.tool_slug,
+                    "raw": raw_tc.tokens,
+                    "compressed": comp_tc.tokens,
+                    "saved": saved,
+                    "cache": cache_event.cache_status,
+                    "mode": decision.compression_mode,
+                })
+
+                # Small pause for visual effect
+                time.sleep(0.3)
+
+            progress_pct = 50 + ((step_idx + 1) / len(selected_tools)) * 40
+            progress_bar.progress(int(progress_pct), text=f"Step {step_idx+1}/{len(selected_tools)} complete...")
+
+        # -----------------------------------------------------------------
+        # PHASE 5: Final Summary
+        # -----------------------------------------------------------------
+        progress_bar.progress(100, text="Complete!")
+        log("**Phase 5: Final Summary**", icon="🏁")
+
+        summary_container = st.container()
+        with summary_container:
+            st.subheader("📈 Workflow Summary")
+
+            sc1, sc2, sc3, sc4, sc5 = st.columns(5)
+            with sc1:
+                st.metric("Tools Called", len(selected_tools))
+            with sc2:
+                st.metric("Total Raw", f"{total_raw:,}")
+            with sc3:
+                st.metric("Total Compressed", f"{total_comp:,}")
+            with sc4:
+                savings_pct = total_saved / total_raw if total_raw > 0 else 0
+                st.metric("Tokens Saved", f"{total_saved:,}", delta=f"-{savings_pct:.0%}")
+            with sc5:
+                cache_hits = sum(1 for s in step_results if s["cache"] == "hit")
+                st.metric("Cache Hits", f"{cache_hits}/{len(selected_tools)}")
+
+            # Context window comparison
+            st.subheader("🌊 Context Window Pressure")
+            vanilla_ctx = total_raw  # Approximate: each tool result added raw
+            opt_ctx = context_used
+
+            vc1, vc2 = st.columns(2)
+            with vc1:
+                st.error("Without Aperture")
+                st.progress(min(vanilla_ctx / 128_000, 1.0),
+                           text=f"{vanilla_ctx:,} tokens ({vanilla_ctx/128_000*100:.1f}%)")
+                st.caption("Every raw tool result stacks in the context window")
+            with vc2:
+                st.success("With Aperture")
+                st.progress(min(opt_ctx / 128_000, 1.0),
+                           text=f"{opt_ctx:,} tokens ({opt_ctx/128_000*100:.1f}%)")
+                st.caption("Compressed results + cache = minimal pressure")
+
+            # Cost estimate
+            raw_cost = total_raw / 1_000_000 * 2.50  # GPT-4o input
+            opt_cost = total_comp / 1_000_000 * 2.50
+            st.info(f"💰 Estimated cost: **${raw_cost:.3f}** → **${opt_cost:.3f}** (saves ${raw_cost - opt_cost:.3f})")
+
+            # Step table
+            st.subheader("Per-Step Breakdown")
+            st.dataframe(step_results, width="stretch", hide_index=True)
+
+            # Cache re-run button
+            if enable_cache and cache_hits < len(selected_tools):
+                if st.button("🔄 Run Again (Test Cache)", key="live_cache_rerun"):
+                    rerun_results = []
+                    for match in selected_tools:
+                        def _re_executor():
+                            return get_mock_result(match.tool_slug, match.suggested_arguments or {})
+                        _, cache_event2 = cache.execute(
+                            tool_slug=match.tool_slug,
+                            arguments=match.suggested_arguments or {},
+                            executor=_re_executor,
+                            config=config,
+                        )
+                        rerun_results.append(cache_event2.cache_status)
+
+                    rerun_hits = sum(1 for r in rerun_results if r == "hit")
+                    if rerun_hits > 0:
+                        st.success(f"✅ {rerun_hits}/{len(selected_tools)} steps served from cache — zero API calls!")
+                    else:
+                        st.error("❌ Cache miss (cache may have expired or been cleared)")
+
+
+# =============================================================================
+# TAB 6: BENCHMARKS
 # =============================================================================
 with tab_benchmarks:
     st.header("📈 Benchmark Suite")
@@ -411,7 +852,7 @@ with tab_benchmarks:
                     "Quality": f"{bench.avg_quality_score:.0%}",
                 })
 
-            st.dataframe(table_data, use_container_width=True, hide_index=True)
+            st.dataframe(table_data, width="stretch", hide_index=True)
 
         # Winners
         st.subheader("🏆 Best Mode Per Scenario")
@@ -438,4 +879,4 @@ with tab_benchmarks:
             {"Scenario": "Triage Bugs", "Best Mode": "low / auto", "Savings": "71.0%", "Tokens Saved": "8,027"},
             {"Scenario": "Onboard User", "Best Mode": "medium", "Savings": "75.7%", "Tokens Saved": "5,863"},
         ]
-        st.dataframe(cached_results, use_container_width=True, hide_index=True)
+        st.dataframe(cached_results, width="stretch", hide_index=True)

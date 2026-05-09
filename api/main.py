@@ -1,0 +1,721 @@
+"""FastAPI backend for Aperture — serves ONLY real measured data."""
+
+import asyncio
+import json
+import os
+import sys
+from contextlib import asynccontextmanager
+
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from aperture.compression.engine import compress_tool_output
+from aperture.compression.task_profiles import (
+    get_profile,
+    list_profiles_for_tool,
+    merge_required_fields,
+)
+from aperture.compression.hydration import (
+    store_full_result,
+    make_placeholder,
+    hydrate,
+    get_cache_stats as get_hydration_stats,
+)
+from aperture.compression.prompt_cache import (
+    build_cache_optimized_prompt,
+    estimate_savings,
+)
+from aperture.compression.field_profiles import (
+    get_field_profile,
+    list_field_profiles_for_tool,
+    apply_field_selection,
+)
+from aperture.schema_optimizer.type_group import compact_schema, measure_compaction
+from aperture.tokenization import count_tokens
+from aperture.demo.scenarios import get_mock_result
+from aperture.cache.interceptor import CachedExecutor
+from aperture.contracts import ApertureRunConfig, CompressionResult
+from aperture.routing.effort_modes import get_effort_config
+
+# Load real mock datasets
+DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data")
+
+def _load_json(name):
+    with open(os.path.join(DATA_DIR, name)) as f:
+        return json.load(f)
+
+def _load_csv(name):
+    import csv
+    with open(os.path.join(DATA_DIR, name)) as f:
+        reader = csv.reader(f)
+        rows = list(reader)
+    return rows
+
+DATASETS = {
+    "github_users": _load_csv("github_users_10k.csv") if os.path.exists(os.path.join(DATA_DIR, "github_users_10k.csv")) else None,
+    "notion_pages": _load_json("notion_pages_500.json") if os.path.exists(os.path.join(DATA_DIR, "notion_pages_500.json")) else None,
+    "linear_issues": _load_json("linear_issues_200.json") if os.path.exists(os.path.join(DATA_DIR, "linear_issues_200.json")) else None,
+    "supabase_users": _load_json("supabase_users_1000.json") if os.path.exists(os.path.join(DATA_DIR, "supabase_users_1000.json")) else None,
+}
+
+app = FastAPI(title="Aperture API", version="2.0.0")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173", "http://localhost:5174"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _measure_compression(data, tool_slug, mode, task=None, required_fields=None, apply_field_filter=None):
+    """Run real compression and return real measurements (all in gpt-4o tokens)."""
+    model = "gpt-4o"
+    raw_tc = count_tokens(data, model=model)
+    result = compress_tool_output(
+        data,
+        tool_slug,
+        mode=mode,
+        model=model,
+        task=task,
+        required_fields=required_fields,
+        apply_field_filter=apply_field_filter,
+    )
+    json_tc = count_tokens(result.compressed_payload, model=model)
+    return {
+        "raw_tokens": raw_tc.tokens,
+        "compressed_tokens": result.compressed_tokens,  # LLM-bound tokens (TOON if applicable)
+        "json_tokens": json_tc.tokens,                  # what JSON would cost
+        "tokens_saved": raw_tc.tokens - result.compressed_tokens,
+        "compression_ratio": result.compression_ratio,
+        "strategy": result.strategy,
+        "mode": mode,
+        "tool_slug": tool_slug,
+        "task": task,
+        "llm_format": result.llm_format,
+        "llm_string_preview": (result.llm_string or "")[:600] if result.llm_string else None,
+        "protected_field_count": len(result.warnings),
+        "omitted_fields": result.omitted_fields,
+        "warnings": result.warnings,
+    }
+
+# ---------------------------------------------------------------------------
+# Endpoints
+# ---------------------------------------------------------------------------
+
+@app.get("/api/health")
+def health():
+    return {"status": "ok", "version": "2.0.0"}
+
+
+@app.get("/api/datasets")
+def list_datasets():
+    """List available mock datasets with real item counts."""
+    result = {}
+    for name, data in DATASETS.items():
+        if data is not None:
+            result[name] = {
+                "items": len(data),
+                "raw_tokens": count_tokens(data).tokens,
+            }
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Phase 1: Task-Aware Selective Compression
+# ---------------------------------------------------------------------------
+
+@app.get("/api/task-profiles")
+def list_task_profiles(tool_slug: str | None = None):
+    """List available task-aware compression profiles."""
+    if tool_slug:
+        profiles = list_profiles_for_tool(tool_slug)
+    else:
+        from aperture.compression.task_profiles import _ALL_PROFILES as profiles
+    return {
+        "profiles": [
+            {
+                "task_name": p.task_name,
+                "tool_slug": p.tool_slug,
+                "required_fields": sorted(p.required_fields),
+                "droppable_fields": sorted(p.droppable_fields)[:20],  # Truncated for response size
+                "description": p.description,
+            }
+            for p in profiles
+        ]
+    }
+
+
+@app.post("/api/compress/task-aware")
+def compress_task_aware(payload: dict):
+    """Compress with task-aware field protection.
+
+    Body: {
+        "dataset": "notion_pages",
+        "tool_slug": "NOTION_SEARCH_NOTION_PAGE",
+        "mode": "balanced",
+        "task": "search_and_list",
+        "required_fields": ["id", "title"]  // optional explicit fields
+    }
+    """
+    dataset_name = payload.get("dataset", "")
+    mode = payload.get("mode", "balanced")
+    task = payload.get("task")
+    required_fields = payload.get("required_fields")
+
+    if dataset_name in DATASETS and DATASETS[dataset_name] is not None:
+        data = DATASETS[dataset_name]
+    else:
+        # Try as a mock tool
+        data = get_mock_result(payload.get("tool_slug", ""), payload.get("arguments", {}))
+
+    tool_slug = payload.get("tool_slug", f"DATASET_{dataset_name.upper()}")
+
+    # Run baseline (no task awareness)
+    baseline = _measure_compression(data, tool_slug, mode)
+
+    # Run task-aware
+    task_result = _measure_compression(data, tool_slug, mode, task=task, required_fields=required_fields)
+
+    # Get the profile for display
+    profile = get_profile(tool_slug, task) if task else None
+
+    return {
+        "baseline": baseline,
+        "task_aware": task_result,
+        "profile": {
+            "task_name": profile.task_name if profile else None,
+            "tool_slug": profile.tool_slug if profile else None,
+            "required_fields": sorted(profile.required_fields) if profile else [],
+            "description": profile.description if profile else "",
+        } if profile else None,
+        "delta_tokens_saved": task_result["tokens_saved"] - baseline["tokens_saved"],
+        "quality_preservation": "High — protected fields retained, droppable fields aggressively compressed",
+    }
+
+
+# ---------------------------------------------------------------------------
+# Phase 2: Lazy Hydration + Placeholders
+# ---------------------------------------------------------------------------
+
+@app.post("/api/compress/placeholder")
+def compress_with_placeholder(payload: dict):
+    """Compress a result to a placeholder for lazy hydration.
+
+    Body: {
+        "tool_slug": "GITHUB_LIST_ISSUES",
+        "arguments": {"per_page": 5},
+        "mode": "balanced",
+        "include_sample": true,
+        "sample_size": 3
+    }
+
+    Returns a compact placeholder with a reference ID.
+    The full result is cached server-side and can be hydrated on demand.
+    """
+    tool_slug = payload.get("tool_slug", "")
+    arguments = payload.get("arguments", {})
+    mode = payload.get("mode", "balanced")
+    include_sample = payload.get("include_sample", True)
+    sample_size = payload.get("sample_size", 3)
+
+    # Get the full result
+    raw_result = get_mock_result(tool_slug, arguments)
+    raw_tc = count_tokens(raw_result)
+
+    # Store full result for hydration
+    ref_id = store_full_result(tool_slug, arguments, raw_result)
+
+    # Create placeholder
+    placeholder = make_placeholder(
+        ref_id, tool_slug, raw_result,
+        include_sample=include_sample, sample_size=sample_size
+    )
+    placeholder_tc = count_tokens(placeholder)
+
+    # Also run normal compression for comparison
+    compressed = compress_tool_output(raw_result, tool_slug, mode=mode, model="gpt-4o")
+    comp_tc = count_tokens(compressed.compressed_payload)
+
+    return {
+        "ref_id": ref_id,
+        "tool_slug": tool_slug,
+        "placeholder": placeholder,
+        "placeholder_tokens": placeholder_tc.tokens,
+        "raw_tokens": raw_tc.tokens,
+        "compressed_tokens": comp_tc.tokens,
+        "tokens_saved_vs_raw": raw_tc.tokens - placeholder_tc.tokens,
+        "tokens_saved_vs_compressed": comp_tc.tokens - placeholder_tc.tokens,
+        "savings_percent_vs_raw": round((raw_tc.tokens - placeholder_tc.tokens) / max(raw_tc.tokens, 1) * 100, 1),
+        "full_result_available": True,
+        "hydrate_endpoint": f"/api/hydrate/{ref_id}",
+    }
+
+
+@app.get("/api/hydrate/{ref_id}")
+def hydrate_result(ref_id: str, field_path: str | None = None, index: int | None = None):
+    """Hydrate a cached result by reference ID.
+
+    Query params:
+        field_path: Dot-path to a specific field (e.g. "assignee.login")
+        index: For list payloads, which item to hydrate
+    """
+    result = hydrate(ref_id, field_path=field_path, index=index)
+    if result is None:
+        return {"error": "Reference not found or expired", "ref_id": ref_id}
+
+    return {
+        "ref_id": ref_id,
+        "field_path": field_path,
+        "index": index,
+        "hydrated": result,
+        "hydrated_tokens": count_tokens(result).tokens,
+    }
+
+
+@app.get("/api/hydration/stats")
+def hydration_stats():
+    """Statistics for the hydration cache."""
+    return get_hydration_stats()
+
+
+# ---------------------------------------------------------------------------
+# Phase 3: Prompt Caching Optimization
+# ---------------------------------------------------------------------------
+
+@app.post("/api/prompt-cache/optimize")
+def optimize_prompt_for_caching(payload: dict):
+    """Build a cache-optimized prompt structure with multi-tier breakpoints.
+
+    Body: {
+        system_prompt, tool_schemas[], static_context[], tool_results[], user_messages[],
+        provider: "anthropic" | "openai" | "generic",
+        history_turn_count: int (0+; rolling 5m breakpoint kicks in past 20)
+    }
+    """
+    provider = payload.get("provider", "anthropic")
+    history_turn_count = int(payload.get("history_turn_count", 0))
+
+    prompt = build_cache_optimized_prompt(
+        system_prompt=payload.get("system_prompt"),
+        tool_schemas=payload.get("tool_schemas", []),
+        static_context=payload.get("static_context", []),
+        tool_results=payload.get("tool_results", []),
+        user_messages=payload.get("user_messages", []),
+        provider=provider,
+        model=payload.get("model"),
+        history_turn_count=history_turn_count,
+    )
+
+    for block in prompt.blocks:
+        block.estimated_tokens = count_tokens(block.content, model="gpt-4o").tokens
+
+    savings = estimate_savings(
+        prompt,
+        provider=provider,
+        expected_turns=int(payload.get("expected_turns", 8)),
+    )
+
+    return {
+        "blocks": [
+            {
+                "type": b.block_type,
+                "cacheable": b.cacheable,
+                "ttl": b.ttl,
+                "estimated_tokens": b.estimated_tokens,
+                "prefix_hash": b.prefix_hash,
+                "content_preview": b.content[:200] + "..." if len(b.content) > 200 else b.content,
+            }
+            for b in prompt.blocks
+        ],
+        "ordering": "stable_first_dynamic_last",
+        "provider": prompt.provider,
+        "estimated_savings": savings,
+        "recommendation": (
+            "Up to 4 cache_control breakpoints across two TTL tiers: 1h for tool schemas + "
+            "static context (rarely change), 5m for tool results and rolling user messages "
+            "(turn over each turn). Anthropic enforces a 1h-then-5m order — the builder "
+            "respects this automatically."
+        ),
+    }
+
+
+# ---------------------------------------------------------------------------
+# Phase 4: Upstream Field Selection
+# ---------------------------------------------------------------------------
+
+@app.get("/api/field-profiles")
+def list_field_profiles(tool_slug: str | None = None):
+    """List available upstream field selection profiles."""
+    if tool_slug:
+        profiles = list_field_profiles_for_tool(tool_slug)
+    else:
+        from aperture.compression.field_profiles import _ALL_FIELD_PROFILES as profiles
+    return {
+        "profiles": [
+            {
+                "tool_slug": p.tool_slug,
+                "profile_name": p.profile_name,
+                "fields": p.fields,
+                "page_size": p.page_size,
+                "description": p.description,
+            }
+            for p in profiles
+        ]
+    }
+
+
+@app.post("/api/compress/field-select")
+def compress_with_field_selection(payload: dict):
+    """Compress by simulating upstream field selection.
+
+    Body: {
+        "dataset": "notion_pages",
+        "tool_slug": "NOTION_SEARCH_NOTION_PAGE",
+        "mode": "balanced",
+        "field_profile": "minimal",   // or explicit "fields": ["id", "title"]
+        "fields": ["id", "title", "url"]
+    }
+    """
+    dataset_name = payload.get("dataset", "")
+    mode = payload.get("mode", "balanced")
+    tool_slug = payload.get("tool_slug", f"DATASET_{dataset_name.upper()}")
+
+    if dataset_name in DATASETS and DATASETS[dataset_name] is not None:
+        data = DATASETS[dataset_name]
+    else:
+        data = get_mock_result(tool_slug, payload.get("arguments", {}))
+
+    # Resolve field list from profile or explicit
+    field_profile_name = payload.get("field_profile")
+    explicit_fields = payload.get("fields")
+
+    if field_profile_name:
+        profile = get_field_profile(tool_slug, field_profile_name)
+        if profile:
+            fields = profile.fields
+        else:
+            return {"error": f"Field profile '{field_profile_name}' not found for {tool_slug}"}
+    elif explicit_fields:
+        fields = explicit_fields
+    else:
+        return {"error": "Provide either 'field_profile' or 'fields'"}
+
+    # Baseline: no field selection
+    baseline = _measure_compression(data, tool_slug, mode)
+
+    # With field selection applied upstream
+    filtered = _measure_compression(data, tool_slug, mode, apply_field_filter=fields)
+
+    return {
+        "baseline": baseline,
+        "field_selected": filtered,
+        "fields_applied": fields,
+        "delta_tokens_saved": filtered["tokens_saved"] - baseline["tokens_saved"],
+        "quality_note": "Lossless at source — only requested fields were ever fetched",
+    }
+
+
+# ---------------------------------------------------------------------------
+# Existing endpoints (updated)
+# ---------------------------------------------------------------------------
+
+@app.post("/api/compress/dataset")
+def compress_dataset(payload: dict):
+    """Compress a dataset with real measurements."""
+    dataset_name = payload.get("dataset", "")
+    mode = payload.get("mode", "balanced")
+
+    if dataset_name not in DATASETS or DATASETS[dataset_name] is None:
+        return {"error": f"Dataset '{dataset_name}' not found"}
+
+    data = DATASETS[dataset_name]
+    tool_slug = payload.get("tool_slug", f"DATASET_{dataset_name.upper()}")
+    return _measure_compression(data, tool_slug, mode)
+
+
+@app.post("/api/execute")
+def execute_tool(payload: dict):
+    """Execute a tool and compress with real measurements."""
+    tool_slug = payload.get("tool_slug", "")
+    arguments = payload.get("arguments", {})
+    mode = payload.get("mode", "balanced")
+
+    raw_result = get_mock_result(tool_slug, arguments)
+    return _measure_compression(raw_result, tool_slug, mode)
+
+
+@app.get("/api/benchmarks")
+def get_benchmarks():
+    """Run real benchmarks across all datasets and tools."""
+    benchmarks = []
+
+    # Dataset benchmarks
+    dataset_tools = {
+        "notion_pages": "NOTION_SEARCH_NOTION_PAGE",
+        "linear_issues": "LINEAR_GET_LINEAR_USER_ISSUES",
+        "supabase_users": "SUPABASE_FETCH_TABLE_ROWS",
+    }
+
+    for dataset_name, tool_slug in dataset_tools.items():
+        data = DATASETS.get(dataset_name)
+        if data is None:
+            continue
+
+        for mode in ["off", "safe", "balanced", "low"]:
+            result = _measure_compression(data, tool_slug, mode)
+            benchmarks.append({
+                "name": f"{dataset_name} ({mode})",
+                "toolkit": dataset_name.split("_")[0],
+                **result,
+            })
+
+    # Tool benchmarks
+    tool_benchmarks = [
+        ("GITHUB_GET_A_REPOSITORY", {}),
+        ("GITHUB_LIST_ISSUES", {"per_page": 5}),
+        ("GITHUB_LIST_PULL_REQUESTS", {"per_page": 3}),
+        ("GMAIL_SEARCH_EMAILS", {"query": "composio", "max_results": 3}),
+        ("SLACK_SEARCH_MESSAGES", {"query": "bug", "count": 4}),
+    ]
+
+    for tool_slug, args in tool_benchmarks:
+        raw_result = get_mock_result(tool_slug, args)
+        for mode in ["off", "safe", "balanced", "low"]:
+            result = _measure_compression(raw_result, tool_slug, mode)
+            benchmarks.append({
+                "name": f"{tool_slug} ({mode})",
+                "toolkit": tool_slug.split("_")[0],
+                **result,
+            })
+
+    return {"benchmarks": benchmarks}
+
+
+_SAMPLE_SCHEMAS = {
+    "GITHUB_GET_A_REPOSITORY": {
+        "name": "GITHUB_GET_A_REPOSITORY",
+        "description": "Fetch a GitHub repository by owner and name.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "owner": {"type": "string", "description": "Repository owner."},
+                "repo": {"type": "string", "description": "Repository name."},
+            },
+            "required": ["owner", "repo"],
+        },
+    },
+    "GITHUB_LIST_ISSUES": {
+        "name": "GITHUB_LIST_ISSUES",
+        "description": "List issues in a repository.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "owner": {"type": "string"},
+                "repo": {"type": "string"},
+                "state": {"type": "string", "enum": ["open", "closed", "all"]},
+                "labels": {"type": "string", "description": "Comma-separated labels."},
+                "assignee": {"type": "string"},
+                "per_page": {"type": "integer", "default": 30, "maximum": 100},
+            },
+            "required": ["owner", "repo"],
+        },
+    },
+    "GMAIL_SEARCH_EMAILS": {
+        "name": "GMAIL_SEARCH_EMAILS",
+        "description": "Search Gmail using Gmail query syntax.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "Gmail search query."},
+                "max_results": {"type": "integer", "default": 10},
+                "include_spam_trash": {"type": "boolean", "default": False},
+            },
+            "required": ["query"],
+        },
+    },
+}
+
+
+@app.get("/api/waterfall")
+def get_waterfall():
+    """Build a real token waterfall from a simulated multi-tool run."""
+    tools = [
+        ("GITHUB_GET_A_REPOSITORY", {"owner": "composioHQ", "repo": "composio"}),
+        ("GITHUB_LIST_ISSUES", {"owner": "composioHQ", "repo": "composio", "per_page": 5}),
+        ("GMAIL_SEARCH_EMAILS", {"query": "bug OR error", "max_results": 3}),
+    ]
+
+    run_steps = []
+    total_raw = 0
+    total_compressed = 0
+    schema_tokens = 0
+    arg_tokens = 0
+
+    for tool_slug, args in tools:
+        schema = _SAMPLE_SCHEMAS.get(tool_slug, {"name": tool_slug, "parameters": {}})
+        schema_tokens += count_tokens(schema, model="gpt-4o").tokens
+        arg_tokens += count_tokens(args, model="gpt-4o").tokens
+
+        raw = get_mock_result(tool_slug, args)
+        raw_tc = count_tokens(raw, model="gpt-4o")
+        result = compress_tool_output(raw, tool_slug, mode="balanced", model="gpt-4o")
+        comp_tc = count_tokens(result.compressed_payload, model="gpt-4o")
+
+        run_steps.append({
+            "tool_slug": tool_slug,
+            "raw_tokens": raw_tc.tokens,
+            "compressed_tokens": comp_tc.tokens,
+            "tokens_saved": max(0, raw_tc.tokens - comp_tc.tokens),
+            "strategy": result.strategy,
+        })
+        total_raw += raw_tc.tokens
+        total_compressed += comp_tc.tokens
+
+    return {
+        "steps": run_steps,
+        "total_raw": total_raw,
+        "total_compressed": total_compressed,
+        "total_saved": max(0, total_raw - total_compressed),
+        "schema_tokens": schema_tokens,
+        "argument_tokens": arg_tokens,
+        "overall_reduction": (
+            (total_raw - total_compressed) / total_raw * 100 if total_raw else 0
+        ),
+    }
+
+
+@app.get("/api/cache/stats")
+def get_cache_stats():
+    """Run real cache operations and return real stats."""
+    cache = CachedExecutor()
+    config = ApertureRunConfig(
+        run_id="stats-demo",
+        model="gpt-4o",
+        effort_mode="balanced",
+        cache_bypass=False,
+    )
+
+    tools = [
+        ("GITHUB_GET_A_REPOSITORY", {}, True),
+        ("GITHUB_LIST_ISSUES", {"per_page": 5}, True),
+        ("GMAIL_SEND_EMAIL", {"to": "test@test.com"}, False),
+    ]
+
+    stats = []
+    for tool_slug, args, expected_cacheable in tools:
+        def make_executor():
+            data = get_mock_result(tool_slug, args)
+            return lambda: data
+
+        _, event = cache.execute(
+            tool_slug=tool_slug,
+            arguments=args,
+            executor=make_executor(),
+            config=config,
+        )
+
+        stats.append({
+            "tool_slug": tool_slug,
+            "cache_status": event.cache_status,
+            "cacheable": event.cache_status in ("hit", "miss"),
+        })
+
+    # Run again to get cache hits
+    for tool_slug, args, _ in tools[:2]:
+        def make_executor():
+            data = get_mock_result(tool_slug, args)
+            return lambda: data
+
+        _, event = cache.execute(
+            tool_slug=tool_slug,
+            arguments=args,
+            executor=make_executor(),
+            config=config,
+        )
+
+        stats.append({
+            "tool_slug": tool_slug + " (2nd call)",
+            "cache_status": event.cache_status,
+            "cacheable": True,
+        })
+
+    return {"stats": stats}
+
+
+# ---------------------------------------------------------------------------
+# Type-grouped schema compaction (port of itrummer/schemacompression)
+# ---------------------------------------------------------------------------
+
+@app.post("/api/schema/compact")
+def compact_tool_schema(payload: dict):
+    """Render a JSON Schema or OpenAI tool definition as a compact one-liner.
+
+    Body: {"schema": {...}}  — a tool definition with name + parameters.
+    Returns: {"compact": str, "json_tokens": int, "compact_tokens": int, "saved": int, "ratio": float}.
+    """
+    schema = payload.get("schema") or payload
+    if not isinstance(schema, dict):
+        return {"error": "Provide a JSON object under `schema`"}
+
+    measured = measure_compaction(schema, count_tokens, model="gpt-4o")
+    return {
+        "name": measured.name,
+        "compact": measured.compact,
+        "json_tokens": measured.json_tokens,
+        "compact_tokens": measured.compact_tokens,
+        "saved": measured.saved,
+        "ratio": measured.ratio,
+        "savings_percent": round((1 - measured.ratio) * 100, 1),
+    }
+
+
+@app.get("/api/schema/sample")
+def schema_sample():
+    """Return a few sample schemas and their compacted forms for the demo."""
+    samples = [
+        _SAMPLE_SCHEMAS["GITHUB_LIST_ISSUES"],
+        _SAMPLE_SCHEMAS["GITHUB_GET_A_REPOSITORY"],
+        _SAMPLE_SCHEMAS["GMAIL_SEARCH_EMAILS"],
+        {
+            "name": "NOTION_SEARCH_NOTION_PAGE",
+            "description": "Search Notion pages by title or content.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string"},
+                    "page_size": {"type": "integer", "default": 10},
+                    "filter": {"type": "object", "properties": {
+                        "property": {"type": "string"},
+                        "value": {"type": "string"},
+                    }},
+                    "sort": {"type": "string", "enum": ["last_edited_time", "created_time"]},
+                    "include_archived": {"type": "boolean", "default": False},
+                },
+                "required": ["query"],
+            },
+        },
+    ]
+    out = []
+    for sch in samples:
+        m = measure_compaction(sch, count_tokens, model="gpt-4o")
+        out.append({
+            "name": m.name,
+            "compact": m.compact,
+            "json_tokens": m.json_tokens,
+            "compact_tokens": m.compact_tokens,
+            "saved": m.saved,
+            "savings_percent": round((1 - m.ratio) * 100, 1),
+        })
+    return {"samples": out}
+
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run("api.main:app", host="0.0.0.0", port=8000, reload=True)

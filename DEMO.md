@@ -1,127 +1,79 @@
-# 🎬 Aperture Hackathon Demo
+# Aperture Demo
 
-**Quick links:**
-- [Live Google Sheet (10K rows)](https://docs.google.com/spreadsheets/d/1eyr5XV1pGyJTbRWpFVIp_fcrLK-oEp4tlVg3l1VsqR0/edit)
-- [GitHub repo (demo branch)](https://github.com/ManagementMO/Aperture/tree/demo)
-- [Dashboard (run locally)](#dashboard)
-
----
-
-## 🎯 The Pitch (30 seconds)
-
-> Composio returns **100× more tokens than competitors**. Aperture fixes this.
-> 
-> A 10,000-row Google Sheet read via Composio returns **547,522 tokens** — that's **4.3× your entire GPT-4o context window**. Without Aperture, your agent crashes.
->
-> With Aperture: **5,728 tokens** — a **99% reduction** — with representative samples + statistics. The LLM still answers "what's the average follower count?" perfectly.
+> Composio agents leak context. A 10K-row Google Sheet read returns ~547K
+> tokens — 4× a GPT-4o context window. Aperture brings that down to ~5.7K
+> with representative samples + statistics. The agent still answers
+> "what's the average follower count?" perfectly.
 
 ---
 
-## 📹 Recorded Demos
+## Run it
 
-### 1. Honest Comparison — Vanilla vs Aperture
 ```bash
-# Play the recording
-asciinema play demo.cast
+# Backend (FastAPI on :8000)
+uv sync
+uv run uvicorn api.main:app --host 0.0.0.0 --port 8000
 
-# Or view in browser
-asciinema upload demo.cast  # gives you a shareable URL
+# Frontend (Vite + React on :5173)
+cd frontend && npm install && npm run dev -- --port 5173
 ```
 
-**What it shows:**
-- Vanilla Composio: 547,522 tokens, $1.37, no cache
-- Aperture 1st call: 548K raw → 5,728 compressed, $0.014, cache miss
-- Aperture 2nd call: cache hit, $0, 489ms (Redis only)
+Open `http://localhost:5173/`.
 
-### 2. Agent Workflow — Multi-Step Demo
-```bash
-asciinema play demo_agent.cast
-```
-
-**What it shows:**
-- 4-step agent workflow (GitHub repo → issues → PRs → commits)
-- 25,349 raw tokens → 4,995 compressed = **80.7% savings**
-- Context window: 19.8% → 3.9%
-- Cache hits on second run
-
-### 3. Dynamic Agent — Semantic Routing
-```bash
-asciinema play demo_dynamic.cast
-```
-
-**What it shows:**
-- Agent receives natural language intent: "Find all open bugs"
-- Aperture semantically matches to 23 tools across 9 domains
-- Auto-generates compression profiles
-- Executes with intelligent effort selection
-
-### 4. Benchmarks — Mode Comparison
-```bash
-asciinema play demo_benchmark.cast
-```
-
-**What it shows:**
-- Per-tool breakdown: raw vs compressed, latency, cost, quality
-- Scenario summary across all modes (off/low/medium/high/auto)
+Health check: `curl http://localhost:8000/api/health` → `{"status":"ok","version":"2.0.0"}`.
 
 ---
 
-## 🖥️ Dashboard
+## Dashboard tour
 
-```bash
-uv run streamlit run dashboard/app.py
-```
+| Section | Page | What it shows |
+|---------|------|---------------|
+| Measurement | Overview | Real raw token counts per dataset |
+|             | Token Waterfall | Multi-tool run with schema / argument / result breakdown |
+|             | Compression | Per-dataset, per-tool compression results |
+|             | Schema Compaction | Effort modes and a before/after example |
+|             | Cache Stats | Live cache events from `CachedExecutor` |
+|             | Benchmarks | Compression matrix across datasets × modes |
+| Optimizations | Phase 1 — Task-Aware | Protect fields the current task needs |
+|              | Phase 2 — Placeholders | Send a tiny ref, hydrate on demand |
+|              | Phase 3 — Prompt Cache | Reorder so stable content gets cached |
+|              | Phase 4 — Field Select | Request only the fields you actually use |
 
-**5 tabs:**
-1. **Overview** — Architecture diagram + key metrics
-2. **Google Sheets** — Side-by-side raw vs compressed with context bars
-3. **Agent Workflows** — Scenario selector + per-step breakdown + token waterfall
-4. **Dynamic Agent** — Intent matching + auto-profile generation
-5. **Benchmarks** — Full suite runner + comparison matrix
+Every number on the dashboard is measured by `tiktoken`. Nothing is hardcoded.
 
 ---
 
-## 🚀 Live Demo Commands
+## Recorded asciicasts
+
+The repo ships four `.cast` recordings:
 
 ```bash
-# 1. Honest comparison (vanilla vs Aperture)
+asciinema play demo.cast            # vanilla Composio vs Aperture
+asciinema play demo_agent.cast      # 4-step agent workflow
+asciinema play demo_dynamic.cast    # semantic routing + auto profiles
+asciinema play demo_benchmark.cast  # benchmark suite
+```
+
+---
+
+## CLI
+
+```bash
 uv run python scripts/honest_comparison.py
-
-# 2. Agent workflow
 uv run python scripts/demo.py --scenario research_project --mode auto --cache
-
-# 3. Dynamic agent
 uv run python scripts/dynamic_agent_demo.py --intent "Find all open bugs in composio"
-
-# 4. Benchmarks
 uv run python scripts/benchmark.py --all
-
-# 5. Dashboard
-uv run streamlit run dashboard/app.py
 ```
 
 ---
 
-## 📊 The Numbers
-
-| Metric | Vanilla Composio | Aperture |
-|---|---|---|
-| **10K rows** | 547,522 tokens | 5,728 tokens (99%) |
-| **4-step workflow** | 25,349 tokens | 4,995 tokens (80%) |
-| **Cost (GPT-4o)** | ~$1.37 | ~$0.014 |
-| **Context window** | 428% overflow | 4.5% ✅ |
-| **2nd call** | 3,500ms + API call | 489ms, no API call |
-| **Cache scoping** | None | Per-user, per-tenant |
-
----
-
-## 🏗️ Architecture
+## Architecture
 
 ```
-WITHOUT Aperture:
-    Agent → Composio API → Raw Result (547K tokens) → LLM ❌ CRASH
+WITHOUT Aperture
+    Agent → Composio API → Raw Result (547K tokens) → LLM ❌ context overflow
 
-WITH Aperture:
+WITH Aperture
     Agent → ApertureRunner → Composio API → Raw Result (547K)
                                 ↓
                         Tabular Compression (sample + stats)
@@ -129,35 +81,21 @@ WITH Aperture:
                         Redis Cache → 5,728 tokens → LLM ✅
 ```
 
-**Key insight:** Aperture does NOT change what tools the agent calls. It only optimizes HOW results are delivered to the LLM.
+Aperture does **not** change which tools the agent calls. It only optimizes
+how results are delivered to the LLM.
 
 ---
 
-## 🔑 What Makes This Scalable
+## What's real vs. simulated
 
-1. **Semantic routing** — Works with ANY Composio toolkit, no hardcoding
-2. **Auto-profiles** — New tools get compression rules automatically
-3. **Cache scoping** — `aperture:cache:u:user-A:TOOL:hash` — no data leaks
-4. **Effort modes** — `auto` mode intelligently picks compression per call
-5. **Context budget** — Tracks cumulative usage, warns before overflow
+| Capability | State |
+|------------|-------|
+| Token counting (tiktoken) | Real |
+| Compression engine | Real, all five modes |
+| Tool-specific normalizers (Gmail / Slack) | Real |
+| Cache (Redis or in-memory fallback) | Real |
+| Field selection (Phase 4) | Simulated client-side until a Composio hook is wired up |
+| Prompt caching (Phase 3) | Builder + estimator only — provider cache markers not yet sent |
+| Hydration cache (Phase 2) | In-memory only; Redis backend is wired but not enabled |
 
----
-
-## ⚡ Quick Start for Judges
-
-```bash
-git clone https://github.com/ManagementMO/Aperture.git
-cd Aperture
-git checkout demo
-uv sync
-
-# Run the demo
-uv run python scripts/honest_comparison.py
-
-# Or open the dashboard
-uv run streamlit run dashboard/app.py
-```
-
----
-
-*Built for the May 15-16, 2026 hackathon. Demo branch: `demo`*
+See `TRANSFER.md` for the latest handoff notes and known issues.

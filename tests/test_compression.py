@@ -19,14 +19,17 @@ class TestCompression:
         assert "b" not in result.compressed_payload
         assert result.tokens_saved > 0
 
-    def test_safe_drops_api_urls(self):
+    def test_safe_drops_api_url_keeps_html_url(self):
         payload = {
             "title": "Issue",
             "url": "https://api.github.com/repos/foo/bar/issues/1",
             "html_url": "https://github.com/foo/bar/issues/1",
         }
         result = compress_tool_output(payload, "TEST_TOOL", mode="safe")
+        # The raw API URL is bookkeeping noise — drop it.
         assert "url" not in result.compressed_payload
+        # html_url is the canonical user-facing link — keep it.
+        assert "html_url" in result.compressed_payload
         assert "title" in result.compressed_payload
 
     def test_balanced_flattens_user(self):
