@@ -90,6 +90,27 @@ _CURATED_TOOL_SLUGS: dict[str, list[str]] = {
         "SLACK_LIST_ALL_SLACK_TEAM_CHANNELS_WITH_VARIOUS_FILTERS",
         "SLACK_FETCH_CONVERSATION_HISTORY",
     ],
+    "supabase": [
+        # SQL access — the workhorse for "fetch rows from <table>" asks.
+        "SUPABASE_BETA_RUN_SQL_QUERY",
+        # Schema introspection so the agent can plan queries it doesn't
+        # already know the table layout for.
+        "SUPABASE_LIST_TABLES",
+        "SUPABASE_GET_TABLE_SCHEMAS",
+        "SUPABASE_GET_DATABASE_METADATA",
+        # Project context — useful when the user asks "which projects do I have"
+        "SUPABASE_LIST_ALL_PROJECTS",
+        "SUPABASE_GET_PROJECT",
+        # Storage / functions — read-only browse.
+        "SUPABASE_LIST_BUCKETS",
+        "SUPABASE_LIST_FUNCTIONS",
+    ],
+    "youtube": [
+        # YouTube is connected on this account. Read-only browse only.
+        "YOUTUBE_SEARCH",
+        "YOUTUBE_VIDEO_DETAILS",
+        "YOUTUBE_LIST_USER_PLAYLISTS",
+    ],
 }
 
 _DEFAULT_MODEL = os.getenv("APERTURE_AGENT_MODEL") or "claude-haiku-4-5"
@@ -639,6 +660,16 @@ _SYSTEM_PROMPT = (
     "information, give a short, direct answer. Do not call tools "
     "speculatively. Be literal: if the user gives an exact value (a row "
     "count, a date, an owner/repo) honor it verbatim — do not infer.\n\n"
+    "DISCOVERY: when the user references their data without naming a "
+    "project, table, repo, etc., USE THE TOOLS to discover it — don't "
+    "ask the user for IDs they expect you to look up. Examples:\n"
+    "  • 'rows from supabase' → SUPABASE_LIST_ALL_PROJECTS, then "
+    "SUPABASE_LIST_TABLES on the project, then SUPABASE_BETA_RUN_SQL_QUERY.\n"
+    "  • 'my notion docs' → NOTION_FETCH_DATA / NOTION_QUERY_DATABASE.\n"
+    "  • 'my linear issues' → LINEAR_GET_LINEAR_USER_ISSUES.\n"
+    "  • 'my repos' → GITHUB_FIND_REPOSITORIES with no owner filter.\n"
+    "Asking the user for project IDs they obviously don't have memorized "
+    "is a failure mode — discover them.\n\n"
     "Repository disambiguation: when the user names a project without "
     "an owner, prefer the canonical org. Known canonical owners:\n"
     "  composio, composio sdk → composiohq/composio\n"
