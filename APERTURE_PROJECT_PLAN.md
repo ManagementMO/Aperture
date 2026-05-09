@@ -146,7 +146,54 @@ Aperture is designed to answer both.
 
 ---
 
-# 5. Core Product Thesis
+# 5. Original Three Features Are Still Included
+
+The updated plan does **not** remove the original three major features. It changes the priority order and adds a stronger central feature: **schema-aware tool output compression**.
+
+## 5.1 Original feature retention matrix
+
+| Original feature | Still included? | Current role in updated plan |
+|---|---:|---|
+| 1. Measure token cost from Composio tool/meta-tool responses | Yes | Core proof layer. Now measures raw output tokens, compressed output tokens, tokens saved, and compression ratio. Also still supports meta-tool/schema/result attribution. |
+| 2. Cache repeated tool calls for waste management | Yes | Secondary but retained. Exact-match safe caching for approved read-only calls remains part of the project and can be built after the compression MVP or alongside it. |
+| 3. Optimize tool schemas | Yes | Secondary but retained. Schema description optimization remains in scope, especially for reducing tool discovery/schema exposure cost. |
+
+## 5.2 New feature added on top
+
+The plan now adds a fourth, stronger centerpiece:
+
+| New feature | Why it became primary |
+|---|---|
+| Schema-aware tool output compression | Tool outputs are often much larger than schemas, so compressing them before they hit the model can produce bigger, easier-to-demonstrate token savings. |
+
+## 5.3 Updated priority order
+
+The recommended build order is now:
+
+1. **Token attribution** — measure raw vs compressed cost and prove savings.
+2. **Tool output compression** — main technical contribution.
+3. **Semantic benchmark suite** — prove performance does not meaningfully degrade.
+4. **Safe repeated-call caching** — original feature retained as a strong secondary module.
+5. **Schema description optimization** — original feature retained as another secondary module.
+
+## 5.4 Why caching and schema optimization are secondary, not removed
+
+Caching and schema optimization are still valuable, but output compression gives the clearest project story:
+
+- **Compression helps even on the first tool call.**
+- **Caching helps when calls repeat.**
+- **Schema optimization helps when tools/schemas are shown to the model.**
+
+Together, the full Aperture system reduces token waste across three surfaces:
+
+```text
+Tool schemas      → schema optimization
+Tool outputs      → output compression
+Repeated calls    → caching
+Everything above  → token attribution / measurement
+```
+
+# 6. Core Product Thesis
 
 Agents do not need raw API responses. They need compact, relevant representations that preserve enough information to complete the task.
 
