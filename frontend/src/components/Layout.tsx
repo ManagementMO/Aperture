@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import {
   ArrowDownWideNarrow,
   BarChart3,
+  Banknote,
   FlaskConical,
   LayoutTemplate,
   Sparkles,
