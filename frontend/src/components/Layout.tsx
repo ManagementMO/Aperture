@@ -7,7 +7,6 @@ import {
   FlaskConical,
   LayoutTemplate,
   Sparkles,
-  Swords,
 } from "lucide-react";
 import { CommandPalette } from "@/components/CommandPalette";
 import { WorkspaceChip } from "@/components/WorkspaceChip";
@@ -27,7 +26,6 @@ const navItems: NavItem[] = [
   { path: "/waterfall", label: "Token waterfall", icon: ArrowDownWideNarrow, blurb: "Per-tool flow" },
   { path: "/schema", label: "Schema compaction", icon: LayoutTemplate, blurb: "Tool schemas, smaller" },
   { path: "/benchmarks", label: "Benchmarks", icon: FlaskConical, blurb: "Compression × quality" },
-  { path: "/vs-rtk", label: "vs rtk", icon: Swords, blurb: "Head-to-head signal probes" },
 ];
 
 function ApertureMark() {

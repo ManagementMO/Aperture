@@ -1178,27 +1178,6 @@ def prewarm() -> dict:
     return prewarm_prompt_cache()
 
 
-# ---------------------------------------------------------------------------
-# Aperture vs RTK head-to-head
-# ---------------------------------------------------------------------------
-
-_RTK_BENCH_CACHE: dict | None = None
-
-
-@app.get("/api/bench/rtk")
-def bench_vs_rtk(refresh: bool = False) -> dict:
-    """Run the same fixtures through `rtk json` and Aperture's compression
-    engine, count tokens, and run quality probes against both outputs.
-
-    Cached after first run because subprocess calls aren't free."""
-    global _RTK_BENCH_CACHE
-    if _RTK_BENCH_CACHE is not None and not refresh:
-        return _RTK_BENCH_CACHE
-    from aperture.benchmarks.vs_rtk import run_all
-    _RTK_BENCH_CACHE = run_all()
-    return _RTK_BENCH_CACHE
-
-
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("api.main:app", host="0.0.0.0", port=8000, reload=True)

@@ -91,11 +91,13 @@ export function CommandPalette() {
 
       {open && (
         <div
-          className="fixed inset-0 z-50 flex items-start justify-center pt-[14vh] bg-black/50 backdrop-blur-sm"
+          className="fixed inset-0 z-[100] flex items-start justify-center pt-[14vh] backdrop-blur-md"
+          style={{ backgroundColor: "rgba(0, 0, 0, 0.72)" }}
           onClick={() => setOpen(false)}
         >
           <div
-            className="w-[560px] max-w-[92vw] rounded-xl border border-border bg-popover shadow-2xl shadow-black/40 overflow-hidden"
+            className="w-[560px] max-w-[92vw] rounded-xl border border-border shadow-2xl shadow-black/60 overflow-hidden"
+            style={{ backgroundColor: "var(--aperture-surface-container-high, #161616)" }}
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center gap-2.5 px-3 h-11 border-b border-border">
