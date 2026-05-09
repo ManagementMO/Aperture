@@ -5,7 +5,7 @@ from typing import Any, Callable
 
 from aperture.cache.interceptor import CachedExecutor
 from aperture.compression.engine import compress_tool_output
-from aperture.contracts import ApertureRunConfig, CompressionResult
+from aperture.contracts import ApertureRunConfig
 from aperture.observability.trace import RunTrace
 from aperture.routing.effort_modes import get_effort_config
 from aperture.routing.intelligent_effort import EffortDecision, select_effort
@@ -101,16 +101,7 @@ class ApertureRunner:
             reason=cache_event.reason,
         )
 
-        if cache_event.cache_status == "hit":
-            compressed_result = CompressionResult(
-                compressed_payload=raw_result,
-                raw_tokens=0,
-                compressed_tokens=0,
-                tokens_saved=0,
-                compression_ratio=1.0,
-                strategy="cache_hit",
-            )
-        elif self._auto_mode and required_signals:
+        if self._auto_mode and required_signals:
             # Auto mode + signals → calibrate against the actual schema.
             gate_result = select_mode_for_quality(
                 raw_payload=raw_result,

@@ -38,7 +38,7 @@ from aperture.schema_optimizer.type_group import compact_schema, measure_compact
 from aperture.tokenization import count_tokens
 from aperture.demo.scenarios import get_mock_result
 from aperture.cache.interceptor import CachedExecutor
-from aperture.contracts import ApertureRunConfig, CompressionResult
+from aperture.contracts import ApertureRunConfig
 from aperture.routing.effort_modes import get_effort_config
 
 # Load real mock datasets
@@ -703,12 +703,6 @@ def get_waterfall() -> dict:
 def get_cache_stats():
     """Run real cache operations and return real stats."""
     cache = CachedExecutor()
-    config = ApertureRunConfig(
-        run_id="stats-demo",
-        model="gpt-4o",
-        effort_mode="balanced",
-        cache_bypass=False,
-    )
 
     tools = [
         ("GITHUB_GET_A_REPOSITORY", {}, True),
@@ -718,6 +712,8 @@ def get_cache_stats():
 
     stats = []
     for tool_slug, args, expected_cacheable in tools:
+        config = _cache_demo_config(tool_slug)
+
         def make_executor():
             data = get_mock_result(tool_slug, args)
             return lambda: data
@@ -732,11 +728,13 @@ def get_cache_stats():
         stats.append({
             "tool_slug": tool_slug,
             "cache_status": event.cache_status,
-            "cacheable": event.cache_status in ("hit", "miss"),
+            "cacheable": expected_cacheable,
         })
 
     # Run again to get cache hits
     for tool_slug, args, _ in tools[:2]:
+        config = _cache_demo_config(tool_slug)
+
         def make_executor():
             data = get_mock_result(tool_slug, args)
             return lambda: data
@@ -755,6 +753,23 @@ def get_cache_stats():
         })
 
     return {"stats": stats}
+
+
+def _cache_demo_config(tool_slug: str) -> ApertureRunConfig:
+    from aperture.cache.policy import get_cache_scope, is_cacheable
+
+    connected_account_id = (
+        "stats_account"
+        if is_cacheable(tool_slug) and get_cache_scope(tool_slug) == "account"
+        else None
+    )
+    return ApertureRunConfig(
+        run_id="stats-demo",
+        model="gpt-4o",
+        effort_mode="medium",
+        cache_bypass=False,
+        connected_account_id=connected_account_id,
+    )
 
 
 # ---------------------------------------------------------------------------

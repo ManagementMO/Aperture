@@ -2,10 +2,11 @@
 
 from typing import Any, Callable
 
-from aperture.cache.key_builder import build_cache_key
-from aperture.cache.policy import get_cache_ttl, is_cacheable
+from aperture.cache.key_builder import build_cache_key, cache_key_hash
+from aperture.cache.policy import get_cache_scope, get_cache_ttl, is_cacheable
 from aperture.cache.store import CacheStore
 from aperture.contracts import ApertureRunConfig, CacheEvent
+from aperture.tokenization import count_tokens
 
 
 class CachedExecutor:
@@ -26,14 +27,18 @@ class CachedExecutor:
         Returns:
             (result, cache_event)
         """
+        cacheable = is_cacheable(tool_slug)
+        cache_scope = get_cache_scope(tool_slug) if cacheable else "none"
+
         # Check if caching is enabled and tool is cacheable
-        if config.cache_bypass or not is_cacheable(tool_slug):
+        if config.cache_bypass or not cacheable:
             result = executor()
             event = CacheEvent(
                 run_id=config.run_id,
                 toolkit_slug=None,
                 tool_slug=tool_slug,
-                cache_status="not_cacheable" if not is_cacheable(tool_slug) else "bypass",
+                cache_status="not_cacheable" if not cacheable else "bypass",
+                cache_scope=cache_scope,
                 reason="cache_bypass" if config.cache_bypass else "tool_not_cacheable",
             )
             return result, event
@@ -45,7 +50,19 @@ class CachedExecutor:
             user_id=config.user_id,
             tenant_id=config.tenant_id,
             connected_account_id=config.connected_account_id,
+            cache_scope=cache_scope,
         )
+        if cache_key is None:
+            result = executor()
+            event = CacheEvent(
+                run_id=config.run_id,
+                toolkit_slug=None,
+                tool_slug=tool_slug,
+                cache_status="not_cacheable",
+                cache_scope=cache_scope,
+                reason="missing_required_cache_scope",
+            )
+            return result, event
 
         # Try cache hit
         cached = self.store.get(cache_key)
@@ -55,32 +72,30 @@ class CachedExecutor:
                 toolkit_slug=None,
                 tool_slug=tool_slug,
                 cache_status="hit",
-                cache_key_hash=cache_key[-16:],  # last 16 chars for logging
+                cache_scope=cache_scope,
+                cache_key_hash=cache_key_hash(cache_key),
                 api_call_avoided=True,
-                tokens_saved_estimate=cached.get("__aperture_tokens", 0),
+                tokens_saved_estimate=count_tokens(cached, config.model).tokens,
             )
-            # Return the cached result without the metadata wrapper
-            return cached.get("__aperture_result", cached), event
+            return cached, event
 
         # Cache miss — execute
         result = executor()
 
-        # Store in cache
+        # Store successful responses in cache.
         ttl = get_cache_ttl(tool_slug)
-        # Wrap result with metadata for token estimate on hit
-        wrapped = {
-            "__aperture_result": result,
-            "__aperture_tokens": 0,  # Will be updated by compression layer
-        }
-        self.store.set(cache_key, wrapped, ttl)
+        if _success_response(result):
+            self.store.set(cache_key, result, ttl)
 
         event = CacheEvent(
             run_id=config.run_id,
             toolkit_slug=None,
             tool_slug=tool_slug,
             cache_status="miss",
-            cache_key_hash=cache_key[-16:],
+            cache_scope=cache_scope,
+            cache_key_hash=cache_key_hash(cache_key),
             api_call_avoided=False,
+            reason=None if _success_response(result) else "failed_response_not_cached",
         )
         return result, event
 
@@ -88,3 +103,13 @@ class CachedExecutor:
         """Update token estimate on a cached entry after compression."""
         # This is a no-op for now; in production we'd update the cache entry
         pass
+
+
+def _success_response(response: object) -> bool:
+    """Return whether a response is safe to store."""
+    if isinstance(response, dict):
+        if response.get("success") is False:
+            return False
+        if response.get("error"):
+            return False
+    return True

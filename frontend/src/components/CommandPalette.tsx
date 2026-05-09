@@ -33,11 +33,23 @@ export function CommandPalette() {
   const inputRef = useRef<HTMLInputElement>(null);
   const navigate = useNavigate();
 
+  const openPalette = () => {
+    setQ("");
+    setActive(0);
+    setOpen(true);
+  };
+
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
         e.preventDefault();
-        setOpen((v) => !v);
+        setOpen((v) => {
+          if (!v) {
+            setQ("");
+            setActive(0);
+          }
+          return !v;
+        });
         return;
       }
       if (e.key === "Escape" && open) {
@@ -51,8 +63,6 @@ export function CommandPalette() {
 
   useEffect(() => {
     if (open) {
-      setQ("");
-      setActive(0);
       // Focus input after the modal mounts.
       const t = window.setTimeout(() => inputRef.current?.focus(), 0);
       return () => window.clearTimeout(t);
@@ -79,7 +89,7 @@ export function CommandPalette() {
     <>
       <button
         type="button"
-        onClick={() => setOpen(true)}
+        onClick={openPalette}
         className="hidden md:inline-flex items-center gap-2.5 h-8 pl-2.5 pr-1.5 rounded-md border border-border bg-card hover:border-primary/40 hover:bg-sidebar-accent/40 text-[12px] text-muted-foreground transition-colors"
       >
         <Search className="w-3.5 h-3.5" />

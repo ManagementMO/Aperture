@@ -11,7 +11,7 @@ from typing import Any
 from aperture.cache.interceptor import CachedExecutor
 from aperture.cache.policy import is_cacheable
 from aperture.compression.engine import compress_tool_output
-from aperture.contracts import ApertureRunConfig, CompressionResult, ToolCall
+from aperture.contracts import ApertureRunConfig, ToolCall
 from aperture.demo.scenarios import get_mock_result
 from aperture.routing.effort_modes import get_effort_config
 from aperture.tokenization import count_tokens
@@ -129,6 +129,7 @@ def run_workflow_with_aperture(
         model="gpt-4o",
         effort_mode=mode,
         cache_bypass=not enable_cache,
+        connected_account_id="sim_account",
     )
 
     steps: list[StepResult] = []
@@ -160,23 +161,14 @@ def run_workflow_with_aperture(
             config=config,
         )
 
-        # Compress result
-        if cache_event.cache_status == "hit":
-            compressed = CompressionResult(
-                compressed_payload=raw_result,
-                raw_tokens=0,
-                compressed_tokens=0,
-                tokens_saved=0,
-                compression_ratio=1.0,
-                strategy="cache_hit",
-            )
-        else:
-            compressed = compress_tool_output(
-                raw_payload=raw_result,
-                tool_slug=call.tool_slug,
-                mode=compression_mode,
-                model=config.model,
-            )
+        # Cache returns raw execution results. Always compress before adding
+        # the payload back to model context.
+        compressed = compress_tool_output(
+            raw_payload=raw_result,
+            tool_slug=call.tool_slug,
+            mode=compression_mode,
+            model=config.model,
+        )
 
         # Build cumulative context with COMPRESSED results
         cumulative_context.append({"tool": call.tool_slug, "result": compressed.compressed_payload})

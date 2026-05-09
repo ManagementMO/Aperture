@@ -14,7 +14,7 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from aperture.compression.engine import compress_tool_output, CompressionResult
+from aperture.compression.engine import compress_tool_output
 from aperture.tokenization.counter import count_tokens
 
 DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data")

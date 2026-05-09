@@ -48,7 +48,7 @@ class EventEmitter:
             compression_ratio=compression_ratio,
             cache_status=cache_status,
         )
-        self._events.append({"timestamp": _now_iso(), **asdict(event)})
+        self._events.append({"timestamp": _now_iso(), "event_kind": "token", **asdict(event)})
 
     def emit_cache(
         self,
@@ -78,7 +78,7 @@ class EventEmitter:
             tokens_saved_estimate=tokens_saved_estimate,
             reason=reason,
         )
-        self._events.append({"timestamp": _now_iso(), **asdict(event)})
+        self._events.append({"timestamp": _now_iso(), "event_kind": "cache_lookup", **asdict(event)})
 
     def all_events(self) -> list[dict[str, Any]]:
         return list(self._events)
@@ -89,4 +89,4 @@ class EventEmitter:
         }]
 
     def cache_events(self) -> list[dict[str, Any]]:
-        return [e for e in self._events if "cache_status" in e]
+        return [e for e in self._events if e.get("event_kind") == "cache_lookup"]

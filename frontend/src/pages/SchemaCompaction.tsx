@@ -203,12 +203,19 @@ function Pane({
   const cursorVisible = revealed < total;
 
   useEffect(() => {
-    setRevealed(0);
-    if (!total) return;
-    const startedAt = performance.now();
-    const durationMs = 900;
     let raf = 0;
+    if (!total) {
+      raf = requestAnimationFrame(() => setRevealed(0));
+      return () => cancelAnimationFrame(raf);
+    }
+
+    let startedAt = 0;
+    const durationMs = 900;
     const step = () => {
+      if (startedAt === 0) {
+        startedAt = performance.now();
+        setRevealed(0);
+      }
       const elapsed = performance.now() - startedAt;
       const ratio = Math.min(1, elapsed / durationMs);
       setRevealed(Math.floor(ratio * total));

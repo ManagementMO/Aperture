@@ -6,10 +6,14 @@ _CACHEABLE_TOOLS = {
     "GITHUB_GET_REPO",
     "GITHUB_GET_A_REPOSITORY",
     "GITHUB_LIST_ISSUES",
+    "GITHUB_LIST_REPOSITORY_ISSUES",
     "GITHUB_GET_ISSUE",
+    "GITHUB_GET_AN_ISSUE",
     "GITHUB_LIST_PULL_REQUESTS",
+    "GITHUB_FIND_PULL_REQUESTS",
     "GITHUB_GET_PULL_REQUEST",
     "GITHUB_LIST_COMMITS",
+    "GITHUB_LIST_REPOSITORY_LANGUAGES",
     "GITHUB_GET_COMMIT",
     "GITHUB_LIST_BRANCHES",
     "GITHUB_GET_BRANCH",
@@ -67,6 +71,22 @@ def is_cacheable(tool_slug: str) -> bool:
     if tool_slug in _NEVER_CACHE:
         return False
     return tool_slug in _CACHEABLE_TOOLS
+
+
+def get_cache_scope(tool_slug: str) -> str:
+    """Return the privacy scope required for a cacheable tool.
+
+    Public repository metadata can be cached without a user/account scope. Most
+    other reads may expose private or personalized data, so they require a
+    connected account scope before a key can be built.
+    """
+    if tool_slug in {
+        "GITHUB_GET_REPO",
+        "GITHUB_GET_A_REPOSITORY",
+        "GITHUB_SEARCH_REPOS",
+    }:
+        return "public"
+    return "account"
 
 
 def get_cache_ttl(tool_slug: str) -> int:

@@ -11,6 +11,7 @@ Aperture was deployed. No hardcoded mappings needed."""
 from __future__ import annotations
 
 import re
+import uuid
 from dataclasses import dataclass, field
 from typing import Callable
 
@@ -352,6 +353,7 @@ class DynamicAgent:
                 model="gpt-4o",
                 effort_mode="auto",
                 cache_bypass=False,
+                connected_account_id=f"dynamic_{match.toolkit}_account",
             )
             runner = ApertureRunner(config)
 

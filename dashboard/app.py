@@ -1,5 +1,6 @@
 """Streamlit dashboard for Aperture — visual hackathon demo."""
 
+import os
 import sys
 from pathlib import Path
 
@@ -18,6 +19,15 @@ from aperture.demo.agent_simulator import (
 from aperture.demo.scenarios import SCENARIOS
 from aperture.compression.engine import compress_tool_output
 from aperture.tokenization import count_tokens
+
+
+def _connected_account_env(toolkit_slug: str) -> str | None:
+    upper = toolkit_slug.upper()
+    return (
+        os.getenv(f"COMPOSIO_{upper}_CONNECTED_ACCOUNT_ID")
+        or os.getenv(f"COMPOSIO_{upper}_ACCOUNT_ID")
+    )
+
 
 st.title("🔭 Aperture — Context Engineering for Composio")
 st.caption("Visual demo: measure, compact, compress, cache")
@@ -468,7 +478,7 @@ to tool routing, effort selection, compression, and caching — step by step.
         from aperture.routing.intelligent_effort import select_effort
         from aperture.compression.engine import compress_tool_output
         from aperture.cache.interceptor import CachedExecutor
-        from aperture.contracts import ApertureRunConfig, CompressionResult
+        from aperture.contracts import ApertureRunConfig
         from aperture.tokenization import count_tokens
         from aperture.demo.scenarios import get_mock_result
         from aperture.schema_optimizer.auto_profile import ProfileRegistry
@@ -627,11 +637,19 @@ to tool routing, effort selection, compression, and caching — step by step.
                     if use_live_api and match.tool_slug.startswith("GITHUB"):
                         try:
                             import composio
-                            c = composio.Composio()
+                            api_key = os.getenv("COMPOSIO_API_KEY")
+                            user_id = os.getenv("COMPOSIO_USER_ID")
+                            github_account_id = _connected_account_env("github")
+                            if not api_key or not user_id or not github_account_id:
+                                raise RuntimeError(
+                                    "set COMPOSIO_API_KEY, COMPOSIO_USER_ID, and "
+                                    "COMPOSIO_GITHUB_CONNECTED_ACCOUNT_ID"
+                                )
+                            c = composio.Composio(api_key=api_key)
                             session = c.create(
-                                user_id="pg-test-77d7fa29-5fa4-4868-b9ba-39b07a17e2f6",
+                                user_id=user_id,
                                 toolkits=["github"],
-                                connected_accounts={"github": "ca_UZkzCbGtSDdE"},
+                                connected_accounts={"github": github_account_id},
                             )
                             raw_result = session.execute(
                                 tool_slug=match.tool_slug,
@@ -655,12 +673,19 @@ to tool routing, effort selection, compression, and caching — step by step.
                 # ---- 4c: Cache + Compression ----
                 with cache_col:
                     st.markdown("💾 **Cache & Compress**")
+                    toolkit_slug = match.tool_slug.split("_", 1)[0].lower()
+                    connected_account_id = (
+                        _connected_account_env(toolkit_slug)
+                        or os.getenv("COMPOSIO_CONNECTED_ACCOUNT_ID")
+                        or f"demo_{toolkit_slug}_account"
+                    )
 
                     config = ApertureRunConfig(
                         run_id=f"live-{match.tool_slug}",
                         model="gpt-4o",
                         effort_mode="auto",
                         cache_bypass=not enable_cache,
+                        connected_account_id=connected_account_id,
                     )
 
                     def _executor():
@@ -675,11 +700,11 @@ to tool routing, effort selection, compression, and caching — step by step.
 
                     if cache_event.cache_status == "hit":
                         st.markdown("<span style='background:#dcfce7;color:#166534;padding:2px 8px;border-radius:12px;font-size:12px;'>CACHE HIT</span>", unsafe_allow_html=True)
-                        comp_result = CompressionResult(
-                            compressed_payload=cached_result,
-                            raw_tokens=0, compressed_tokens=0,
-                            tokens_saved=0, compression_ratio=1.0,
-                            strategy="cache_hit",
+                        comp_result = compress_tool_output(
+                            raw_payload=cached_result,
+                            tool_slug=match.tool_slug,
+                            mode=decision.compression_mode,
+                            model="gpt-4o",
                         )
                     else:
                         st.markdown("<span style='background:#fee2e2;color:#991b1b;padding:2px 8px;border-radius:12px;font-size:12px;'>CACHE MISS</span>", unsafe_allow_html=True)
@@ -691,12 +716,12 @@ to tool routing, effort selection, compression, and caching — step by step.
                         )
                         st.markdown(f"<span style='background:#ffedd5;color:#9a3412;padding:2px 8px;border-radius:12px;font-size:12px;'>{comp_result.strategy}</span>", unsafe_allow_html=True)
 
-                    comp_tc = count_tokens(comp_result.compressed_payload)
-                    st.metric("Compressed", f"{comp_tc.tokens:,} tokens")
-                    saved = raw_tc.tokens - comp_tc.tokens
+                    comp_tokens = comp_result.compressed_tokens
+                    st.metric("Compressed", f"{comp_tokens:,} tokens")
+                    saved = raw_tc.tokens - comp_tokens
                     if saved > 0:
                         st.metric("Saved", f"{saved:,}", delta=f"-{saved/raw_tc.tokens:.0%}")
-                    total_comp += comp_tc.tokens
+                    total_comp += comp_tokens
                     total_saved += saved
 
                 # ---- 4d: Preview ----
@@ -721,7 +746,8 @@ to tool routing, effort selection, compression, and caching — step by step.
                         st.json({"type": type(payload).__name__, "length": len(str(payload))})
 
                 # Update cumulative context
-                cumulative_context.append({"tool": match.tool_slug, "result": comp_result.compressed_payload})
+                context_payload = comp_result.llm_string or comp_result.compressed_payload
+                cumulative_context.append({"tool": match.tool_slug, "result": context_payload})
                 context_used = count_tokens(cumulative_context).tokens
                 st.progress(min(context_used / 128_000, 1.0),
                             text=f"Cumulative context: {context_used:,} / 128,000 tokens ({context_used/128_000*100:.1f}%)")
@@ -729,7 +755,7 @@ to tool routing, effort selection, compression, and caching — step by step.
                 step_results.append({
                     "tool": match.tool_slug,
                     "raw": raw_tc.tokens,
-                    "compressed": comp_tc.tokens,
+                    "compressed": comp_tokens,
                     "saved": saved,
                     "cache": cache_event.cache_status,
                     "mode": decision.compression_mode,

@@ -71,13 +71,6 @@ const PRICING: Record<
   "claude-opus-4-7": { input: 15.0, output: 75.0, cache_read: 1.5, cache_write: 18.75 },
 };
 
-function pricingFor(model: string) {
-  for (const k of Object.keys(PRICING).sort((a, b) => b.length - a.length)) {
-    if (model.startsWith(k)) return PRICING[k];
-  }
-  return PRICING["claude-sonnet-4-6"];
-}
-
 function whatIfCost(cost: CostBlock, target: keyof typeof PRICING): number {
   const p = PRICING[target];
   return (
@@ -133,7 +126,7 @@ export default function SpendStudio() {
     const familyCost: Record<string, { actual: number; counterfactual: number; calls: number; saved: number }> = {};
     const whatIf: Record<string, number> = { haiku: 0, sonnet: 0, opus: 0 };
 
-    let firstTs = runs[runs.length - 1].ts;
+    const firstTs = runs[runs.length - 1].ts;
     const lastTs = runs[0].ts;
 
     for (const r of runs) {

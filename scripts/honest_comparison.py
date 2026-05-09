@@ -26,6 +26,7 @@ _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
+import os
 import time
 
 from rich.console import Console
@@ -38,6 +39,13 @@ from aperture.tokenization import count_tokens
 
 console = Console()
 
+
+def _required_env(name: str) -> str:
+    value = os.getenv(name)
+    if not value:
+        raise RuntimeError(f"Set {name} before running the live Composio comparison.")
+    return value
+
 # =============================================================================
 # VANILLA COMPOSIO — what you get WITHOUT Aperture
 # =============================================================================
@@ -46,11 +54,13 @@ def vanilla_composio_read_sheets():
     """Exactly what a developer does today: call Composio, pass raw result to LLM."""
     from composio import Composio
 
-    c = Composio()
+    c = Composio(api_key=_required_env("COMPOSIO_API_KEY"))
     session = c.create(
-        user_id="pg-test-77d7fa29-5fa4-4868-b9ba-39b07a17e2f6",
+        user_id=_required_env("COMPOSIO_USER_ID"),
         toolkits=["googlesheets"],
-        connected_accounts={"googlesheets": "ca_6UYvenCFlbHq"},
+        connected_accounts={
+            "googlesheets": _required_env("COMPOSIO_GOOGLESHEETS_CONNECTED_ACCOUNT_ID")
+        },
     )
 
     resp = session.execute(
@@ -80,6 +90,7 @@ def aperture_read_sheets(effort_mode="balanced"):
         model="gpt-4o",
         effort_mode=effort_mode,
         cache_bypass=False,  # Cache is ON for Aperture
+        connected_account_id=_required_env("COMPOSIO_GOOGLESHEETS_CONNECTED_ACCOUNT_ID"),
     )
     runner = ApertureRunner(config)
 

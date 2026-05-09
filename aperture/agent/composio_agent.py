@@ -28,15 +28,15 @@ from aperture.agent.tool_cache import (
     composio_cost_estimate,
     is_read_only_mode,
     is_write_tool,
-    lookup as tool_cache_lookup,
-    store as tool_cache_store,
 )
+from aperture.cache.interceptor import CachedExecutor
 from aperture.compression.engine import compress_tool_output
 from aperture.compression.rtk_inspired import (
     Tier,
     classify_tier,
     render_ultra_summary,
 )
+from aperture.contracts import ApertureRunConfig
 from aperture.tokenization import count_tokens
 
 
@@ -134,6 +134,7 @@ _COMPOSIO_CLIENT: Any = None
 _USER_ID_CACHE: str | None = None
 _TOOLKITS_CACHE: list[str] | None = None
 _TOOL_LIST_CACHE: list[dict] | None = None
+_CONNECTED_ACCOUNTS_CACHE: dict[str, dict[str, str]] = {}
 
 # ---------------------------------------------------------------------------
 # Whole-question result cache. Hit means the EXACT same ask within the TTL —
@@ -254,8 +255,51 @@ def _composio_client():
     if _COMPOSIO_CLIENT is None:
         from composio import Composio
         from composio_anthropic import AnthropicProvider
-        _COMPOSIO_CLIENT = Composio(provider=AnthropicProvider())
+
+        api_key = os.getenv("COMPOSIO_API_KEY")
+        kwargs = {"provider": AnthropicProvider()}
+        if api_key:
+            kwargs["api_key"] = api_key
+        try:
+            _COMPOSIO_CLIENT = Composio(**kwargs)
+        except TypeError:
+            # Older SDK builds read COMPOSIO_API_KEY from the environment and
+            # do not accept api_key as a constructor argument.
+            _COMPOSIO_CLIENT = Composio(provider=AnthropicProvider())
     return _COMPOSIO_CLIENT
+
+
+def _obj_get(obj: Any, key: str, default: Any = None) -> Any:
+    if isinstance(obj, dict):
+        return obj.get(key, default)
+    return getattr(obj, key, default)
+
+
+def _connected_account_ids_by_toolkit(user_id: str) -> dict[str, str]:
+    if user_id in _CONNECTED_ACCOUNTS_CACHE:
+        return _CONNECTED_ACCOUNTS_CACHE[user_id]
+
+    accounts = _composio_client().connected_accounts.list(user_ids=[user_id])
+    out: dict[str, str] = {}
+    for account in accounts.items:
+        if _obj_get(account, "status") != "ACTIVE":
+            continue
+        toolkit = _obj_get(account, "toolkit")
+        toolkit_slug = _obj_get(toolkit, "slug")
+        account_id = (
+            _obj_get(account, "id")
+            or _obj_get(account, "connected_account_id")
+            or _obj_get(account, "uuid")
+        )
+        if toolkit_slug and account_id:
+            out[str(toolkit_slug).lower()] = str(account_id)
+    _CONNECTED_ACCOUNTS_CACHE[user_id] = out
+    return out
+
+
+def _connected_account_id_for_tool(user_id: str, tool_slug: str) -> str | None:
+    toolkit = tool_slug.split("_", 1)[0].lower()
+    return _connected_account_ids_by_toolkit(user_id).get(toolkit)
 
 
 def _resolved_user_id() -> str:
@@ -412,6 +456,7 @@ def _execute_tool(
     slug = block.name
     args = dict(block.input or {})
     started = time.perf_counter()
+    connected_account_id = _connected_account_id_for_tool(user_id, slug)
 
     # READ-ONLY MODE — refuse any write tool BEFORE Composio sees it.
     # Sends a clean error back to Claude so it can recover. No bill.
@@ -440,21 +485,24 @@ def _execute_tool(
             "is_error": True,
         }
 
-    # TOOL-CALL CACHE — same (slug, args, user) within TTL = no Composio bill.
-    cached_value, cache_event = tool_cache_lookup(slug, args, user_id)
-    cache_hit_age = cache_event.get("age_seconds", 0.0) if cache_event else 0.0
-    is_cache_hit = cached_value is not None
+    def execute_live():
+        return client.tools.execute(
+            slug, args, user_id=user_id,
+            dangerously_skip_version_check=True,
+        )
 
     try:
-        if is_cache_hit:
-            exec_result = cached_value
-        else:
-            exec_result = client.tools.execute(
-                slug, args, user_id=user_id,
-                dangerously_skip_version_check=True,
-            )
-            # Cache the wrapper so we replay byte-for-byte next time.
-            tool_cache_store(slug, args, user_id, exec_result)
+        exec_result, aperture_cache_event = CachedExecutor().execute(
+            slug,
+            args,
+            execute_live,
+            ApertureRunConfig(
+                run_id=f"agent-{slug}-{block.id}",
+                user_id=user_id,
+                connected_account_id=connected_account_id,
+                model="gpt-4o",
+            ),
+        )
     except Exception as exc:
         step = StepRecord(
             tool=slug, arguments=args, successful=False,
@@ -533,14 +581,14 @@ def _execute_tool(
         probe_pass=1, probe_total=1,
     )
 
-    if is_cache_hit:
+    if aperture_cache_event.cache_status == "hit":
         cache_status = "hit"
         composio_avoided = composio_cost_estimate(slug)
     elif is_write_tool(slug):
         cache_status = "write_uncached"
         composio_avoided = 0.0
     else:
-        cache_status = "miss"
+        cache_status = aperture_cache_event.cache_status
         composio_avoided = 0.0
 
     step = StepRecord(
@@ -569,7 +617,7 @@ def _execute_tool(
         ultra_summary=summary_line,
         tier=tier.value,
         cache_status=cache_status,
-        cache_age_seconds=round(cache_hit_age, 1),
+        cache_age_seconds=0.0,
         composio_cost_avoided_usd=round(composio_avoided, 4),
     )
     tool_result_block = {
@@ -732,7 +780,7 @@ def run_agent(
             if step.cache_status == "hit":
                 result.composio_calls_avoided += 1
                 result.composio_cost_avoided_usd += step.composio_cost_avoided_usd
-            elif step.cache_status in ("miss", "write_uncached"):
+            elif step.cache_status in ("miss", "write_uncached", "not_cacheable", "bypass"):
                 result.composio_calls_made += 1
             tool_result_blocks.append(tr)
 

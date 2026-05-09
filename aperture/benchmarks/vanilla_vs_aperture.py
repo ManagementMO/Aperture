@@ -250,6 +250,7 @@ def _supabase_quality(raw: list[dict], compressed: object) -> dict[str, bool]:
 _QUALITY_PROBES: dict[str, Callable[[Any, object], dict[str, bool]]] = {
     "GITHUB_GET_A_REPOSITORY": _gh_repo_quality,
     "GITHUB_LIST_ISSUES": _gh_issues_quality,
+    "GITHUB_LIST_REPOSITORY_ISSUES": _gh_issues_quality,
     "GITHUB_LIST_PULL_REQUESTS": _gh_pulls_quality,
     "GITHUB_LIST_COMMITS": _gh_commits_quality,
     "GMAIL_SEARCH_EMAILS": _gmail_quality,
