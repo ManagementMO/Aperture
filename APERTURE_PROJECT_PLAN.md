@@ -1,1200 +1,2043 @@
-# Aperture — Full Project Plan
-## Token Efficiency Layer for the Composio Meta-Tool Architecture
+# Aperture — Execution-Ready Project Plan for Coding Agents
 
-**Status:** Pre-development planning
-**Author:** Mohammed Al-Marzouq
-**Last updated:** May 2026
-**Version:** 1.0 (working document — blunt, not polished)
+## Token-Efficiency Layer for Composio Agents
 
----
-
-## Table of Contents
-
-1. [What This Document Is](#1-what-this-document-is)
-2. [Project Summary](#2-project-summary)
-3. [Composio Architecture — What We Are Building On Top Of](#3-composio-architecture--what-we-are-building-on-top-of)
-4. [The Five Components — Deep Breakdown](#4-the-five-components--deep-breakdown)
-   - 4A. Cross-Agent Execution Cache
-   - 4B. Token Attribution Observability
-   - 4C. Schema Tokenizer Optimizer
-   - 4D. Session State Compressor
-   - 4E. Plan Quality Scorer
-5. [Honest Critique — What Is Hard, Uncertain, or Oversimplified](#5-honest-critique--what-is-hard-uncertain-or-oversimplified)
-6. [Risk Register](#6-risk-register)
-7. [Open Questions That Must Be Answered Before Building](#7-open-questions-that-must-be-answered-before-building)
-8. [Technical Stack Decisions](#8-technical-stack-decisions)
-9. [Repository Structure](#9-repository-structure)
-10. [Implementation Plan — Week by Week](#10-implementation-plan--week-by-week)
-11. [Success Metrics](#11-success-metrics)
-12. [What a Minimal Viable Version Looks Like](#12-what-a-minimal-viable-version-looks-like)
-13. [Future Work — What Comes After Internship Scope](#13-future-work--what-comes-after-internship-scope)
-14. [Notes, Stray Thoughts, and Things Not to Forget](#14-notes-stray-thoughts-and-things-not-to-forget)
+**Status:** Validated implementation plan  
+**Primary scope:** Token attribution, safe caching, measured schema optimization  
+**Audience:** Coding agents, research agents, QA agents, reviewer agents, human engineers  
+**Goal:** Make Composio-powered agents cheaper, faster, and easier to debug by measuring Composio-contributed token cost, caching safe repeated tool calls, and optimizing tool schemas without degrading agent behavior.
 
 ---
 
-## 1. What This Document Is
+# 0. Agent Operating Rules
 
-This is a working planning document, not a pitch deck. It is intentionally blunt about what is hard, what is uncertain, and what we do not yet know how to do. The goal is to have one document that captures every nuance, concern, open question, and implementation detail so that nothing gets forgotten when actual coding starts.
+This section is intentionally first. Every coding/research/QA agent working on Aperture should follow these rules.
 
-Read this before the pitch doc. The pitch doc is a cleaned-up subset of this.
+## 0.1 Non-negotiable rules
+
+1. **Do not guess internal Composio behavior.** If a hook point, payload shape, storage path, or API behavior is unknown, mark it as `UNKNOWN` and create an investigation task.
+2. **Prefer conservative behavior over clever behavior.** Especially for caching. A cache miss is better than a wrong or private cache hit.
+3. **Never cache writes.** Any action that mutates state must be non-cacheable by default.
+4. **Never share private data across users/accounts.** Private cache keys must include the correct user/account/project scope.
+5. **Do not optimize schemas by shortening them blindly.** A schema rewrite is only valid if behavior stays the same under validation.
+6. **Do not claim full LLM cost attribution unless Aperture is in the LLM provider call path.** The correct claim is: `Composio-contributed input tokens`.
+7. **Every module must have tests.** No module is considered complete without unit tests and at least one integration-style test.
+8. **Every event must be privacy-safe.** Store counts, metadata, hashes, payload sizes, and token counts. Do not store raw sensitive payloads unless explicitly allowed by existing Composio logging policy.
+9. **Every accepted optimization must be reversible.** Cache can be bypassed. Schema rewrites must have before/after diffs. Token attribution can be disabled by config.
+10. **Every agent handoff must include assumptions, unknowns, files changed, tests run, and next steps.**
+
+## 0.2 Agent handoff format
+
+Every agent should end its work with this handoff block:
+
+```md
+## Handoff
+
+### Completed
+- ...
+
+### Files changed
+- `path/to/file.py` — what changed
+
+### Tests run
+- `pytest tests/...` — pass/fail
+
+### Assumptions
+- ...
+
+### Unknowns / blockers
+- ...
+
+### Next recommended task
+- ...
+```
+
+## 0.3 How agents should prioritize
+
+Priority order:
+
+1. Correctness
+2. Privacy/security
+3. Measurability
+4. Simplicity
+5. Performance
+6. Extra features
+
+If two approaches are possible, choose the one that is easier to audit and safer to roll back.
 
 ---
 
-## 2. Project Summary
+# 1. Project Summary
 
-### The one-sentence version
+Aperture is a token-efficiency infrastructure layer for Composio’s meta-tool architecture.
 
-Aperture adds a cross-agent execution cache, token cost visibility, and schema vocabulary optimization on top of Composio's existing meta-tool architecture — three things Composio provably does not have today, that compound in value with platform scale.
+It improves Composio-powered agents in three practical ways:
 
-### What Composio already solved (do not re-propose these)
+1. **Token Attribution Observability**  
+   Measures how many LLM input tokens are contributed by Composio meta-tool responses, tool schemas, tool execution results, workbench outputs, and planning payloads.
 
-| Already solved | How |
+2. **Safe Repeated Tool-Call Caching**  
+   Caches approved, idempotent, read-only tool results using conservative exact-match keys, so repeated calls can avoid duplicate external API calls and repeated result payloads.
+
+3. **Schema Token Optimization**  
+   Rewrites verbose tool descriptions and parameter descriptions into shorter versions, then validates that agents still select the right tools and fill parameters correctly.
+
+Aperture is not a replacement for Composio, MCP, LangChain, OpenAI Agents SDK, Workbench, or any LLM orchestration framework. It is an efficiency and observability layer around Composio’s existing tool discovery/execution flow.
+
+---
+
+# 2. Correct Framing After Validation
+
+## 2.1 Best one-sentence description
+
+Aperture makes Composio-powered agents more efficient by measuring Composio-contributed token cost, caching safe repeated tool calls, and optimizing tool schemas without degrading agent behavior.
+
+## 2.2 Best technical description
+
+Aperture instruments Composio meta-tool responses to attribute input-token contribution, adds a conservative exact-match cache around idempotent read executions, and runs a tokenizer-aware schema optimization pipeline with behavioral validation.
+
+## 2.3 What to avoid saying
+
+Do not say:
+
+- “Composio has zero schema optimization.”
+- “Aperture measures the full LLM bill.”
+- “All repeated tool calls can be cached.”
+- “Session context compression is automatic.”
+- “Semantic caching is safe for arbitrary tool calls.”
+
+## 2.4 Better claims
+
+Say:
+
+- “Composio has some schema simplification and schema modifier capabilities; Aperture adds measured tokenizer-aware optimization with validation.”
+- “Aperture measures Composio-contributed input tokens.”
+- “Aperture caches approved safe read-only calls with strict scoping and TTLs.”
+- “Session state compression is follow-on, opt-in, and requires orchestrator cooperation.”
+
+---
+
+# 3. MVP Scope
+
+## 3.1 In scope
+
+| Area | MVP behavior |
 |---|---|
-| Injecting 1,000 schemas per session | 6 meta tools + on-demand schema fetching via `COMPOSIO_SEARCH_TOOLS` |
-| Large result context bloat | `sync_response_to_workbench: bool` on `COMPOSIO_MULTI_EXECUTE_TOOL` |
-| Zero session learning | Learned plans returned by `COMPOSIO_SEARCH_TOOLS` |
-| Auth management per-session | `COMPOSIO_MANAGE_CONNECTIONS` |
-| Persistent compute state | `COMPOSIO_REMOTE_WORKBENCH` (Python sandbox, persists within session) |
+| Token attribution | Count tokens for Composio-originated payloads returned to agents |
+| Usage reporting | Aggregate by project, user, session, meta tool, toolkit, tool, payload kind, date |
+| Cache | Redis exact-match cache for approved read-only tool calls |
+| Cache safety | Deny-by-default policy, user/account scoping, TTLs, bypass |
+| Cache metrics | Hit/miss/bypass/not-cacheable events and estimated tokens/API calls saved |
+| Schema optimization | Optimize top 25 high-impact schemas with validation |
+| Benchmarks | Before/after workflows proving measured impact |
+| Docs | Developer and internal engineering documentation |
 
-### What Aperture adds on top
+## 3.2 Out of scope for MVP
 
-| Component | What it adds | Confidence it doesn't exist |
+| Out of scope | Reason |
+|---|---|
+| Semantic result caching | Too risky for arbitrary execution outputs |
+| Cross-tenant shared private cache | Legal/security risk |
+| Automatic context compression | Requires orchestrator control |
+| Automatic plan pruning | Outcome signal is noisy |
+| Full LLM provider bill attribution | Requires LLM API call path access |
+| Full 1,000+ schema rewrite | Too large for MVP |
+| UI dashboard | Nice-to-have after report/API works |
+
+## 3.3 MVP success definition
+
+The MVP succeeds if a developer can answer:
+
+1. Which Composio meta-tool responses are costing the most tokens?
+2. Which sessions/users/toolkits are most expensive?
+3. Which repeated safe calls were served from cache?
+4. How many external API calls did the cache avoid?
+5. How many estimated tokens did caching save?
+6. Which schemas were optimized, by how much, and with what validation result?
+
+---
+
+# 4. Architecture
+
+## 4.1 Existing Composio flow
+
+```text
+Developer application / agent framework
+        ↓
+LLM sees Composio meta tools
+        ↓
+LLM calls a Composio meta tool
+        ↓
+Composio Tool Router discovers, executes, manages auth, or uses Workbench
+        ↓
+Composio returns schemas/results/plans/workbench payloads
+        ↓
+Returned payload enters future LLM context
+```
+
+## 4.2 Aperture-enhanced flow
+
+```text
+Developer application / agent framework
+        ↓
+LLM calls Composio meta tool
+        ↓
+Aperture pre-execution layer checks cache policy if execution call
+        ↓
+Cache hit: return cached result
+Cache miss: execute normally through Composio
+        ↓
+Aperture post-response layer serializes payload
+        ↓
+Aperture tokenizes payload
+        ↓
+Aperture emits token/cache events
+        ↓
+Aggregation/reporting layer exposes usage and savings
+```
+
+## 4.3 Module map
+
+```text
+aperture/
+  observability/        # token attribution and usage aggregation
+  cache/                # exact-match cache policy, keys, Redis store, interceptor
+  schema_optimizer/     # schema token measurement, rewriting, validation, reports
+  benchmarks/           # before/after workflows and final reports
+  docs/                 # implementation and user documentation
+  tests/                # unit, integration, safety, regression tests
+```
+
+## 4.4 Integration points to discover
+
+Coding agents must identify actual internal hook points. Until confirmed, use these names as conceptual placeholders:
+
+| Conceptual hook | Purpose | Required? |
+|---|---|---:|
+| `before_multi_execute` | Check cache before underlying tool execution | Yes |
+| `after_multi_execute` | Store successful cacheable responses | Yes |
+| `after_meta_tool_response` | Count tokens for returned payloads | Yes |
+| `usage_event_writer` | Store token/cache events | Yes |
+| `schema_registry_reader` | Fetch current tool schemas | Yes |
+| `schema_registry_writer` | Apply approved schema diffs | Optional for MVP; report-only acceptable |
+
+---
+
+# 5. Data Contracts
+
+These contracts are the stable interface between agents/modules.
+
+## 5.1 `ExecutionContext`
+
+```python
+from dataclasses import dataclass
+from typing import Optional
+
+@dataclass(frozen=True)
+class ExecutionContext:
+    project_id: str
+    user_id: Optional[str]
+    session_id: Optional[str]
+    connected_account_id: Optional[str]
+    toolkit_slug: Optional[str]
+    meta_tool_slug: Optional[str]
+    model: Optional[str]
+    cache_bypass: bool = False
+```
+
+## 5.2 `TokenAttributionEvent`
+
+```python
+@dataclass(frozen=True)
+class TokenAttributionEvent:
+    event_type: str                 # always "input_tokens_contributed"
+    timestamp: str
+    project_id: str
+    user_id: Optional[str]
+    session_id: Optional[str]
+    meta_tool_slug: Optional[str]
+    tool_slug: Optional[str]
+    toolkit_slug: Optional[str]
+    model: Optional[str]
+    tokenizer: str
+    payload_kind: str               # schema/search/result/workbench/plan/other
+    payload_bytes: int
+    input_tokens_contributed: int
+    cache_status: Optional[str]     # hit/miss/bypass/not_cacheable/null
+    aperture_version: str
+```
+
+## 5.3 `CacheLookupEvent`
+
+```python
+@dataclass(frozen=True)
+class CacheLookupEvent:
+    event_type: str                 # always "cache_lookup"
+    timestamp: str
+    project_id: str
+    user_id: Optional[str]
+    session_id: Optional[str]
+    connected_account_id: Optional[str]
+    tool_slug: str
+    toolkit_slug: Optional[str]
+    cache_status: str               # hit/miss/bypass/not_cacheable/error
+    cache_scope: str                # public/project/user/account/session/none
+    cache_key_hash: Optional[str]
+    ttl_seconds: Optional[int]
+    cached_age_seconds: Optional[int]
+    tokens_saved_estimate: int
+    api_call_avoided: bool
+    reason: Optional[str]
+```
+
+## 5.4 `CachePolicy`
+
+```python
+@dataclass(frozen=True)
+class CachePolicy:
+    tool_slug: str
+    cacheable: bool
+    operation_type: str             # read/write/auth/unknown
+    privacy_scope: str              # public/project/user/account/session/none
+    ttl_seconds: Optional[int]
+    matching: str                   # exact/none
+    cache_failed_responses: bool = False
+    reason: Optional[str] = None
+```
+
+## 5.5 `SchemaOptimizationResult`
+
+```python
+@dataclass(frozen=True)
+class SchemaOptimizationResult:
+    tool_slug: str
+    field_path: str
+    original_text: str
+    optimized_text: str
+    original_tokens: int
+    optimized_tokens: int
+    reduction_tokens: int
+    reduction_pct: float
+    validation_cases_run: int
+    validation_passed: bool
+    behavior_differences: list[str]
+    accepted: bool
+    rejection_reason: Optional[str]
+```
+
+---
+
+# 6. Component A — Token Attribution Observability
+
+## 6.1 Problem
+
+Developers often know total LLM cost from their model provider, but not which Composio payloads caused that cost. Aperture makes Composio-originated token contribution visible.
+
+## 6.2 Correct measurement claim
+
+Aperture measures:
+
+> Tokens contributed by Composio-originated payloads that are returned to the agent and may enter LLM context.
+
+Aperture does not automatically measure:
+
+- Total provider bill
+- User/system prompt tokens outside Composio
+- Assistant output tokens
+- Hidden reasoning tokens
+- Non-Composio tool payloads
+
+## 6.3 Payloads to measure
+
+| Payload kind | Examples |
+|---|---|
+| `tool_search_response` | `COMPOSIO_SEARCH_TOOLS` result |
+| `tool_schema_response` | `COMPOSIO_GET_TOOL_SCHEMAS` result |
+| `tool_execution_result` | `COMPOSIO_MULTI_EXECUTE_TOOL` result |
+| `workbench_output` | Remote workbench response |
+| `plan_payload` | Learned/recommended plan text |
+| `connection_payload` | Connection status payload, if returned to agent |
+| `other` | Anything not classified yet |
+
+## 6.4 Algorithm
+
+```text
+For every Composio meta-tool response:
+  1. Classify payload kind.
+  2. Serialize payload using stable JSON.
+  3. Select tokenizer based on model hint, else fallback.
+  4. Count tokens.
+  5. Emit TokenAttributionEvent.
+  6. Continue returning original payload unchanged.
+```
+
+## 6.5 Stable serialization requirements
+
+The serializer must:
+
+- Sort object keys
+- Use compact separators
+- Preserve Unicode safely
+- Avoid nondeterministic fields where possible
+- Optionally redact fields before storage/logging, but count the actual returned payload unless privacy policy says otherwise
+
+Example:
+
+```python
+json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+```
+
+## 6.6 Tokenizer selection
+
+Priority order:
+
+1. Model-specific tokenizer if known
+2. Provider-family tokenizer if known
+3. Default fallback tokenizer
+
+Example mapping:
+
+```yaml
+gpt-4.1: cl100k_base
+gpt-4o: o200k_base
+gpt-4o-mini: o200k_base
+claude-sonnet-4: anthropic_count_tokens
+unknown: cl100k_base
+```
+
+If a tokenizer is approximate, event metadata must indicate approximation.
+
+## 6.7 Public functions
+
+```python
+def stable_serialize_payload(payload: object) -> str:
+    """Return deterministic string representation for token counting."""
+
+
+def count_payload_tokens(
+    payload: object,
+    model: str | None = None,
+    tokenizer_hint: str | None = None,
+) -> tuple[int, str]:
+    """Return token count and tokenizer name."""
+
+
+def emit_token_event(
+    event: TokenAttributionEvent,
+) -> None:
+    """Write token attribution event to configured event sink."""
+```
+
+## 6.8 Required tests
+
+### Unit tests
+
+- Same payload produces same serialized output.
+- Different object key order produces same serialized output.
+- Empty payload counts without crashing.
+- Large payload counts without crashing.
+- Unknown model uses fallback.
+- Token count is positive for non-empty payload.
+
+### Integration tests
+
+- Simulated `COMPOSIO_SEARCH_TOOLS` response emits event.
+- Simulated `COMPOSIO_GET_TOOL_SCHEMAS` response emits event.
+- Simulated `COMPOSIO_MULTI_EXECUTE_TOOL` response emits event.
+- Event includes project/session/meta-tool metadata.
+
+## 6.9 Definition of done
+
+This component is done when:
+
+- 95%+ of known meta-tool response paths emit token events.
+- Events are queryable by project, user, session, meta tool, toolkit, and date.
+- Counts are deterministic for the same payload.
+- Reports identify top token-expensive payload kinds.
+- No raw sensitive payloads are stored by the new event system unless explicitly approved.
+
+---
+
+# 7. Component B — Safe Repeated Tool-Call Caching
+
+## 7.1 Problem
+
+Agents repeat safe read-only calls. Repeating those calls wastes time, API quota, and tokens. Aperture should avoid repeated work when safe.
+
+## 7.2 Core policy
+
+Caching is deny-by-default.
+
+A tool call is cacheable only if all are true:
+
+1. Tool is classified as read-only/idempotent.
+2. Tool is not auth/session/connection management.
+3. Tool is not a write/mutation.
+4. Cache scope is known.
+5. TTL is defined.
+6. Params can be normalized safely.
+7. Response status is success.
+
+## 7.3 Cache safety matrix
+
+| Operation | Cache? | Notes |
+|---|---:|---|
+| Get public repo metadata | Yes | Public or account scoped depending auth |
+| List public issues | Yes | Short TTL |
+| Search private emails | Yes | Exact only, account scoped, short TTL |
+| Read private email | Yes | Exact only, account scoped, short TTL |
+| Send email | No | Write |
+| Create GitHub issue | No | Write |
+| Delete file | No | Write |
+| OAuth connect | No | Auth |
+| Refresh token | No | Auth |
+| Calendar availability | Maybe | Account scoped, very short TTL |
+| Web search | Maybe | TTL depends on freshness needs |
+
+## 7.4 Cache flow
+
+```text
+Before underlying tool execution:
+  1. Read tool_slug, params, context.
+  2. Check bypass.
+  3. Load cache policy.
+  4. If not cacheable: emit not_cacheable event; execute normally.
+  5. Build scoped exact key.
+  6. Redis GET key.
+  7. If hit: emit hit event; return cached payload.
+  8. If miss: execute normally.
+  9. If success and cacheable: Redis SET key with TTL.
+  10. Emit miss event with stored=true.
+```
+
+## 7.5 Cache key format
+
+```text
+aperture:{version}:{scope}:{tool_slug}:{param_hash}
+```
+
+Examples:
+
+```text
+aperture:v1:public:GITHUB_GET_REPO:sha256(...)
+aperture:v1:account:ca_123:GMAIL_SEARCH_EMAILS:sha256(...)
+aperture:v1:user:user_456:SLACK_LIST_CHANNELS:sha256(...)
+```
+
+## 7.6 Cache scope rules
+
+| Scope | Required identifier | Used for |
 |---|---|---|
-| A. Cross-agent execution cache | Shared result cache across all agents for idempotent tool calls | High — no mention anywhere in docs or changelog |
-| B. Token attribution observability | Token cost tracking per meta tool call, session, and user | High — usage API confirmed to only track counts |
-| C. Schema tokenizer optimizer | Offline rewrite of all 1,000+ tool schemas for tokenizer efficiency | High — zero mention anywhere |
-| D. Session state compressor | Structured state object to replace linear history growth in LLM context | Medium — real gap, but harder than it sounds |
-| E. Plan quality scorer | Outcome-based feedback loop on learned plans in SEARCH_TOOLS | Medium-high — plans exist but no scoring exists |
+| `public` | none | Truly public data only |
+| `project` | `project_id` | Project-scoped shared cache |
+| `user` | `user_id` | User-specific data |
+| `account` | `connected_account_id` | Private connected-account data |
+| `session` | `session_id` | Session-only data |
+| `none` | none | Not cacheable |
 
-### Priority order (if scope must be cut)
+If required identifier is missing, do not cache.
 
-1. **Token attribution observability** — foundational; everything else needs this to prove value
-2. **Cross-agent execution cache** — highest lever on platform cost
-3. **Schema tokenizer optimizer** — offline, no runtime risk, permanent savings
-4. **Plan quality scorer** — strategically important but harder
-5. **Session state compressor** — real problem, but the solution path requires orchestrator cooperation (see §5)
+## 7.7 Parameter normalization
 
----
+Required behavior:
 
-## 3. Composio Architecture — What We Are Building On Top Of
+- Sort dictionary keys recursively.
+- Preserve list order unless a field is explicitly order-insensitive.
+- Remove explicitly ignored metadata fields such as `aperture_cache_bypass`.
+- Preserve user query strings exactly by default.
+- Do not lowercase arbitrary strings unless tool-specific rules approve it.
+- Include version number in key to allow future invalidation.
 
-This section exists to prevent mistakes. Every design decision in Aperture needs to account for how Composio actually works.
+## 7.8 Bypass methods
 
-### The six meta tools (verified from reference docs)
+Support at least one in MVP:
 
-```
-COMPOSIO_SEARCH_TOOLS
-  - Input: query string, optional model identifier, optional connected_account filter
-  - Output: matched tool schemas + connection status per tool + execution plans from
-    past sessions + related tools
-  - Note: accepts a `model` param to tune planning behaviour per LLM family
-  - This is the most-called meta tool. Almost every session starts with it.
-
-COMPOSIO_GET_TOOL_SCHEMAS
-  - Input: list of tool slugs (e.g. ["GITHUB_CREATE_ISSUE", "GMAIL_SEND_EMAIL"])
-  - Output: full input schema for each slug
-  - Used when the agent knows exactly which tool it wants without searching
-
-COMPOSIO_MULTI_EXECUTE_TOOL
-  - Input: tool_slug, params, optional sync_response_to_workbench: bool
-  - Output: tool execution result (inline OR synced to workbench sandbox)
-  - IMPORTANT: sync_response_to_workbench is agent-set, not automatic
-    The docs say "Predictively set true if the output may be large"
-    This means the agent makes the call — and agents make this wrong sometimes
-  - Executes up to 50 tools in parallel
-
-COMPOSIO_MANAGE_CONNECTIONS
-  - Handles OAuth initiation, API key validation, token refresh
-  - Returns Connect Links for browser-based OAuth flows
-  - Can wait for connection completion (enable_wait_for_connections)
-
-COMPOSIO_REMOTE_WORKBENCH
-  - Persistent Python sandbox
-  - Available helpers: run_composio_tool, invoke_llm, upload_local_file,
-    proxy_execute, web_search, smart_file_extract
-  - State persists across calls within a session (variables, files, memory)
-  - Does NOT persist across sessions
-  - Compute tiers (added April 28 2026): standard (1vCPU/1GB), medium, large, xlarge
-  - Sandbox billing: free today, usage-based pricing planned
-
-COMPOSIO_REMOTE_BASH_TOOL
-  - Bash execution in the same sandbox as the workbench
-  - For jq, awk, grep, curl, etc.
+```text
+Header: X-Aperture-Cache-Bypass: true
 ```
 
-### The session model (verified from API reference)
-
-Sessions are created via `POST /api/v3.1/tool_router/sessions` with:
-- `user_id` — who the session is for (developer-defined, opaque to Composio)
-- `toolkits.enabled` — array of toolkit slugs to allow
-- `tools` — per-toolkit tool enable/disable overrides
-- `tags.enabled` / `tags.disabled` — filter by readOnlyHint etc.
-- `auth_configs` / `connected_accounts` — auth binding
-- `workbench.enable` + `workbench.proxy_execution_enabled`
-- `multi_account` — allow multiple connected accounts per toolkit
-- `experimental.assistive_prompt` — custom context injected into meta tools
-- `experimental.custom_toolkits` — bring your own tools
-
-Sessions return a session_id and an MCP URL. The MCP URL is what gets passed to the LLM framework (LangChain, OpenAI Agents SDK, etc.).
-
-**Critical architecture note:** The LLM framework (LangChain, OpenAI Agents SDK, etc.) maintains the conversation message history — not Composio. Composio's Tool Router only handles tool discovery and execution. This is the core reason why Component D (session state compressor) is harder than it appears: you cannot fix LLM context growth just by adding a meta tool, because the history is managed on the developer's side.
-
-### The observability layer (verified from docs)
-
-Two API families under `/api/v3.1/`:
-
-**Execution logs** (`/logs/tool_calls`):
-- One record per tool call
-- Fields: tool_slug, toolkit_slug, connected_account_id, user_id, session_id,
-  status (success/failed/all), duration_ms
-- Full request payload and response body available on detail endpoint
-- Filterable by date range, user, session, toolkit, tool, status
-
-**Usage metering** (`/project/usage/{entity_type}`):
-- Entity types confirmed: `tool_calls`, `sessions`
-- Groupable by: user_id, toolkit_slug, tool_slug, session_id, date
-- Returns aggregate counts with time bucketing
-- **No token entity type exists anywhere**
-- **No cost fields anywhere**
-
-This is the confirmed observability gap that Aperture's Component B addresses.
-
----
-
-## 4. The Five Components — Deep Breakdown
-
----
-
-### 4A. Cross-Agent Execution Cache
-
-#### What it is
-
-A semantic cache shared across all Composio users that intercepts `COMPOSIO_MULTI_EXECUTE_TOOL` calls for read-heavy, idempotent operations before they reach the external API. On a cache hit: zero API call, near-zero token cost. On a miss: normal execution, result cached for future agents.
-
-Also applies to `COMPOSIO_SEARCH_TOOLS` responses — same search query across many agents generates redundant round-trips today.
-
-#### Why it doesn't exist yet
-
-Nothing in the Composio docs, changelog, or SDK mentions result caching of any kind. Their own MCP gateway blog post lists caching as a best practice for gateways — and then doesn't implement it. The observability layer tracks call counts with no cache hit rate field, confirming it isn't happening.
-
-#### Architecture
-
-```
-Agent calls COMPOSIO_MULTI_EXECUTE_TOOL
-    tool_slug: "GITHUB_LIST_ISSUES"
-    params: {owner: "composioHQ", repo: "composio", state: "open"}
-    ↓
-Aperture cache interceptor
-    ↓
-Step 1: Build cache key
-    exact_key = sha256(f"{tool_slug}:{json.dumps(sorted_params)}")
-    semantic_key = embed(f"{tool_slug}: {json.dumps(params)}")
-    ↓
-Step 2: Lookup
-    Redis GET exact_key → fast path, O(1)
-    if miss: Qdrant search(semantic_key, threshold=0.95, namespace=tool_slug)
-    ↓
-HIT  → return CachedResult(data, age, original_cost_tokens)
-MISS → execute via Composio → cache with TTL → return
-```
-
-#### Cache key design — the hard part
-
-Naive semantic caching is dangerous. Two calls that look similar but have different outputs must never collide. Key decisions:
-
-**Always use exact-match keys for:**
-- Any tool with user-specific output (`GMAIL_SEARCH_EMAILS`, `SLACK_LIST_CHANNELS`)
-- Any write operation (`GITHUB_CREATE_ISSUE`, `GMAIL_SEND_EMAIL`)
-- Any tool with time-sensitive output where staleness matters (`GOOGLE_CALENDAR_LIST_EVENTS`)
-
-**Use semantic matching only for:**
-- Public read operations where slight parameter variations still return the same useful result
-  (e.g. `GITHUB_GET_REPO` with {owner: "composioHQ", repo: "composio"} vs same params slightly differently structured)
-- `COMPOSIO_SEARCH_TOOLS` responses for semantically identical search queries
-  ("send an email" vs "email someone" vs "send email" → same schema response)
-
-**Namespace isolation:** Every cache key is prefixed by `user_id` for private operations and `PUBLIC` for truly cross-user shareable ones. The TTL policy determines which bucket a tool falls into.
-
-#### SEARCH_TOOLS response caching — important nuance
-
-`COMPOSIO_SEARCH_TOOLS` returns:
-1. Tool schemas (shareable across users — same schema for everyone)
-2. Execution plans (shareable — plans aren't user-specific)
-3. Connection status per tool (NOT shareable — user-specific auth state)
-
-So you can't cache the full `SEARCH_TOOLS` response cross-user. You need to:
-- Cache schema + plan portions with a shared key (by query embedding)
-- Re-fetch or separately cache the connection status portion per user
-- Assemble the final response from cached schema/plan + fresh connection status
-
-This adds complexity. A first version could skip the SEARCH_TOOLS cache and only cache MULTI_EXECUTE_TOOL results — that's still valuable and simpler.
-
-#### TTL policy design
-
-TTL policy must ship as a maintained config file covering all 1,000+ Composio tools. First draft classification:
-
-```python
-# Categories:
-# STATIC    — changes very rarely. Long TTL.
-# DYNAMIC   — changes on a schedule. Medium TTL.
-# LIVE      — changes constantly. Short or no TTL.
-# WRITE     — mutates state. Never cache.
-# PRIVATE   — user-specific. Namespace-isolated exact-match only.
-
-TTL_CATEGORIES = {
-    # GitHub
-    "GITHUB_GET_REPO":              ("STATIC",  timedelta(hours=2)),
-    "GITHUB_LIST_REPOS":            ("DYNAMIC", timedelta(minutes=30)),
-    "GITHUB_LIST_ISSUES":           ("DYNAMIC", timedelta(minutes=15)),
-    "GITHUB_GET_ISSUE":             ("DYNAMIC", timedelta(minutes=10)),
-    "GITHUB_LIST_PULL_REQUESTS":    ("DYNAMIC", timedelta(minutes=15)),
-    "GITHUB_CREATE_ISSUE":          ("WRITE",   None),
-    "GITHUB_CREATE_PR":             ("WRITE",   None),
-    "GITHUB_ADD_COMMENT":           ("WRITE",   None),
-
-    # Gmail — always private, even reads
-    "GMAIL_SEARCH_EMAILS":          ("PRIVATE", timedelta(minutes=5)),
-    "GMAIL_GET_EMAIL":              ("PRIVATE", timedelta(minutes=10)),
-    "GMAIL_SEND_EMAIL":             ("WRITE",   None),
-
-    # Notion
-    "NOTION_QUERY_DB":              ("DYNAMIC", timedelta(minutes=10)),
-    "NOTION_GET_PAGE":              ("DYNAMIC", timedelta(minutes=15)),
-    "NOTION_CREATE_PAGE":           ("WRITE",   None),
-
-    # Slack — always private
-    "SLACK_LIST_CHANNELS":          ("PRIVATE", timedelta(minutes=15)),
-    "SLACK_SEARCH_MESSAGES":        ("PRIVATE", timedelta(minutes=5)),
-    "SLACK_SEND_MESSAGE":           ("WRITE",   None),
-
-    # Web search
-    "SERPAPI_SEARCH":               ("STATIC",  timedelta(hours=6)),
-    "TAVILY_SEARCH":                ("STATIC",  timedelta(hours=6)),
-
-    # Meta tool responses
-    "COMPOSIO_SEARCH_TOOLS":        ("STATIC",  timedelta(hours=1)),
-}
-```
-
-The full 1,000-tool TTL config is real work — probably 2–3 days of classification, but it only needs to be done once and maintained as tools are added.
-
-#### Network effect math
-
-Assume:
-- 100,000 active developers
-- Average 50 sessions/day per developer
-- Average 5 MULTI_EXECUTE_TOOL calls per session
-- 30% of calls are public read operations (cacheable cross-user)
-- Cache hit rate starts at 0%, grows as cache warms up
-
-At steady state with a warm cache, public read operations from popular apps (GitHub, Notion, Slack) could realistically reach 60–80% hit rate within hours of platform usage. Private operations always go through.
-
-Even a 20% overall hit rate across all calls eliminates ~5M API calls/day. The token savings are secondary to the API rate limit relief and latency improvement for developers.
-
-#### What could go wrong
-
-- **Stale data bugs**: A developer gets cached issue list from 14 minutes ago and makes a decision on outdated data. The TTL policy is the mitigation but it's never perfect. Need a cache bypass header / parameter for time-sensitive sessions.
-- **Cache poisoning**: A failed or corrupted tool result gets cached and served to future agents. Mitigation: only cache `status: success` responses, validate response schema before caching.
-- **Semantic collision**: Qdrant returns a "match" that isn't actually equivalent. Mitigation: keep semantic matching conservative (threshold 0.95 is high), only apply it to SEARCH_TOOLS queries (not MULTI_EXECUTE params where correctness matters more).
-- **Qdrant operational overhead**: Running a vector store adds infra complexity. First version could use only Redis with exact-match keys and skip Qdrant entirely — this alone covers 80% of the value (MULTI_EXECUTE exact caching).
-
----
-
-### 4B. Token Attribution Observability
-
-#### What it is
-
-A new layer on top of Composio's existing observability stack that tracks LLM token costs per meta tool call, session, and user — using payload size estimation since Composio doesn't sit in the LLM API call path.
-
-#### Why it doesn't exist
-
-Confirmed: Composio's usage API has two entity types — `tool_calls` and `sessions`. Both track counts. There is no `tokens`, `input_tokens`, `output_tokens`, or `cost` entity anywhere. The execution log tracks `duration_ms`. No token fields.
-
-#### The measurement challenge — this is the critical nuance
-
-Composio's Tool Router sits between the agent and **external tool APIs**, not between the agent and the **LLM**. The flow is:
-
-```
-Developer's LLM (Claude/GPT/etc.)
-    → calls Composio meta tools (MCP protocol)
-        → Composio executes against external APIs (GitHub, Gmail, etc.)
-        → Composio returns results to the LLM
-    → LLM generates next response
-```
-
-Composio sees the meta tool calls and results. It does **not** see the LLM's own API call (the one where input/output tokens are counted by Anthropic/OpenAI). Therefore, Composio cannot directly read `usage.input_tokens` from the LLM provider's API response.
-
-**What Composio CAN measure without seeing the LLM API call:**
-
-1. **What it sends to the agent** — the content of every meta tool response (schema payloads, execution results, plan text). By tokenizing this server-side, Composio can compute the exact token cost of its contributions to the LLM's input context.
-
-2. **What the agent sends to it** — the tool call payloads. These are the agent's output tokens for tool use calls, roughly.
-
-3. **Meta tool definition sizes** — the six meta tool schemas sent at session start. These are fixed and known.
-
-**What this means:** Aperture can produce accurate "contribution to input tokens" per meta tool call. This answers the most important question: "which Composio meta tool calls are costing my LLM the most in input tokens?" It cannot directly measure total session token cost (which includes all the agent's reasoning, system prompt, user messages, etc.) — that lives outside Composio's visibility.
-
-This is still extremely valuable. Developers know their total token cost from their LLM provider's bill. What they don't know is *why* — which calls, which tools, which sessions are the expensive ones. Aperture fills that gap.
-
-#### Implementation
-
-At every meta tool call, Aperture:
-
-```python
-from tiktoken import encoding_for_model
-
-def measure_token_cost(response_payload: dict, model: str) -> TokenCost:
-    enc = encoding_for_model(model)  # or Anthropic equivalent
-    serialized = json.dumps(response_payload)
-    token_count = len(enc.encode(serialized))
-    return TokenCost(
-        input_tokens_contributed=token_count,
-        tool_slug=response_payload.get("tool_slug"),
-        session_id=response_payload.get("session_id"),
-        timestamp=datetime.utcnow()
-    )
-```
-
-Store as a new event type alongside existing log events. Aggregate into new entity types in the usage API:
-
-```
-input_tokens_contributed   → tokens Composio added to LLM input context
-breakdowns:
-    group_by: meta_tool_slug   → which meta tool is most expensive
-    group_by: toolkit_slug     → which toolkit's results cost most
-    group_by: session_turn     → how cost grows across turns
-    group_by: user_id          → per-user attribution
-    group_by: date             → trend over time
-```
-
-#### The model parameter opportunity
-
-`COMPOSIO_SEARCH_TOOLS` already accepts a `model` parameter described as "Used to optimize planning/search behaviour." This is the hook. If Composio knows the model, it can use the right tokenizer for accurate measurement. Aperture should read this parameter and use the correct encoding.
-
-For sessions that don't specify a model, use cl100k_base (the GPT-4 tokenizer) as a reasonable approximation — it's close enough for decision-making purposes.
-
-#### New observability endpoints
-
-Matching the existing `v3.1` pattern so developers don't have to learn a new API shape:
-
-```bash
-# Token cost by meta tool slug, last 7 days
-POST /api/v3.1/project/usage/input_tokens_contributed
-{
-  "group_by": "meta_tool_slug",
-  "order_by": "total_quantity",
-  "order_direction": "desc",
-  "dt_gt": "2026-04-28T00:00:00Z",
-  "dt_lt": "2026-05-05T23:59:59Z"
-}
-
-# Per-session turn cost growth
-POST /api/v3.1/project/usage/input_tokens_contributed
-{
-  "group_by": "session_turn",
-  "session_id": "trs_abc123"
-}
-
-# Cache savings (once cache is live)
-POST /api/v3.1/project/usage/cache_tokens_saved
-{
-  "group_by": "tool_slug",
-  "dt_gt": "2026-05-01T00:00:00Z"
-}
-```
-
-#### Why this is the most important component to build first
-
-Every other Aperture component is valuable but its value is invisible without attribution. If you ship the schema optimizer but can't show how many tokens each optimized schema saves per day, you can't prove the ROI. If you ship the cache but can't show the hit rate and token savings, you can't argue for investing more in it. Token attribution is the measurement layer that makes everything else legible. Build it first.
-
----
-
-### 4C. Schema Tokenizer Optimizer
-
-#### What it is
-
-A one-time offline pipeline that rewrites Composio's 1,000+ tool description fields to minimize token cost without changing what the schema conveys or how agents use the tools. Run once (and again when new tools are added). Results committed to the registry permanently.
-
-#### Why this matters
-
-`COMPOSIO_SEARCH_TOOLS` and `COMPOSIO_GET_TOOL_SCHEMAS` return tool descriptions every session. These descriptions are written by humans in natural language for human readability — not for tokenizer efficiency. There is a measurable gap between "reads well to a human" and "tokenizes compactly for an LLM."
-
-Tool schemas are injected into every session that uses those tools. If 100,000 developers each get a slightly bloated GITHUB_CREATE_ISSUE description 50 times per day, that adds up permanently. Fixing it once saves forever.
-
-#### The pipeline in detail
-
-```
-Step 1: Inventory and baseline measurement
-  - Pull all tool schemas from Composio registry via API
-  - For each schema, tokenize the `description` and `parameter descriptions`
-    using tiktoken (cl100k_base for GPT-family) and Anthropic tokenizer
-  - Record baseline token count per field per tool
-  - Sort by (baseline_tokens × estimated_call_frequency) descending
-  - Start optimization from the highest-leverage tools first
-
-Step 2: Rewrite candidate generation
-  - For each description field, apply rewrite rules:
-    a) Strip verbose preambles:
-       "Creates a new issue in a specified GitHub repository." →
-       "Create a GitHub issue."
-    b) Compress parameter lists:
-       "The owner of the repository (GitHub username)" → "Repo owner (GitHub username)"
-    c) Remove redundant type annotation prose:
-       "Provide a string containing the title of the issue" → "Issue title"
-    d) Use imperative mood consistently (saves 1-2 tokens per description)
-    e) Replace multi-token compound phrases with single-token equivalents where possible
-  - Generate 3 candidate rewrites per field at different compression levels
-
-Step 3: Semantic equivalence validation
-  - For each tool with candidates, run 50 held-out test prompts through
-    both original and rewritten schema
-  - Measure:
-    a) Same tool selected? (most important)
-    b) Same required parameters populated?
-    c) Same optional parameters inferred from context?
-  - Accept only candidates where all 50 prompts produce identical tool selection
-    and parameter extraction as the original schema
-  - If no candidate passes: keep original, flag for manual review
-
-Step 4: Token reduction measurement
-  - For each accepted rewrite: record original_tokens, new_tokens, reduction_pct
-  - Aggregate total projected savings across call frequency
-
-Step 5: Commit to registry
-  - Propose schema updates as a batch (internal PR or direct registry write)
-  - Keep original descriptions in a `description_verbose` field for documentation
-  - Tag optimized schemas with `aperture_optimized: true` + optimizer version
-```
-
-#### Realistic numbers from a test run
-
-Here is an actual test on three real-style Composio tool descriptions:
-
-```
-GITHUB_CREATE_ISSUE (description field only):
-  Original: "Creates a new issue in a specified GitHub repository. You must
-  provide the repository owner username, the repository name, and the issue
-  title. Optionally, you may include a body for the issue description,
-  assignees as a list of GitHub usernames, milestone as a milestone number,
-  and labels as a list of label names."
-  Tokens (cl100k): 68
-  
-  Optimized: "Create a GitHub issue. Required: owner, repo, title.
-  Optional: body, assignees (usernames), milestone (number), labels."
-  Tokens (cl100k): 28
-  Reduction: 59%
-
-GMAIL_SEND_EMAIL (description field only):
-  Original: "Sends an email message to one or more recipients through the
-  authenticated Gmail account. You must specify the recipient email address
-  or addresses in the to field, and the subject line of the email. The body
-  of the email can be provided as plain text or HTML. You may optionally
-  specify CC and BCC recipients."
-  Tokens (cl100k): 62
-  
-  Optimized: "Send an email via Gmail. Required: to, subject, body.
-  Optional: cc, bcc. Body accepts plain text or HTML."
-  Tokens (cl100k): 27
-  Reduction: 56%
-
-NOTION_CREATE_PAGE (description field only):
-  Original: "Creates a new page in Notion. You can create the page as a
-  child of an existing page or inside a database. If creating inside a
-  database, you may need to provide property values that match the database
-  schema. The title of the page must always be provided."
-  Tokens (cl100k): 57
-  
-  Optimized: "Create a Notion page. Required: title, parent (page or
-  database ID). For database pages: include matching property values."
-  Tokens (cl100k): 26
-  Reduction: 54%
-```
-
-Average reduction of ~56% across these three. Conservative estimate across all 1,000+ tools: 35–55% per description. The variance is high — some are already lean, some are extremely verbose.
-
-#### Important caveat about semantic equivalence testing
-
-The test described above needs to be implemented carefully. The validation suite must include:
-
-- **Disambiguation tests**: prompts designed to require the model to distinguish between similar tools (GITHUB_CREATE_ISSUE vs GITHUB_CREATE_PR). Make sure the compressed schema still guides correct selection.
-- **Parameter inference tests**: prompts where optional parameters should or should not be included. Make sure the compressed description still correctly signals which parameters are optional.
-- **Edge case tests**: prompts with unusual parameter values, non-English input, ambiguous intent.
-
-Running LLM inference for 50 prompts × 3 candidates × 1,000 tools = 150,000 inference calls. At ~200 tokens per call (small prompts), that's about 30M tokens. At Sonnet pricing, roughly $90–150 for the full validation run. This is a one-time cost for permanent savings.
-
-#### Maintenance: what happens when Composio adds new tools?
-
-This pipeline needs to run on any newly added tool before its schema is deployed. This means integrating it as a step in the tool onboarding process — either automated (run optimizer as part of CI when a new schema is merged) or manual (optimizer run on a schedule and new tools flagged for review).
-
----
-
-### 4D. Session State Compressor
-
-#### What it is
-
-A structured state object + new meta tool (`COMPOSIO_SESSION_STATE`) that enables agents to replace growing conversation history with an in-place state machine — keeping LLM context cost flat across turns instead of growing linearly.
-
-#### The real problem with LLM context growth
-
-In a multi-turn Composio session, a typical turn sequence looks like:
-
-```
-Turn 1:  [system_prompt] + [6 meta tool definitions] + [user message]
-         → ~2,000 input tokens
-
-Turn 2:  [system_prompt] + [6 meta tool definitions] + [user message]
-         + [assistant turn 1] + [tool calls turn 1] + [tool results turn 1]
-         → ~5,000 input tokens
-
-Turn 5:  Everything above + turns 2, 3, 4
-         → ~12,000 input tokens
-
-Turn 10: Everything above + turns 5–9
-         → ~25,000 input tokens
-```
-
-Linear growth. By turn 10, the session costs 12× what it cost at turn 1, even though most of what was said in turns 1–5 is no longer relevant to the current task step.
-
-This is confirmed as unaddressed by Composio. The workbench handles Python-side state (variables, data) but the LLM's conversation history is managed entirely by the developer's orchestrator (LangChain, OpenAI Agents SDK, etc.).
-
-#### The fundamental architectural challenge — must be understood before building
-
-**Composio does not control the LLM's message history.** The MCP URL returned by the Tool Router is passed to an LLM framework (e.g. LangChain). That framework maintains the message list and passes it to the LLM on every call. Composio's Tool Router handles tool execution — it does not intercept the LLM's full API call.
-
-This means: **adding `COMPOSIO_SESSION_STATE` as a meta tool does not automatically compress context.** The developer's orchestrator still appends conversation history normally. The meta tool approach only works if:
-
-1. The developer **explicitly uses** `COMPOSIO_SESSION_STATE` to read/write state
-2. The developer **configures their orchestrator** to pass only the last N turns (or just the state object) instead of full history
-3. The agent is **prompted** to use the state tool instead of relying on remembered context
-
-This is a bigger ask than "here's a new meta tool — context is compressed automatically." It requires a pattern shift in how developers structure their agents.
-
-#### Realistic implementation paths
-
-**Path 1: Opt-in best-practice pattern (lowest friction)**
-
-Provide:
-- The `COMPOSIO_SESSION_STATE` meta tool (read/update/reset operations)
-- A prompt template instructing the agent to use it
-- SDK helpers that limit message history to last N turns and inject the state object
-
-Developers who want compression opt in by using the pattern. Those who don't, nothing changes. This is the right first version.
-
-```python
-# Developer changes their agent setup from:
-agent = YourAgent(mcp_url=session.mcp_url)
-
-# To:
-from aperture import stateful_agent_config
-
-agent = YourAgent(
-    mcp_url=session.mcp_url,
-    **stateful_agent_config(
-        state_url=session.state_url,    # Aperture-managed state endpoint
-        max_history_turns=3,            # Keep only last 3 turns verbatim
-    )
-)
-```
-
-**Path 2: Session-level config (medium friction)**
-
-Add `state_compression: true` to the session creation payload. Composio then:
-- Adds `COMPOSIO_SESSION_STATE` to the meta tool set automatically
-- Returns a recommended system prompt addendum instructing the agent to use it
-
-Still requires the developer's orchestrator to truncate history, but gives more built-in guidance.
-
-**Path 3: Proxy-level history truncation (most powerful, most complex)**
-
-Build an HTTP proxy that wraps the MCP endpoint and intercepts the developer's LLM API calls (requires the developer to route their LLM calls through Aperture rather than directly to the provider). The proxy:
-- Intercepts the message history before it reaches the LLM
-- Replaces all turns older than N with the compressed state object
-- Passes the truncated context to the LLM
-- Parses the response and updates the state object
-
-This is the "works without any developer changes" version but it requires the developer to proxy their LLM calls — a significant ask and a privacy consideration. Not for v1.
-
-**Recommendation:** Build Path 1 for the internship. Document it clearly. Measure whether developers use it. If adoption is high, invest in Path 2 or 3 in a follow-up.
-
-#### The state schema
+Optional:
 
 ```json
 {
-  "_meta": {
-    "version": 1,
-    "session_id": "trs_abc123",
-    "turn_count": 8,
-    "created_at": "2026-05-05T10:00:00Z",
-    "updated_at": "2026-05-05T10:14:32Z"
+  "aperture_cache_bypass": true
+}
+```
+
+## 7.9 Public functions
+
+```python
+def load_cache_policy(tool_slug: str) -> CachePolicy:
+    """Return cache policy for tool, defaulting to not cacheable."""
+
+
+def normalize_params(tool_slug: str, params: dict) -> dict:
+    """Return deterministic normalized params for exact-match keying."""
+
+
+def build_cache_key(
+    tool_slug: str,
+    params: dict,
+    context: ExecutionContext,
+    policy: CachePolicy,
+) -> str | None:
+    """Return scoped cache key or None if unsafe/impossible."""
+
+
+async def maybe_execute_with_cache(
+    tool_slug: str,
+    params: dict,
+    context: ExecutionContext,
+    execute_fn,
+):
+    """Return cached result on hit; otherwise execute and store if safe."""
+```
+
+## 7.10 Required tests
+
+### Unit tests
+
+- Policy defaults unknown tools to not cacheable.
+- Write tools are not cacheable.
+- Same params in different key order produce same key.
+- Different account IDs produce different keys.
+- Missing account ID prevents account-scoped caching.
+- Bypass skips cache lookup.
+- Failed responses are not cached.
+- Cached response includes metadata but preserves original payload.
+
+### Integration tests
+
+- Cache miss calls execution function exactly once.
+- Cache hit does not call execution function.
+- TTL is set in Redis.
+- Cache hit emits event.
+- Cache miss emits event.
+- Not-cacheable emits event.
+
+### Security regression tests
+
+- `GMAIL_SEARCH_EMAILS` results never appear under public scope.
+- `GITHUB_CREATE_ISSUE` is never cached.
+- `COMPOSIO_MANAGE_CONNECTIONS` is never cached.
+- Connected account ID is included for account-scoped tools.
+
+## 7.11 Definition of done
+
+This component is done when:
+
+- Approved safe read tools can be cached.
+- Writes/auth tools are impossible to cache under policy.
+- Cache hit avoids external execution.
+- Cache events report hit/miss/bypass/not-cacheable.
+- Developers can bypass cache.
+- Unit, integration, and security tests pass.
+
+---
+
+# 8. Component C — Schema Token Optimization
+
+## 8.1 Problem
+
+Tool descriptions and parameter descriptions cost tokens every time they are shown to the LLM. Some descriptions are verbose. Shorter descriptions can save tokens, but only if the agent still uses the tools correctly.
+
+## 8.2 Unique Aperture contribution
+
+Aperture does not simply shorten text. It creates a measured and validated optimization pipeline:
+
+1. Measure schema token cost.
+2. Rank high-impact schemas.
+3. Generate compact rewrites.
+4. Validate behavior.
+5. Accept only safe rewrites.
+6. Produce before/after reports.
+
+## 8.3 What may be changed
+
+Allowed:
+
+- Tool description text
+- Parameter description text
+- Enum description text
+- Redundant examples if behavior is preserved
+- Repeated verbose wording
+
+Not allowed without explicit review:
+
+- Tool slug
+- Parameter names
+- Required fields
+- Types
+- Auth requirements
+- Execution behavior
+- Return schema
+- Safety-critical warnings
+
+## 8.4 Optimization algorithm
+
+```text
+For each tool schema:
+  1. Extract description fields.
+  2. Count original tokens.
+  3. Estimate impact = token_count × usage_frequency.
+  4. Rank candidates.
+  5. Generate candidate rewrites.
+  6. Validate against test prompts.
+  7. Accept candidate only if validation passes.
+  8. Save report and diff.
+```
+
+## 8.5 Rewrite patterns
+
+### Pattern 1 — Verbose prose to compact imperative
+
+Before:
+
+```text
+Creates a new issue in a specified GitHub repository.
+```
+
+After:
+
+```text
+Create a GitHub issue.
+```
+
+### Pattern 2 — Required/optional structure
+
+Before:
+
+```text
+You must provide the repository owner username, repository name, and issue title. Optionally, you may include a body and labels.
+```
+
+After:
+
+```text
+Required: owner, repo, title. Optional: body, labels.
+```
+
+### Pattern 3 — Remove redundant type wording
+
+Before:
+
+```text
+A string containing the title of the issue.
+```
+
+After:
+
+```text
+Issue title.
+```
+
+### Pattern 4 — Preserve disambiguation
+
+Keep wording that helps distinguish:
+
+- Send email vs create draft
+- Create issue vs create pull request
+- Query database vs get page
+- List messages vs send message
+- Upload file vs download file
+
+## 8.6 Validation cases
+
+Validation case format:
+
+```json
+{
+  "case_id": "github_create_issue_001",
+  "user_prompt": "Create a GitHub issue in composioHQ/composio titled 'Fix login bug' and label it bug.",
+  "expected_tool": "GITHUB_CREATE_ISSUE",
+  "expected_required_params": {
+    "owner": "composioHQ",
+    "repo": "composio",
+    "title": "Fix login bug"
   },
-  "goal": "String — the high-level objective of this session",
-  "phase": "String — current step in the workflow (planning/executing/reviewing)",
-  "completed": ["Array of strings — steps the agent has confirmed done"],
-  "pending": ["Array of strings — steps remaining"],
-  "facts": {
-    "key": "value — structured findings discovered during the session"
-  },
-  "decisions": [
-    {"turn": 3, "decision": "Chosen option A over B because X", "rationale": "..."}
-  ],
-  "working_memory": "String — short-term context for the current step only",
-  "errors": [
-    {"turn": 5, "tool": "GITHUB_CREATE_ISSUE", "error": "Rate limited", "resolution": "Retried at turn 6"}
+  "expected_optional_params_present": ["labels"],
+  "forbidden_tools": ["GITHUB_CREATE_PULL_REQUEST"]
+}
+```
+
+## 8.7 Validation dimensions
+
+| Dimension | Pass condition |
+|---|---|
+| Tool selection | Optimized schema selects same tool as original/expected |
+| Required params | Required params are present and correct |
+| Optional params | Optional params are included/excluded correctly |
+| Disambiguation | Similar tools are not confused |
+| Edge cases | Unusual but valid prompts still work |
+| Real prompts | Historical prompts still work where available |
+
+## 8.8 Public functions
+
+```python
+def extract_description_fields(schema: dict) -> list[SchemaField]:
+    """Return tool/parameter/enum description fields with field paths."""
+
+
+def count_schema_field_tokens(field: SchemaField, model: str | None = None) -> int:
+    """Count tokens in a schema description field."""
+
+
+def generate_rewrite_candidates(field: SchemaField) -> list[str]:
+    """Return compact candidate rewrites."""
+
+
+def validate_schema_candidate(
+    original_schema: dict,
+    candidate_schema: dict,
+    validation_cases: list[ValidationCase],
+) -> ValidationResult:
+    """Return behavior validation result."""
+
+
+def produce_schema_optimization_report(results: list[SchemaOptimizationResult]) -> str:
+    """Return Markdown/JSON report."""
+```
+
+## 8.9 Required tests
+
+### Unit tests
+
+- Description fields are extracted correctly.
+- Token counts are deterministic.
+- Rewrite candidates do not modify parameter names.
+- Rewrite candidates do not modify required fields.
+- Report includes original and optimized counts.
+
+### Validation tests
+
+- Accepted rewrite passes all validation cases.
+- Rewrite causing wrong tool selection is rejected.
+- Rewrite omitting important optional parameter description is rejected.
+- Similar-tool disambiguation cases pass.
+
+### Regression tests
+
+- Known dangerous compression examples are rejected.
+- Safety-critical wording is preserved or flagged for manual review.
+
+## 8.10 Definition of done
+
+This component is done when:
+
+- Top 25 schemas are measured.
+- Top 25 optimization candidates are generated.
+- Every accepted rewrite has validation evidence.
+- Every rejected rewrite has a reason.
+- Before/after savings report exists.
+- No execution behavior fields are changed.
+
+---
+
+# 9. Benchmark Suite
+
+## 9.1 Purpose
+
+The benchmark suite proves Aperture’s value and catches regressions.
+
+It should answer:
+
+- How many tokens did Composio contribute before and after?
+- How many API calls did caching avoid?
+- Did optimized schemas preserve tool behavior?
+- Did latency improve on cache hits?
+- Where did Aperture not help?
+
+## 9.2 Benchmark modes
+
+| Mode | Description |
+|---|---|
+| `baseline` | Vanilla Composio behavior |
+| `observed` | Token attribution only |
+| `cached` | Token attribution + cache |
+| `optimized` | Token attribution + cache + optimized schemas |
+
+## 9.3 Required workflows
+
+At minimum:
+
+1. GitHub issue triage
+2. GitHub repo metadata lookup
+3. Gmail search and summarize
+4. Calendar availability lookup
+5. Notion page lookup
+6. Slack search digest
+7. Tool-discovery-heavy workflow
+8. Large-result workflow using Workbench
+
+## 9.4 Metrics captured
+
+```json
+{
+  "workflow_name": "github_issue_triage",
+  "mode": "cached",
+  "total_input_tokens_contributed": 8120,
+  "meta_tool_calls": 6,
+  "underlying_tool_calls": 4,
+  "cache_hits": 2,
+  "cache_misses": 2,
+  "api_calls_avoided": 2,
+  "estimated_tokens_saved_by_cache": 1900,
+  "latency_ms_total": 8420,
+  "tool_selection_accuracy": 1.0,
+  "parameter_accuracy": 1.0
+}
+```
+
+## 9.5 Required reports
+
+1. `baseline_token_cost_sample.md`
+2. `cache_savings_report.md`
+3. `schema_optimization_report.md`
+4. `aperture_mvp_benchmark.md`
+
+## 9.6 Definition of done
+
+Benchmarking is done when:
+
+- All required workflows run in all required modes.
+- Reports include successes and failures.
+- Token savings are measured, not guessed.
+- Cache hit/miss behavior is visible.
+- Schema behavior validation is included.
+
+---
+
+# 10. Repository Structure
+
+```text
+aperture/
+  README.md
+  pyproject.toml
+  .env.example
+  Makefile
+
+  aperture/
+    __init__.py
+    config.py
+    types.py
+
+    observability/
+      __init__.py
+      serializers.py
+      token_counter.py
+      tokenizer_registry.py
+      event_schema.py
+      event_emitter.py
+      aggregations.py
+      reports.py
+      api.py
+
+    cache/
+      __init__.py
+      policy.py
+      policy.yaml
+      normalizer.py
+      key_builder.py
+      redis_store.py
+      interceptor.py
+      bypass.py
+      safety.py
+      reports.py
+
+    schema_optimizer/
+      __init__.py
+      fetch_schemas.py
+      extract_fields.py
+      tokenize_schemas.py
+      rank_candidates.py
+      rewrite_rules.py
+      candidate_generator.py
+      validator.py
+      diff_writer.py
+      reports.py
+      fixtures/
+        validation_cases.jsonl
+
+    benchmarks/
+      __init__.py
+      runner.py
+      metrics.py
+      report.py
+      workflows/
+        github_issue_triage.py
+        github_repo_lookup.py
+        gmail_search_summary.py
+        calendar_availability.py
+        notion_page_lookup.py
+        slack_search_digest.py
+        tool_discovery_heavy.py
+        workbench_large_result.py
+
+  tests/
+    observability/
+      test_serializers.py
+      test_token_counter.py
+      test_event_emitter.py
+    cache/
+      test_policy.py
+      test_normalizer.py
+      test_key_builder.py
+      test_interceptor.py
+      test_safety.py
+    schema_optimizer/
+      test_extract_fields.py
+      test_rewrite_rules.py
+      test_validator.py
+      test_reports.py
+    benchmarks/
+      test_runner.py
+    integration/
+      test_token_event_flow.py
+      test_cache_flow.py
+
+  docs/
+    architecture.md
+    integration_map.md
+    token_attribution.md
+    caching_policy.md
+    schema_optimizer.md
+    benchmark_methodology.md
+    security_privacy.md
+    follow_on_roadmap.md
+
+  reports/
+    .gitkeep
+```
+
+---
+
+# 11. Coding Agent Task Cards
+
+Each task card is designed to be assigned to one coding agent.
+
+---
+
+## Task A1 — Build stable payload serializer
+
+### Goal
+
+Create deterministic serialization for token counting.
+
+### Inputs
+
+- Any Python object / JSON-like payload
+
+### Output
+
+- Deterministic string
+
+### Files
+
+- `aperture/observability/serializers.py`
+- `tests/observability/test_serializers.py`
+
+### Requirements
+
+- Sort keys recursively.
+- Use compact separators.
+- Preserve Unicode.
+- Handle dataclasses if used.
+- Handle non-JSON values by converting safely or raising clear error.
+
+### Tests
+
+- Same dict with different key order serializes identically.
+- Nested dict key ordering is stable.
+- Unicode text survives.
+- Empty dict/list works.
+
+### Definition of done
+
+Serializer is deterministic and tests pass.
+
+---
+
+## Task A2 — Build token counter
+
+### Goal
+
+Count tokens for serialized Composio payloads.
+
+### Files
+
+- `aperture/observability/token_counter.py`
+- `aperture/observability/tokenizer_registry.py`
+- `tests/observability/test_token_counter.py`
+
+### Requirements
+
+- Accept payload and optional model.
+- Use tokenizer registry.
+- Fallback safely for unknown models.
+- Return token count and tokenizer name.
+- Do not fail on large payloads.
+
+### Definition of done
+
+Token counter works for known and unknown models and emits deterministic counts.
+
+---
+
+## Task A3 — Build token event emitter
+
+### Goal
+
+Create and emit `TokenAttributionEvent` objects.
+
+### Files
+
+- `aperture/observability/event_schema.py`
+- `aperture/observability/event_emitter.py`
+- `tests/observability/test_event_emitter.py`
+
+### Requirements
+
+- Define event dataclass or Pydantic model.
+- Validate required fields.
+- Support pluggable sink: in-memory for tests, DB/log sink for integration.
+- Avoid raw payload storage.
+
+### Definition of done
+
+Events can be created, validated, and written to a test sink.
+
+---
+
+## Task A4 — Hook token attribution into meta-tool responses
+
+### Goal
+
+Emit token events whenever Composio returns a meta-tool response.
+
+### Files
+
+- Depends on actual Composio hook points
+- `docs/integration_map.md`
+- `tests/integration/test_token_event_flow.py`
+
+### Requirements
+
+- Identify response hook points.
+- Count payload before returning it.
+- Do not mutate payload.
+- Include project/user/session/meta-tool metadata.
+
+### Definition of done
+
+Simulated or real meta-tool responses produce token events.
+
+---
+
+## Task B1 — Build cache policy loader
+
+### Goal
+
+Load cacheability rules from YAML.
+
+### Files
+
+- `aperture/cache/policy.yaml`
+- `aperture/cache/policy.py`
+- `tests/cache/test_policy.py`
+
+### Requirements
+
+- Unknown tools default to not cacheable.
+- Invalid policy fails clearly.
+- Write/auth tools are non-cacheable.
+- TTL required for cacheable tools.
+
+### Definition of done
+
+Policy loader is deny-by-default and tested.
+
+---
+
+## Task B2 — Build parameter normalizer and key builder
+
+### Goal
+
+Produce stable exact-match keys.
+
+### Files
+
+- `aperture/cache/normalizer.py`
+- `aperture/cache/key_builder.py`
+- `tests/cache/test_normalizer.py`
+- `tests/cache/test_key_builder.py`
+
+### Requirements
+
+- Sort dict keys recursively.
+- Preserve list order.
+- Remove Aperture-only metadata.
+- Include cache scope.
+- Return `None` if scope identifiers are missing.
+
+### Definition of done
+
+Equivalent params produce same key; private scopes cannot collide.
+
+---
+
+## Task B3 — Build Redis cache store
+
+### Goal
+
+Provide simple get/set cache operations with TTL.
+
+### Files
+
+- `aperture/cache/redis_store.py`
+- `tests/cache/test_redis_store.py`
+
+### Requirements
+
+- `get(key)`
+- `set(key, value, ttl_seconds)`
+- `delete(key)` optional
+- JSON serialization for values
+- Testable with fake/in-memory store if Redis unavailable
+
+### Definition of done
+
+Store supports TTL behavior and test fake exists.
+
+---
+
+## Task B4 — Build cache interceptor
+
+### Goal
+
+Wrap tool execution with cache lookup/store behavior.
+
+### Files
+
+- `aperture/cache/interceptor.py`
+- `aperture/cache/bypass.py`
+- `tests/cache/test_interceptor.py`
+- `tests/cache/test_safety.py`
+
+### Requirements
+
+- Check bypass.
+- Check policy.
+- Build scoped key.
+- Return cached result on hit.
+- Execute and store on miss.
+- Emit cache events.
+- Do not cache failed responses.
+
+### Definition of done
+
+Cache hit avoids execution and all safety tests pass.
+
+---
+
+## Task C1 — Fetch and inventory schemas
+
+### Goal
+
+Create baseline inventory of tool schemas.
+
+### Files
+
+- `aperture/schema_optimizer/fetch_schemas.py`
+- `aperture/schema_optimizer/extract_fields.py`
+- `tests/schema_optimizer/test_extract_fields.py`
+
+### Requirements
+
+- Fetch schemas from registry/API/source.
+- Extract all description fields.
+- Preserve field paths.
+- Output JSON inventory.
+
+### Definition of done
+
+Schema fields can be listed with tool slug and field path.
+
+---
+
+## Task C2 — Tokenize and rank schema fields
+
+### Goal
+
+Identify highest-impact schema fields.
+
+### Files
+
+- `aperture/schema_optimizer/tokenize_schemas.py`
+- `aperture/schema_optimizer/rank_candidates.py`
+
+### Requirements
+
+- Count tokens per field.
+- Join with usage frequency if available.
+- Rank by estimated impact.
+- Produce top candidates report.
+
+### Definition of done
+
+Top 25 optimization candidates are identified.
+
+---
+
+## Task C3 — Generate rewrite candidates
+
+### Goal
+
+Produce compact candidate descriptions.
+
+### Files
+
+- `aperture/schema_optimizer/rewrite_rules.py`
+- `aperture/schema_optimizer/candidate_generator.py`
+- `tests/schema_optimizer/test_rewrite_rules.py`
+
+### Requirements
+
+- Apply rule-based rewrites.
+- Do not touch non-description fields.
+- Produce multiple candidates if useful.
+- Flag safety-critical text.
+
+### Definition of done
+
+Candidate rewrites are shorter and structurally safe.
+
+---
+
+## Task C4 — Validate schema candidates
+
+### Goal
+
+Reject rewrites that change agent behavior.
+
+### Files
+
+- `aperture/schema_optimizer/validator.py`
+- `aperture/schema_optimizer/fixtures/validation_cases.jsonl`
+- `tests/schema_optimizer/test_validator.py`
+
+### Requirements
+
+- Run validation cases.
+- Compare tool selection.
+- Compare required parameter presence.
+- Compare optional parameter behavior where test defines it.
+- Reject on behavior difference.
+
+### Definition of done
+
+Validator accepts safe rewrites and rejects unsafe rewrites in tests.
+
+---
+
+## Task C5 — Generate schema optimization report
+
+### Goal
+
+Produce reviewable before/after report and diffs.
+
+### Files
+
+- `aperture/schema_optimizer/reports.py`
+- `aperture/schema_optimizer/diff_writer.py`
+- `reports/schema_optimization_report.md`
+
+### Requirements
+
+- Include original tokens.
+- Include optimized tokens.
+- Include reduction percent.
+- Include validation pass/fail.
+- Include rejection reasons.
+
+### Definition of done
+
+Human reviewer can approve/reject schema diffs from report.
+
+---
+
+## Task D1 — Build benchmark runner
+
+### Goal
+
+Run workflows in multiple modes and compare results.
+
+### Files
+
+- `aperture/benchmarks/runner.py`
+- `aperture/benchmarks/metrics.py`
+- `aperture/benchmarks/report.py`
+- `tests/benchmarks/test_runner.py`
+
+### Requirements
+
+- Support modes: baseline, observed, cached, optimized.
+- Capture metrics.
+- Produce JSON and Markdown report.
+- Allow mocked workflow execution for tests.
+
+### Definition of done
+
+Benchmark runner produces comparable mode reports.
+
+---
+
+# 12. Multi-Agent Work Breakdown
+
+## 12.1 Recommended agents
+
+| Agent | Focus | Primary output |
+|---|---|---|
+| Architecture Agent | Integration discovery | `docs/integration_map.md` |
+| Observability Agent | Token counting/events/API | `observability/*` |
+| Cache Agent | Cache policy/key/store/interceptor | `cache/*` |
+| Schema Agent | Schema inventory/rewrite/validation | `schema_optimizer/*` |
+| QA Agent | Tests, benchmarks, safety gates | `tests/*`, `benchmarks/*` |
+| Docs Agent | Developer docs and reports | `docs/*`, `reports/*` |
+| Review Agent | Security/privacy/code review | Review notes and approvals |
+
+## 12.2 Parallelization plan
+
+### Phase 1 can run in parallel
+
+- Architecture Agent maps hook points.
+- Observability Agent builds standalone serializer/token counter/event models.
+- Cache Agent builds policy/key/store standalone.
+- Schema Agent builds offline inventory/tokenization pipeline.
+- QA Agent prepares test fixtures.
+
+### Phase 2 depends on architecture map
+
+- Observability Agent hooks into real response paths.
+- Cache Agent hooks into real execution path.
+- Benchmark Agent runs realistic workflows.
+
+### Phase 3 depends on metrics
+
+- Schema Agent ranks by real token/call data.
+- Docs Agent writes final reports.
+
+## 12.3 Dependency graph
+
+```text
+Integration map
+   ├── Token response hooks
+   │      └── Token attribution integration
+   ├── Multi-execute hook
+   │      └── Cache interceptor integration
+   └── Schema registry access
+          └── Schema optimizer fetch/diff
+
+Serializer ─┬─ Token counter ─┬─ Token events ─┬─ Aggregations
+            │                 │                └─ Benchmark metrics
+            │                 └─ Schema tokenization
+            └─ Cache payload token estimate
+
+Cache policy ─ Key builder ─ Redis store ─ Cache interceptor ─ Cache reports
+
+Schema inventory ─ Rewrite candidates ─ Validator ─ Schema report
+```
+
+---
+
+# 13. Implementation Timeline
+
+## Week 1 — Ground truth and foundations
+
+### Goals
+
+- Confirm integration points.
+- Build standalone primitives.
+- Produce baseline token-cost sample.
+
+### Deliverables
+
+- `docs/integration_map.md`
+- Stable serializer
+- Token counter
+- Cache policy loader
+- Cache key builder
+- Schema field extractor
+- Baseline sample report
+
+### Gate
+
+Do not proceed to runtime integration until hook points are identified or a wrapper/proxy fallback is chosen.
+
+---
+
+## Week 2 — Token attribution MVP
+
+### Goals
+
+- Emit token attribution events for meta-tool responses.
+- Query or report token contribution.
+
+### Deliverables
+
+- Token event emitter
+- Token response hook integration
+- Token aggregation/report
+- Tests passing
+
+### Gate
+
+At least three payload kinds must emit token events in dev/test.
+
+---
+
+## Week 3 — Cache MVP
+
+### Goals
+
+- Exact-match cache for approved read-only tools.
+- Cache hit/miss events.
+
+### Deliverables
+
+- Redis/fake cache store
+- Cache interceptor
+- Bypass support
+- Safety tests
+- Initial cache report
+
+### Gate
+
+Writes/auth tools must be proven non-cacheable by tests.
+
+---
+
+## Week 4 — Schema baseline and top candidates
+
+### Goals
+
+- Measure schema token cost.
+- Rank optimization candidates.
+
+### Deliverables
+
+- Schema inventory
+- Field-level token report
+- Top 25 candidate list
+- Validation fixture structure
+
+### Gate
+
+No schema rewrite is accepted without validation cases.
+
+---
+
+## Week 5 — Schema rewrite and validation
+
+### Goals
+
+- Optimize top 25 schemas.
+- Validate behavior.
+
+### Deliverables
+
+- Rewrite candidates
+- Validator
+- Accepted/rejected report
+- Diffs for review
+
+### Gate
+
+Accepted rewrites must pass all validation cases.
+
+---
+
+## Week 6 — Benchmarks and reports
+
+### Goals
+
+- Run before/after workflows.
+- Produce final MVP proof.
+
+### Deliverables
+
+- Benchmark runner
+- Workflow reports
+- Token/cache/schema savings report
+- Known limitations
+
+### Gate
+
+Reports must separate measured results from estimates.
+
+---
+
+## Week 7 — Hardening
+
+### Goals
+
+- Fix issues found by benchmarks.
+- Strengthen tests and docs.
+
+### Deliverables
+
+- Security/privacy review checklist
+- Regression tests
+- Improved docs
+- Final demo flow
+
+---
+
+## Week 8 — Final delivery
+
+### Goals
+
+- Ship polished MVP artifacts.
+- Prepare follow-on roadmap.
+
+### Deliverables
+
+- Final technical report
+- Demo
+- Handoff docs
+- Follow-on roadmap
+
+---
+
+# 14. Configuration
+
+## 14.1 Aperture config
+
+```yaml
+aperture:
+  enabled: true
+  version: "0.1.0"
+
+  observability:
+    enabled: true
+    store_raw_payloads: false
+    default_tokenizer: "cl100k_base"
+    emit_token_events: true
+
+  cache:
+    enabled: true
+    mode: "conservative"
+    redis_url_env: "REDIS_URL"
+    bypass_header: "X-Aperture-Cache-Bypass"
+    default_unknown_tools_cacheable: false
+
+  schema_optimizer:
+    enabled: true
+    validation_required: true
+    top_n: 25
+    allow_parameter_name_changes: false
+    allow_required_field_changes: false
+```
+
+## 14.2 Cache policy example
+
+```yaml
+version: 1
+
+default:
+  cacheable: false
+  operation_type: unknown
+  privacy_scope: none
+  ttl_seconds: null
+  matching: none
+  reason: "deny_by_default"
+
+tools:
+  GITHUB_GET_REPO:
+    cacheable: true
+    operation_type: read
+    privacy_scope: public
+    ttl_seconds: 7200
+    matching: exact
+
+  GITHUB_LIST_ISSUES:
+    cacheable: true
+    operation_type: read
+    privacy_scope: account
+    ttl_seconds: 900
+    matching: exact
+
+  GMAIL_SEARCH_EMAILS:
+    cacheable: true
+    operation_type: read
+    privacy_scope: account
+    ttl_seconds: 300
+    matching: exact
+
+  GMAIL_SEND_EMAIL:
+    cacheable: false
+    operation_type: write
+    privacy_scope: account
+    ttl_seconds: null
+    matching: none
+    reason: "write_operation"
+```
+
+---
+
+# 15. API / Reporting Shape
+
+## 15.1 Token usage query
+
+```http
+POST /api/v3.1/project/usage/input_tokens_contributed
+```
+
+Example request:
+
+```json
+{
+  "group_by": "meta_tool_slug",
+  "dt_gt": "2026-05-01T00:00:00Z",
+  "dt_lt": "2026-05-08T00:00:00Z",
+  "order_by": "total_input_tokens_contributed",
+  "order_direction": "desc"
+}
+```
+
+Example response:
+
+```json
+{
+  "results": [
+    {
+      "meta_tool_slug": "COMPOSIO_SEARCH_TOOLS",
+      "total_input_tokens_contributed": 412000,
+      "calls": 220,
+      "avg_tokens_per_call": 1872
+    }
   ]
 }
 ```
 
-Design principles:
-- Semi-structured: `facts` and `working_memory` are free-form so agents can store arbitrary context
-- `decisions` array preserves rationale that would otherwise need full history to reconstruct
-- `errors` array handles the failure recovery use case (one of the hardest things to compress)
-- Agent can add any key to the top level if the schema doesn't cover the use case
+## 15.2 Cache savings query
 
----
-
-### 4E. Plan Quality Scorer
-
-#### What it is
-
-A feedback loop on top of `COMPOSIO_SEARCH_TOOLS`'s "learned plans" feature that scores plans by actual outcome quality, not just by recency or frequency — surfacing the plans most likely to succeed rather than just the ones tried most recently.
-
-#### The learned plans gap
-
-`COMPOSIO_SEARCH_TOOLS` already returns execution plans from past sessions. This is a genuine differentiator. But the plans are surfaced without quality signal — an agent sees a plan that worked 9/10 times and one that worked 1/10 times with equal prominence.
-
-The gap is confirmed by the absence of any plan scoring, success rate, or outcome tracking in the documentation.
-
-#### The core hard problem: detecting goal completion
-
-This is the thing the pitch doc glosses over. How do you know if a session completed its goal?
-
-**Option A: Agent self-report**
-Add a signal the agent emits at session end: `COMPOSIO_END_SESSION(outcome: "success" | "failure" | "partial", notes?: string)`.
-- Pros: simple, cheap, explicit
-- Cons: requires developer to wire this up; agents don't always know when they've failed; low adoption unless made compelling
-
-**Option B: LLM evaluator**
-At session end, run a lightweight LLM call that reads the session's first user message and last assistant message and judges: "Was the task completed?"
-- Pros: works without developer changes; reasonable accuracy
-- Cons: costs tokens per session; adds latency; LLM judgement is imperfect
-
-**Option C: Proxy signals (heuristics)**
-Infer completion from observable session patterns:
-- Sessions ending with no tool calls for 3+ turns (possible completion or abandonment)
-- Sessions where the last assistant message contains phrases like "completed", "done", "here is your..."
-- Sessions that were followed by the developer creating a new session with a different goal (suggests prior session finished)
-- Session duration: very short sessions with few calls may be failures; sessions that run to natural end points are likely successes
-
-**Option D: Developer feedback webhook**
-Composio emits a webhook after each session. Developer's backend can POST back an outcome signal within a configured window.
-- Pros: most accurate; developer knows their own goal
-- Cons: requires developer integration; most won't bother
-
-**Recommended approach for v1:** Option C (proxy signals) + Option A (optional explicit signal). Use heuristics to get a reasonable signal for most sessions, accept optional explicit outcomes as an override when developers care enough to instrument it.
-
-#### Quality score formula
-
-```python
-def plan_quality_score(plan_id: str) -> float:
-    executions = get_plan_executions(plan_id, min_count=5)
-    if len(executions) < 5:
-        return None  # insufficient data — don't surface yet
-
-    success_rate = sum(1 for e in executions if e.outcome == "success") / len(executions)
-    avg_turns = mean(e.turns_taken for e in executions)
-    avg_tool_calls = mean(e.tool_calls_made for e in executions)
-
-    # Normalize each dimension to [0, 1]
-    turns_score = 1 / avg_turns  # fewer turns = better
-    calls_score = 1 / avg_tool_calls  # fewer calls = better
-
-    return success_rate * 0.6 + turns_score * 0.25 + calls_score * 0.15
-    # Success rate is weighted highest — it's the most important signal
+```http
+POST /api/v3.1/project/usage/cache_savings
 ```
 
-Weights (0.6 / 0.25 / 0.15) are a first guess. Should be tuned with A/B testing once data exists.
+Example response:
 
-#### Pruning policy
-
-- Plans with score < 0.3 after ≥ 20 executions → flagged for review
-- Plans with score < 0.2 after ≥ 30 executions → removed from surfacing
-- All pruning decisions logged and reversible
-
-#### Data privacy consideration
-
-Plan text may contain details about a user's workflow or data. Before storing plans in a shared quality-scoring system, confirm with Composio's legal/privacy team that plan content is considered platform metadata (shareable) vs. user data (must be isolated). This is an open question before build.
-
----
-
-## 5. Honest Critique — What Is Hard, Uncertain, or Oversimplified
-
-This section is deliberately harsh. These are the failure modes.
-
-### "The token savings will be X%" — almost all the numbers are estimates
-
-Every token reduction percentage in the pitch doc is estimated from first principles, not from real Composio session data. We don't actually know what a typical Composio session costs because there is no token attribution system yet (that's Component B). The numbers are plausible but could be off significantly in either direction. Do not present them as measured facts to an engineering audience. Present them as what they are: projections that Component B will validate.
-
-### Session State Compressor depends on orchestrator cooperation
-
-Described in §4D. The short version: adding a meta tool to Composio does not automatically compress the LLM's context, because the context is managed by the developer's framework. This component only works if developers change their agent architecture to use it. Adoption is not guaranteed.
-
-The pitch doc implied this was a "drop it in and it works" solution. It isn't. Honest framing: this is a pattern + tooling that makes context compression easy for developers who want it. Not all will.
-
-### Semantic cache false positives are a real risk
-
-If the Qdrant similarity threshold is wrong, similar-but-different tool calls could return incorrect cached results. For example:
-
-- "List issues in repo X" and "List issues in repo Y" both embed similarly for `GITHUB_LIST_ISSUES`. They must NOT share a cache key. The repo name must be part of the key.
-- "Search Gmail for meetings last week" and "Search Gmail for meetings this week" are semantically close. They must NOT share a cache key. Time-relative queries must be detected and excluded from semantic matching.
-
-For MULTI_EXECUTE results, semantic cache matching should probably not be used at all — only exact-match keys. Semantic matching should be reserved for SEARCH_TOOLS query caching, where the goal is to match "send an email" with "email someone."
-
-### Plan quality scoring measures proxies, not truth
-
-The `goal_completed` signal is inferred from observable patterns (Option C), not from actual knowledge of what the developer was trying to do. A session that looked "complete" by proxy metrics might have actually failed, and vice versa. Quality scores will have noise. This doesn't make the feature worthless — even noisy sorting is better than no sorting — but it means the scores should be presented with appropriate uncertainty and the pruning thresholds should be conservative.
-
-### Schema optimizer validation at scale is expensive
-
-150,000 LLM inference calls for full validation across 1,000 tools. $90–150 one-time cost. This is fine, but it needs to be budgeted and approved. Also, validation needs to be repeated any time a schema changes, which means ongoing maintenance cost (smaller — only for the changed schemas).
-
-### The workbench sandbox billing change
-
-Composio added compute tier sizing (standard/medium/large/xlarge) in April 2026, with a note that "usage-based pricing is planned." If workbench billing is introduced during the internship period, this changes the economics of the workbench-dependent features. Not a blocker but worth monitoring.
-
-### Cross-agent caching may conflict with Composio's enterprise privacy commitments
-
-Composio is SOC2/ISO certified. Enterprise customers may have contractual requirements that their data not be shared across tenants — even in aggregated/anonymized form. A cross-agent cache that serves result data from one customer's tool calls to another customer's agent could potentially violate these commitments, depending on the data classification of the tool results.
-
-This must be reviewed with Composio's legal/security team before building the cross-agent cache. The likely resolution: enterprise accounts get private caches only, cross-agent sharing is opt-in, and write operations and private data (email, DMs, private repos) are never shared. But this needs confirmation — it cannot be assumed.
-
----
-
-## 6. Risk Register
-
-| Risk | Likelihood | Impact | Mitigation |
-|---|---|---|---|
-| Semantic cache false positive returns wrong data | Medium | High | Use exact-match for MULTI_EXECUTE; semantic only for SEARCH_TOOLS queries; conservative threshold (0.95+) |
-| Enterprise data sharing violates privacy commitments | Medium | Very High | Review with legal before cache build; default to private caches; opt-in for shared |
-| Session state compressor has low developer adoption | High | Medium | Still valuable as a documented pattern; frame as opt-in, not default |
-| goal_completed signal too noisy to be useful | Medium | Medium | Use conservative thresholds; 5+ executions before surfacing; manual review option |
-| Workbench usage-based billing changes cost structure | Low | Low | Monitor; not a blocker |
-| Schema validation at scale too expensive to approve | Low | Medium | Budget it upfront; $150 is small relative to permanent savings |
-| Token estimates are significantly wrong in practice | Medium | Low | Frame as projections; Component B validates them; not a launch blocker |
-| Composio's observability stack hard to extend without internal access | Medium | High | Needs internal engineering access; confirm this is possible on day 1 of internship |
-| Qdrant operational overhead too complex for internship scope | Low | Medium | v1 can use Redis-only exact cache; Qdrant is additive later |
-
----
-
-## 7. Open Questions That Must Be Answered Before Building
-
-These are questions that cannot be answered from external documentation alone. They need to be resolved in the first week of the internship.
-
-### Architecture access
-1. Does Composio's Tool Router run as a monolith or microservices? Which service handles MULTI_EXECUTE_TOOL? Where would the cache interceptor live?
-2. What database does Composio use for session storage? (PostgreSQL? DynamoDB?) This determines where COMPOSIO_SESSION_STATE data lives.
-3. Is there a Redis instance already in the stack that could be extended for the cache, or does this require new infra?
-4. What does the observability pipeline look like internally? (Is it a separate service, or embedded in the execution layer?)
-
-### Data and privacy
-5. Is tool execution result data considered customer data (tenanted, cannot be shared) or platform metadata (potentially shareable)? This determines the legal feasibility of cross-agent caching.
-6. Are execution plan texts in SEARCH_TOOLS responses considered customer data or platform metadata?
-7. Does the SOC2 compliance scope affect what data can be logged to new observability systems?
-
-### Engineering environment
-8. What is Composio's internal deployment process? (Kubernetes? Railway? Something else?) Understanding this affects how Aperture components are deployed.
-9. Is there an internal test environment with real (or realistic) tool call volume where cache hit rates can be measured?
-10. How is the tool registry managed? (A database? YAML files? An API?) This affects how schema optimizer results get committed.
-
-### Product
-11. How are "learned plans" generated today? Are they extracted from session logs post-hoc, or emitted by agents explicitly? This affects how the plan quality scorer hooks in.
-12. Does Composio already have internal analytics on which tools are called most frequently? (This would let us prioritize the schema optimizer without building custom tooling first.)
-13. Is there an existing A/B testing framework, or does this need to be built?
-
----
-
-## 8. Technical Stack Decisions
-
-### Cache layer
-
-**v1: Redis only (exact-match)**
-- Add zero new infrastructure if Redis already exists in Composio's stack
-- Handles 80% of the cache value (MULTI_EXECUTE exact-match caching)
-- Implement as a simple key-value store with TTL support (Redis already does this natively)
-- No Qdrant needed in v1
-
-**v2: Redis + Qdrant (add semantic matching for SEARCH_TOOLS)**
-- Add Qdrant (can be self-hosted in the existing infra, aligns with Composio's SOC2 stance)
-- Use text-embedding-3-small for SEARCH_TOOLS query embedding (fast, cheap, adequate resolution)
-- Apply semantic matching only to SEARCH_TOOLS query cache (not MULTI_EXECUTE params)
-
-Rationale for phasing: getting Redis working first de-risks the operational complexity. Qdrant can be added once the Redis cache is proven out.
-
-### Token measurement
-
-- tiktoken (OpenAI's tokenizer library) for GPT-family models
-- Anthropic's tokenizer for Claude models
-- Fallback: cl100k_base as a reasonable approximation for unknown models
-- No new infra required — tokenization is a CPU operation, runs in the service process
-
-### State storage for SESSION_STATE
-
-- PostgreSQL: one row per session with a JSONB column for the state object
-- If Composio already uses PostgreSQL (likely given their session model), this adds no new infra
-- Reads and writes are small (a few KB per state object), so performance is not a concern
-
-### Plan quality scoring
-
-- Standard SQL aggregation query over an event log table
-- No ML, no new infrastructure
-- Event log: append-only table with columns (plan_id, session_id, outcome, turns_taken, tool_calls_made, timestamp)
-- Scoring query runs on a schedule (hourly or daily) and updates a `plan_scores` table that SEARCH_TOOLS reads at query time
-
-### Schema optimizer pipeline
-
-- Python script, runs offline
-- Dependencies: tiktoken, anthropic client, requests (to fetch schemas from Composio API)
-- Runs in any environment with these deps installed
-- Output: JSON diffs + a human-readable report of proposed changes
-
----
-
-## 9. Repository Structure
-
+```json
+{
+  "results": [
+    {
+      "tool_slug": "GITHUB_LIST_ISSUES",
+      "cache_hits": 120,
+      "cache_misses": 300,
+      "hit_rate": 0.2857,
+      "api_calls_avoided": 120,
+      "estimated_tokens_saved": 184000
+    }
+  ]
+}
 ```
-aperture/
-│
-├── README.md
-├── pyproject.toml
-├── .env.example
-│
-├── cache/                          # Component A
-│   ├── interceptor.py              # Hooks into MULTI_EXECUTE and SEARCH_TOOLS
-│   ├── key_builder.py              # Exact and semantic key construction
-│   ├── ttl_policy.py               # Full TTL classification for 1,000+ tools
-│   ├── redis_store.py              # Redis client wrapper
-│   ├── qdrant_store.py             # Qdrant client wrapper (v2)
-│   └── tests/
-│       ├── test_key_builder.py
-│       ├── test_ttl_policy.py
-│       └── test_cache_interceptor.py
-│
-├── observability/                  # Component B
-│   ├── token_counter.py            # Payload tokenization
-│   ├── event_emitter.py            # Token cost event emission
-│   ├── aggregator.py               # Usage API aggregation logic
-│   ├── api_endpoints.py            # New /usage/input_tokens endpoints
-│   └── tests/
-│
-├── schema_optimizer/               # Component C
-│   ├── pipeline.py                 # Main orchestration
-│   ├── fetcher.py                  # Pulls schemas from Composio API
-│   ├── rewriter.py                 # Rewrite rule application
-│   ├── validator.py                # Semantic equivalence testing
-│   ├── reporter.py                 # Generates diff report
-│   ├── ttl_config.json             # Tool TTL classification (also used by cache)
-│   └── tests/
-│
-├── session_state/                  # Component D
-│   ├── meta_tool.py                # COMPOSIO_SESSION_STATE tool definition
-│   ├── state_store.py              # PostgreSQL JSONB state read/write
-│   ├── sdk_helpers.py              # Developer-facing helpers (stateful_agent_config)
-│   ├── prompt_templates.py         # System prompt addenda for state usage
-│   └── tests/
-│
-├── plan_scorer/                    # Component E
-│   ├── event_log.py                # Session outcome event schema + emission
-│   ├── scorer.py                   # Quality score computation
-│   ├── pruner.py                   # Low-quality plan removal logic
-│   ├── proxy_signals.py            # Heuristic goal completion detection
-│   └── tests/
-│
-├── benchmarks/                     # Cross-cutting
-│   ├── baseline_suite.py           # 20 canonical workflows × before/after
-│   ├── workflows/
-│   │   ├── github_issue_triage.py
-│   │   ├── email_summarize.py
-│   │   ├── slack_standup.py
-│   │   ├── notion_research.py
-│   │   └── ... (16 more)
-│   └── report_generator.py
-│
-└── sdk/
-    ├── composio_aperture.py        # Main developer-facing SDK entry point
-    └── examples/
-        ├── basic_cache.py
-        ├── stateful_agent.py
-        └── observability_query.py
+
+## 15.3 Schema optimization report output
+
+```json
+{
+  "run_id": "schema_opt_2026_05_08",
+  "tools_analyzed": 1000,
+  "fields_analyzed": 6200,
+  "candidates_generated": 75,
+  "accepted_rewrites": 25,
+  "rejected_rewrites": 50,
+  "total_original_tokens": 8200,
+  "total_optimized_tokens": 5100,
+  "total_reduction_tokens": 3100,
+  "average_reduction_pct": 37.8
+}
 ```
 
 ---
 
-## 10. Implementation Plan — Week by Week
+# 16. Quality Gates
 
-### Prerequisites (before day 1)
+## 16.1 Gate 1 — Measurement correctness
 
-- Confirm internship access level: can I modify Tool Router code directly, or do I work in a separate service that wraps it?
-- Get answers to the open questions in §7 (at least questions 1–5 and 8–10)
-- Set up local development environment, understand the deployment pipeline
-- Get access to at least one real Composio session with real tool calls to see actual payloads
+Pass criteria:
 
----
+- Token counts are deterministic.
+- Unknown model fallback works.
+- Events include metadata.
+- Reports are generated.
 
-### Month 1 — Token Observability + Cache v1
+Fail if:
 
-#### Week 1: Understand the real numbers
+- Token counting mutates payloads.
+- Token event misses session/project metadata.
+- Raw sensitive payloads are stored unexpectedly.
 
-**Goal:** Know what a real Composio session actually costs before writing any new code.
+## 16.2 Gate 2 — Cache safety
 
-Tasks:
-- [ ] Pull 100 real session logs from the execution log API
-- [ ] For each session: manually count the payload sizes of each meta tool response
-- [ ] Tokenize each payload using tiktoken
-- [ ] Produce the first-ever "real token cost breakdown by meta tool" report
-- [ ] Identify which tools have the highest per-call token cost
-- [ ] Identify which meta tool is called most frequently
-- [ ] Write up findings as a one-page internal report — this is the foundation for everything
+Pass criteria:
 
-This week has no new code. It's measurement. You cannot build what you haven't measured.
+- Writes are never cached.
+- Private data is scoped.
+- Bypass works.
+- Failed responses are not cached.
 
-#### Week 2: Token attribution instrumentation
+Fail if:
 
-**Goal:** Real-time token cost measurement per meta tool call.
+- Any write tool can be cached.
+- Private cache key omits account/user scope.
+- Cache hit can occur across private accounts.
 
-Tasks:
-- [ ] Add tokenization step at each meta tool response emission point
-- [ ] Emit token cost event: `{session_id, meta_tool_slug, input_tokens_contributed, timestamp}`
-- [ ] Verify event data matches the manual measurements from week 1 (sanity check)
-- [ ] Store events in the existing event log infrastructure (or a new table if needed)
+## 16.3 Gate 3 — Schema behavior preservation
 
-#### Week 3: Token attribution API
+Pass criteria:
 
-**Goal:** Developers can query their token costs via the existing `v3.1` API pattern.
+- Accepted rewrites pass validation.
+- Required fields unchanged.
+- Tool selection unchanged.
+- Diffs are reviewable.
 
-Tasks:
-- [ ] Implement new entity type `input_tokens_contributed` in usage API
-- [ ] Implement `group_by: meta_tool_slug` breakdown
-- [ ] Implement `group_by: session_turn` breakdown (requires session turn tracking)
-- [ ] Write documentation matching Composio's existing docs style
-- [ ] Test with real session data
+Fail if:
 
-#### Week 4: Cache v1 — Redis exact-match for MULTI_EXECUTE
+- Parameter names/types change accidentally.
+- Similar tools become confused.
+- Validation cases are missing.
 
-**Goal:** Ship the simplest possible cache that proves the concept.
+## 16.4 Gate 4 — Benchmark honesty
 
-Tasks:
-- [ ] Build the cache interceptor for MULTI_EXECUTE_TOOL
-- [ ] Implement TTL classification for the 50 highest-traffic tools (use week 1 frequency data)
-- [ ] Build the Redis key-value cache with TTL support
-- [ ] Implement cache bypass header (`X-Aperture-Cache-Bypass: true`) for developers who need fresh data
-- [ ] Add cache hit/miss events to the observability layer (new entity: `cache_tokens_saved`)
-- [ ] Test on the benchmark workflows
-- [ ] Measure actual hit rate on real traffic (even small volume)
+Pass criteria:
 
-**Month 1 checkpoint:** Token cost is measurable. Cache is live. We have real numbers for everything.
+- Reports show measured values.
+- Estimates are labeled.
+- Failures/limitations included.
+
+Fail if:
+
+- Savings are guessed without measurement.
+- Only cherry-picked workflows are reported.
 
 ---
 
-### Month 2 — Schema Optimizer + Plan Scorer
+# 17. Security and Privacy Requirements
 
-#### Week 5: Schema optimizer — fetch, tokenize, baseline
+## 17.1 Cache requirements
 
-**Goal:** Know exactly how inefficient the current schemas are.
+- Never cache auth tokens.
+- Never cache OAuth responses.
+- Never cache write responses unless explicitly approved later; MVP says no.
+- Never use public scope for private tools.
+- Never log raw cache keys; log key hashes only.
+- Never use semantic matching for private execution results in MVP.
 
-Tasks:
-- [ ] Fetch all tool schemas from Composio API (or internal registry, depending on architecture)
-- [ ] Tokenize all description fields using tiktoken
-- [ ] Sort by (token_count × estimated_call_frequency) — use week 1 frequency data
-- [ ] Identify top 100 tools by optimization opportunity
-- [ ] Document the baseline in a report
+## 17.2 Observability requirements
 
-#### Week 6: Schema optimizer — rewrite + validate top 25
+- Token events should not store raw payloads by default.
+- Store payload byte size and token count.
+- Follow existing project/user/session access boundaries.
+- Respect existing retention policies.
+- Redact sensitive metadata in reports.
 
-**Goal:** Ship the first batch of optimized schemas with validation.
+## 17.3 Schema optimizer requirements
 
-Tasks:
-- [ ] Build the rewrite rule engine (regex + heuristics is fine for v1)
-- [ ] Apply rewrite rules to top 25 tools by opportunity
-- [ ] Build the semantic equivalence validator (50 test prompts per tool)
-- [ ] Run validation on all 25
-- [ ] Measure token reduction per tool
-- [ ] Propose accepted schema diffs to registry
-
-Target: ≥ 35% average reduction across the 25. If this isn't hit, expand the rewrite rules.
-
-#### Week 7: Plan quality scorer — event log + baseline scoring
-
-**Goal:** Start collecting outcome data and producing quality scores.
-
-Tasks:
-- [ ] Build the outcome event schema
-- [ ] Implement proxy signal detection (session end heuristics for goal_completed)
-- [ ] Add optional explicit `COMPOSIO_END_SESSION` signal for developers who want to report explicitly
-- [ ] Build the quality score computation (SQL aggregation query)
-- [ ] Verify that plans with fewer than 5 executions are held back from scoring
-- [ ] Add plan scores as a field returned by SEARCH_TOOLS (null if insufficient data)
-
-Note: at this point there won't be enough data to see meaningful quality differentiation — the score data needs to accumulate. This week is about getting the pipeline right.
-
-#### Week 8: A/B test setup for plan scorer + cache Qdrant upgrade
-
-**Goal:** Start collecting A/B signal on plan quality scores + add semantic matching to cache.
-
-Tasks:
-- [ ] Set up A/B split on SEARCH_TOOLS plan surfacing (50% quality-ranked, 50% current)
-- [ ] Define primary metric for A/B test (turns-to-completion on sessions)
-- [ ] Deploy Qdrant instance for semantic SEARCH_TOOLS query caching
-- [ ] Index existing SEARCH_TOOLS query/response pairs into Qdrant
-- [ ] Implement semantic lookup for SEARCH_TOOLS cache
-- [ ] Handle the connection status separation issue (cache schema+plan, skip connection status)
-
-**Month 2 checkpoint:** 25+ schemas optimized and shipped. Plan scorer collecting data. A/B test running. Cache now includes semantic SEARCH_TOOLS caching.
+- Preserve safety-critical wording unless manually reviewed.
+- Keep original descriptions available for rollback.
+- Every accepted rewrite must be traceable to validation results.
 
 ---
 
-### Month 3 — Session State Compressor + Release
+# 18. Failure Modes and Mitigations
 
-#### Week 9: SESSION_STATE meta tool
-
-**Goal:** Ship the COMPOSIO_SESSION_STATE meta tool and the developer SDK pattern.
-
-Tasks:
-- [ ] Implement COMPOSIO_SESSION_STATE tool definition (read/update/reset)
-- [ ] Implement state storage (PostgreSQL JSONB or equivalent)
-- [ ] Build `stateful_agent_config()` SDK helper
-- [ ] Write the system prompt template for state-aware agents
-- [ ] Test with a 10-turn benchmark workflow: measure input token cost per turn with and without compression
-
-#### Week 10: Benchmark suite — full before/after measurements
-
-**Goal:** Produce real numbers for everything, across 20 canonical workflows.
-
-Tasks:
-- [ ] Build the 20-workflow benchmark suite
-- [ ] Run each workflow with no Aperture components (baseline)
-- [ ] Run each workflow with cache (A)
-- [ ] Run each workflow with cache + optimized schemas (B)
-- [ ] Run each workflow with cache + optimized schemas + session state (C)
-- [ ] Record token costs at each stage using the attribution layer from Month 1
-- [ ] Compute % reduction at each stage
-
-This produces the data for the public benchmark report.
-
-#### Week 11: SDK release
-
-**Goal:** Any Composio developer can add Aperture in one config change.
-
-Tasks:
-- [ ] Package the SDK: `pip install aperture-composio`
-- [ ] Write getting-started documentation
-- [ ] Write API reference documentation for new endpoints
-- [ ] Write a migration guide from "vanilla Composio" to "Composio + Aperture"
-- [ ] Publish to PyPI
-- [ ] Submit PR to Composio's documentation (add Aperture mention)
-
-#### Week 12: Benchmark report + blog post + demo
-
-**Goal:** Public artifacts that demonstrate everything shipped.
-
-Tasks:
-- [ ] Write the benchmark report with real numbers from week 10
-- [ ] Write technical blog post: "What a Composio session costs, and what we did about it"
-- [ ] Record a demo video showing the observability dashboard with and without Aperture
-- [ ] Submit to Hacker News (Show HN post)
-- [ ] Publish on Composio's engineering blog
-- [ ] Present findings to the team
-
-**Month 3 checkpoint:** Everything shipped. Real numbers published. SDK available.
+| Failure mode | Severity | Mitigation |
+|---|---:|---|
+| Cache serves stale result | High | Short TTLs, bypass, conservative policy |
+| Cache leaks private data | Critical | Account/user scoped keys, safety tests |
+| Write accidentally cached | Critical | Deny-by-default, operation type tests |
+| Token count differs from provider billing | Medium | Label as Composio-contributed estimate |
+| Schema rewrite worsens tool use | High | Validation suite, manual review |
+| No internal hook access | High | Build wrapper/report-only fallback |
+| Cache hit rate low | Medium | Still useful observability; tune policy later |
+| Schema optimizer overcompresses | High | Preserve disambiguation, reject on validation |
+| Reports expose sensitive data | High | Metadata-only reports, redaction |
 
 ---
 
-## 11. Success Metrics
+# 19. Human Review Checklist
 
-### Must-have metrics (non-negotiable — if these aren't measured, the project failed)
+Before merging:
 
-| Metric | How measured | Target |
-|---|---|---|
-| Cache hit rate across MULTI_EXECUTE calls | New cache hit event / total MULTI_EXECUTE calls | > 15% within 2 weeks of cache launch |
-| Input tokens saved per cache hit | `cache_tokens_saved` entity in observability | > 500 tokens average per hit |
-| Schema token reduction (top 25 tools) | Before/after tokenization of description fields | > 35% average reduction |
-| Turn-over-turn token cost growth (session state) | `input_tokens_contributed` per turn | < 20% growth per additional turn (vs ~50% without compression) |
+## Token attribution
 
-### Nice-to-have metrics
+- [ ] Counts are deterministic.
+- [ ] Payloads are not mutated.
+- [ ] Metadata is complete.
+- [ ] Sensitive payloads are not stored.
 
-| Metric | Target |
-|---|---|
-| Plan quality A/B: turns-to-completion | Quality-ranked sessions complete in ≤ 15% fewer turns |
-| Developer SDK adoption | ≥ 10 developers using `aperture-composio` within 2 weeks of release |
-| Schema optimizer full coverage | 200+ tools optimized before internship end |
-| Cache hit rate at 4 weeks | > 40% for public read operations |
+## Cache
 
-### Metrics to explicitly NOT optimize for (anti-metrics)
+- [ ] Policy is deny-by-default.
+- [ ] Write/auth tools are blocked.
+- [ ] Private scopes include account/user ID.
+- [ ] TTLs are reasonable.
+- [ ] Bypass works.
 
-- Total number of lines of code written (quality over quantity)
-- Number of components shipped (better to ship 3 well than 5 poorly)
-- Token reduction percentage as a headline number (without real session data to back it up, this is just a guess)
+## Schema optimization
 
----
+- [ ] Required fields unchanged.
+- [ ] Parameter names unchanged.
+- [ ] Types unchanged.
+- [ ] Validation cases pass.
+- [ ] Rewrites are understandable.
+- [ ] Rollback path exists.
 
-## 12. What a Minimal Viable Version Looks Like
+## Benchmarks
 
-If scope has to be cut to 6 weeks instead of 12, here is what ships:
-
-**Week 1–2:** Token attribution observability (Components B partial — just the measurement layer, no new API endpoints yet)
-
-**Week 3–4:** Redis exact-match cache for MULTI_EXECUTE (Component A partial — no Qdrant, no SEARCH_TOOLS caching)
-
-**Week 5–6:** Schema optimizer for top 25 tools (Component C partial — no automation, manual rewrite + validation for the most impactful tools)
-
-This gives: real numbers, a working cache, and 25 permanently cheaper schemas. Everything else (plan scorer, session state, Qdrant semantic cache, full schema coverage) is follow-on work.
-
-The MVP is valuable. Don't let perfect be the enemy of shipped.
+- [ ] Baseline included.
+- [ ] Before/after values measured.
+- [ ] Limitations included.
+- [ ] Failures not hidden.
 
 ---
 
-## 13. Future Work — What Comes After Internship Scope
+# 20. Final Deliverables
 
-These are genuine ideas that are out of scope for 3 months but worth capturing now.
+## Code deliverables
 
-**Cross-session context carry-over** — right now the workbench state doesn't survive across sessions. A structured handoff mechanism where session N's state can seed session N+1 would enable much longer-running workflows.
+- Token serializer/counter
+- Token event emitter
+- Token aggregations/reporting
+- Cache policy loader
+- Cache key normalizer
+- Redis/fake cache store
+- Cache interceptor
+- Schema inventory/tokenization pipeline
+- Schema rewrite generator
+- Schema validator
+- Benchmark runner
 
-**Predictive cache warming** — if you can predict what tool calls an agent will make (from past session plans), you can warm the cache before the agent asks. Reduces cold-start cost on new sessions.
+## Document deliverables
 
-**Automatic `sync_response_to_workbench` detection** — currently the agent manually decides when to sync large results to the workbench. A size-based auto-trigger (if response > X tokens, automatically sync) removes this cognitive load from the agent and ensures the workbench is used consistently.
+```text
+docs/integration_map.md
+docs/architecture.md
+docs/token_attribution.md
+docs/caching_policy.md
+docs/schema_optimizer.md
+docs/security_privacy.md
+docs/benchmark_methodology.md
+docs/follow_on_roadmap.md
+```
 
-**Schema optimizer continuous integration** — run the optimizer automatically as part of Composio's tool onboarding pipeline so every new tool ships pre-optimized.
+## Report deliverables
 
-**Token cost budget enforcement** — let developers set a max token budget per session. Aperture enforces it by aggressively compressing context and caching when the budget is close to being exceeded.
-
-**Plan quality data as a training signal** — if the plan quality scorer accumulates enough outcome data, it becomes a dataset that could be used to fine-tune a model that generates better plans from scratch, not just surfaces old ones.
-
----
-
-## 14. Notes, Stray Thoughts, and Things Not to Forget
-
-*This section is a scratchpad. Unorganised. Add to it constantly during development.*
-
-- The `experimental.assistive_prompt` field in session config could be used to inject state-awareness instructions without modifying the meta tool set. Worth exploring as an alternative to adding a full new meta tool for Component D.
-
-- Composio's "Rube" product (all-in-one MCP server that automatically discovers and selects right tools, keeping LLM context clean) may overlap with what Aperture is doing. Need to understand Rube's architecture before building to ensure Aperture complements it rather than duplicates it.
-
-- The observability API uses POST requests for queries (not GET) — matching this pattern in new endpoints is important for developer consistency.
-
-- The `tags.enabled: ["readOnlyHint"]` session config is an existing mechanism to restrict sessions to read-only tools. The cache should respect this — if a tool is in a readOnlyHint-restricted session, it's always safe to cache (it can never mutate state). This could be used to auto-classify cacheable tools.
-
-- TTL policy file should be open-sourced and community-maintainable. As Composio adds tools, the TTL policy needs to be updated. Making this a community contribution point is better than bottlenecking it on one person.
-
-- The `multi_account` session feature (multiple connected accounts per toolkit) complicates cache key design. If a session has two GitHub accounts connected, the same tool call from each account should NOT share a cache entry. The `connected_account_id` must be part of any user-scoped cache key.
-
-- When testing the schema optimizer, use real Composio session logs (from week 1 measurement) as the test prompts — not synthetic prompts. Real prompts reveal real edge cases that synthetic prompts miss.
-
-- The plan quality scorer's pruning policy (remove plans with <40% success rate after 20 executions) needs a human review step before automated removal. Automatic pruning of production data is risky. Build the flagging system first; make the removal a manual action that a Composio engineer confirms.
-
-- For the benchmark report: include failure modes, not just successes. Show cases where the cache returned stale data and what the impact was. Show sessions where session state compression lost context and the agent had to recover. Honest benchmarks are more credible than cherry-picked ones.
-
-- Consider building a simple dashboard UI (not just API endpoints) for the token attribution data. A visual chart of "your top 5 most token-expensive meta tool calls this week" is more compelling for developer adoption than raw API responses.
-
-- The entire project is more interesting if framed as "infrastructure that Composio ships internally" rather than "an external library developers install." Aperture as an internal Composio improvement is more impactful than Aperture as an optional SDK. During the internship, clarify whether these components are being built as internal contributions or as a developer-facing addon.
+```text
+reports/baseline_token_cost_sample.md
+reports/cache_savings_report.md
+reports/schema_optimization_report.md
+reports/aperture_mvp_benchmark.md
+reports/final_handoff.md
+```
 
 ---
 
-*Working document. Update continuously. Last substantive revision: May 2026.*
+# 21. Follow-On Roadmap
+
+## Phase 2 — Semantic `SEARCH_TOOLS` caching
+
+Cache shared schema/plan portions of search-tool responses for semantically equivalent queries.
+
+Rules:
+
+- Do not cache connection status cross-user.
+- Do not cache private auth state.
+- Separate shared schema/plan data from user-specific status.
+
+## Phase 3 — Session state compression SDK
+
+Build opt-in framework helpers that:
+
+- Store structured session state
+- Limit message history to last N turns
+- Inject state summary
+- Update state after tool calls
+
+Do not claim automatic compression unless the orchestrator actually truncates history.
+
+## Phase 4 — Plan quality scoring
+
+Start with optional explicit session outcome events and conservative heuristics.
+
+Do not auto-prune plans until:
+
+- Enough executions exist
+- Scores are reliable
+- Human review is available
+
+## Phase 5 — Continuous schema optimization
+
+Run optimizer in CI whenever schemas are added or changed.
+
+---
+
+# 22. Perfect Coding-Agent Prompt
+
+Use this prompt when assigning an agent a task from this plan:
+
+```md
+You are working on Aperture, a token-efficiency layer for Composio agents.
+
+Follow these rules:
+- Be conservative and safety-first.
+- Do not cache writes or auth operations.
+- Do not share private data across users/accounts.
+- Do not store raw sensitive payloads unless explicitly allowed.
+- Do not modify schema behavior; only optimize descriptions after validation.
+- Add tests for every module.
+- End with a handoff: completed, files changed, tests run, assumptions, unknowns, next task.
+
+Your task:
+[INSERT TASK CARD]
+
+Relevant contracts:
+[INSERT DATA CONTRACTS]
+
+Definition of done:
+[INSERT DEFINITION OF DONE]
+```
+
+---
+
+# 23. Final MVP Definition
+
+Aperture MVP is complete when:
+
+1. Composio-originated payloads are token-counted and attributed.
+2. Developers can query/report token contribution by session/meta-tool/toolkit/tool/date.
+3. Approved safe read-only calls can be cached with exact-match Redis keys.
+4. Cache hit/miss/bypass/not-cacheable events are emitted.
+5. Writes/auth/private data are protected by policy and tests.
+6. Top 25 schema optimization candidates are measured, rewritten, validated, and reported.
+7. Benchmark workflows show measured before/after impact.
+8. Final docs and handoff are complete.
+
+---
+
+# 24. One-Page Summary for Reviewers
+
+Aperture is an efficiency layer for Composio agents. It does three things:
+
+1. **Measures token cost**  
+   Counts Composio-contributed input tokens from meta-tool responses, schemas, results, plans, and workbench outputs.
+
+2. **Caches safe repeated calls**  
+   Uses conservative exact-match Redis caching for approved read-only tools with strict user/account scoping, TTLs, and bypass.
+
+3. **Optimizes schemas safely**  
+   Shortens tool descriptions and parameter descriptions only when validation shows tool selection and parameter behavior are preserved.
+
+The MVP avoids risky claims and risky features. It does not do arbitrary semantic result caching, automatic context compression, cross-tenant private caching, or total LLM billing attribution. It focuses on measured, safe, high-value improvements that can be built and evaluated by coding agents.
+
