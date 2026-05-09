@@ -54,7 +54,6 @@ uv run aperture-live-check --out reports/live_composio_check.json
 Required for live execution:
 
 ```sh
-export COMPOSIO_TOOL_SLUG="GITHUB_LIST_ISSUES"
 export COMPOSIO_TOOL_SLUG="GITHUB_LIST_REPOSITORY_ISSUES"
 export COMPOSIO_TOOL_ARGS='{"owner":"composiohq","repo":"composio","state":"open","per_page":1}'
 # Optional. Omit to let Composio auto-resolve the user's active GitHub account.

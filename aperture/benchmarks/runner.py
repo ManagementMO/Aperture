@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import time
 from pathlib import Path
 
 from aperture.benchmarks.evaluators import field_presence_score, has_missing_critical_info
@@ -56,7 +55,6 @@ def _schema_savings_by_tool() -> dict[str, int]:
 async def _run_task(task: BenchmarkTask, mode: str, store: InMemoryCacheStore, schema_savings: dict[str, int]) -> BenchmarkMetrics:
     raw_payload = _load_fixture(task.fixture)
     raw_count = count_tokens_for_payload(raw_payload, model="gpt-4o-mini")
-    start = time.perf_counter()
 
     if mode == "raw":
         payload = raw_payload
@@ -108,7 +106,7 @@ async def _run_task(task: BenchmarkTask, mode: str, store: InMemoryCacheStore, s
         missing_critical_info=missing_critical,
         extra_tool_calls=0,
         raw_fallback_used=False,
-        latency_ms=int((time.perf_counter() - start) * 1000),
+        latency_ms=0,
     )
 
 
@@ -128,4 +126,3 @@ def run_benchmarks_from_path(path: Path, modes: list[str]) -> list[BenchmarkRunR
 
     tasks = load_tasks(path)
     return [asyncio.run(run_benchmark(tasks, mode)) for mode in modes]
-

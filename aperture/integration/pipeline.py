@@ -7,6 +7,7 @@ from typing import Awaitable, Callable
 from aperture.cache.interceptor import maybe_execute_with_cache
 from aperture.cache.redis_store import CacheStore
 from aperture.compression.compressor import compress_tool_output
+from aperture.config import ApertureConfig
 from aperture.types import CompressionContext, ExecutionContext
 
 ExecuteFn = Callable[[], object | Awaitable[object]]
@@ -31,6 +32,7 @@ async def aperture_tool_result_pipeline(
     )
     if context.compression_bypass:
         return raw_result
+    compression_mode = ApertureConfig.from_env().mode
     compression_context = CompressionContext(
         project_id=context.project_id,
         user_id=context.user_id,
@@ -40,7 +42,6 @@ async def aperture_tool_result_pipeline(
         tool_slug=tool_slug,
         user_goal=None,
         model=context.model,
-        mode="off" if context.compression_bypass else "balanced",
+        mode=compression_mode,
     )
     return compress_tool_output(raw_result, compression_context).compressed_payload
-

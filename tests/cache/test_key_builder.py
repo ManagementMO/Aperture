@@ -18,3 +18,7 @@ def test_missing_account_scope_prevents_caching():
     policy = load_cache_policy("GITHUB_LIST_ISSUES")
     assert build_cache_key("GITHUB_LIST_ISSUES", {"a": 1}, _context(account=None), policy) is None
 
+
+def test_public_scope_rejects_connected_account_context():
+    policy = load_cache_policy("GITHUB_GET_REPO")
+    assert build_cache_key("GITHUB_GET_REPO", {"owner": "acme", "repo": "app"}, _context(account="acct_1"), policy) is None

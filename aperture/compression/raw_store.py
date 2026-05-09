@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import time
 from pathlib import Path
 from typing import Any
 
@@ -23,7 +22,6 @@ def _reference_id(raw_payload: object, context: CompressionContext) -> str:
             "user_id": context.user_id,
             "session_id": context.session_id,
             "tool_slug": context.tool_slug,
-            "timestamp_bucket": int(time.time()),
         }
     )
     return "raw_" + hashlib.sha256(material.encode("utf-8")).hexdigest()[:16]
@@ -56,4 +54,3 @@ def get_raw_output(raw_reference_id: str, base_path: Path | None = None) -> obje
     data = json.loads(target.read_text(encoding="utf-8"))
     _RAW_STORE[raw_reference_id] = data["payload"]
     return data["payload"]
-

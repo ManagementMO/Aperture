@@ -12,3 +12,8 @@ def test_write_tools_are_never_cacheable():
     assert policy.cacheable is False
     assert policy.operation_type == "write"
 
+
+def test_auth_tools_are_never_cacheable():
+    policy = load_cache_policy("OAUTH_REFRESH_TOKEN")
+    assert policy.cacheable is False
+    assert policy.operation_type == "auth"
