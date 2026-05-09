@@ -10,6 +10,7 @@ import TaskAware from "./pages/TaskAware";
 import Placeholder from "./pages/Placeholder";
 import PromptCache from "./pages/PromptCache";
 import FieldSelect from "./pages/FieldSelect";
+import EffortCalibrator from "./pages/EffortCalibrator";
 
 function App() {
   return (
@@ -22,6 +23,7 @@ function App() {
           <Route path="/schema" element={<SchemaCompaction />} />
           <Route path="/cache" element={<CacheStats />} />
           <Route path="/benchmarks" element={<Benchmarks />} />
+          <Route path="/calibrate" element={<EffortCalibrator />} />
           <Route path="/task-aware" element={<TaskAware />} />
           <Route path="/placeholder" element={<Placeholder />} />
           <Route path="/prompt-cache" element={<PromptCache />} />

@@ -32,6 +32,7 @@ from aperture.compression.field_profiles import (
     list_field_profiles_for_tool,
     apply_field_selection,
 )
+from aperture.routing.quality_gate import select_mode_for_quality
 from aperture.schema_optimizer.type_group import compact_schema, measure_compaction
 from aperture.tokenization import count_tokens
 from aperture.demo.scenarios import get_mock_result
@@ -714,6 +715,75 @@ def schema_sample():
             "savings_percent": round((1 - m.ratio) * 100, 1),
         })
     return {"samples": out}
+
+
+# ---------------------------------------------------------------------------
+# Quality-gated effort calibration
+# ---------------------------------------------------------------------------
+
+@app.post("/api/effort/calibrate")
+def calibrate_effort(payload: dict):
+    """Auto-pick the most aggressive compression mode that preserves every
+    required signal in the LLM-bound payload.
+
+    Body:
+        {
+          "tool_slug": "GITHUB_LIST_ISSUES",
+          "arguments": {"per_page": 5},
+          "ask": "find the assignee of the OAuth bug",
+          "required_signals": ["title", "assignee.login", "OAuth"],
+          "model": "gpt-4o",
+          "task": "find_issues_by_assignee"   // optional
+        }
+    """
+    tool_slug = payload.get("tool_slug")
+    if not tool_slug:
+        return {"error": "tool_slug is required"}
+
+    arguments = payload.get("arguments", {})
+    ask = payload.get("ask")
+    required_signals = payload.get("required_signals") or []
+    model = payload.get("model", "gpt-4o")
+    task = payload.get("task")
+    dataset_name = payload.get("dataset")
+
+    if dataset_name in DATASETS and DATASETS[dataset_name] is not None:
+        raw = DATASETS[dataset_name]
+    else:
+        raw = get_mock_result(tool_slug, arguments)
+
+    gate = select_mode_for_quality(
+        raw_payload=raw,
+        tool_slug=tool_slug,
+        required_signals=required_signals,
+        ask=ask,
+        model=model,
+        task=task,
+    )
+
+    return {
+        "tool_slug": tool_slug,
+        "ask": ask,
+        "required_signals": required_signals,
+        "difficulty": gate.difficulty,
+        "max_aggression": gate.max_aggression,
+        "floor_mode": gate.floor_mode,  # alias retained for back-compat
+        "selected_mode": gate.selected_mode,
+        "selected_tokens": gate.selected_tokens,
+        "raw_tokens": gate.raw_tokens,
+        "saved_tokens": gate.saved_tokens,
+        "saved_percent": round(gate.saved_percent, 1),
+        "attempts": [
+            {
+                "mode": a.mode,
+                "tokens": a.tokens,
+                "passed": a.passed,
+                "failed_signals": a.failed_signals,
+            }
+            for a in gate.attempts
+        ],
+        "reason": gate.reason,
+    }
 
 
 if __name__ == "__main__":

@@ -1,0 +1,301 @@
+/* ============================================================================
+ * Ark Design Tokens — CSS Variables
+ * Drop into app/globals.css (Next/Tailwind v4) or src/styles/tokens.css (Vite).
+ * Synced with tokens.ts — keep them in lockstep (CI test enforces).
+ * Spec: ark/design/ARK_DESIGN_BIBLE.md
+ * ========================================================================== */
+
+@theme inline {
+  /* ----- Sizing & Radius ----- */
+  --radius-none: 0px;
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-2xl: 24px;
+  --radius-full: 9999px;
+  --radius: var(--radius-md);
+
+  /* ----- Spacing scale (4px grid) ----- */
+  --space-0: 0px;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+  --space-16: 64px;
+  --space-20: 80px;
+  --space-24: 96px;
+
+  /* ----- Type ----- */
+  --font-sans: "Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-mono: "Geist Mono", "JetBrains Mono", "SF Mono", "Fira Code", monospace;
+
+  /* M3 type scale */
+  --text-display-lg: 3.5625rem; /* 57 */
+  --text-display-md: 2.8125rem; /* 45 */
+  --text-display-sm: 2.25rem;   /* 36 */
+  --text-headline-lg: 2rem;     /* 32 */
+  --text-headline-md: 1.75rem;  /* 28 */
+  --text-headline-sm: 1.5rem;   /* 24 */
+  --text-title-lg: 1.375rem;    /* 22 */
+  --text-title-md: 1rem;        /* 16 */
+  --text-title-sm: 0.875rem;    /* 14 */
+  --text-body-lg: 1rem;         /* 16 */
+  --text-body-md: 0.875rem;     /* 14 */
+  --text-body-sm: 0.75rem;      /* 12 */
+  --text-label-lg: 0.875rem;    /* 14 */
+  --text-label-md: 0.75rem;     /* 12 */
+  --text-label-sm: 0.6875rem;   /* 11 */
+
+  /* ----- Z-index ----- */
+  --z-base: 0;
+  --z-raised: 10;
+  --z-dropdown: 1000;
+  --z-sticky: 1020;
+  --z-overlay: 1040;
+  --z-modal: 1050;
+  --z-popover: 1060;
+  --z-tooltip: 1070;
+  --z-toast: 1080;
+  --z-command: 1090;
+
+  /* ----- Motion ----- */
+  --motion-fast: 150ms;
+  --motion-base: 200ms;
+  --motion-slow: 300ms;
+  --ease-out: cubic-bezier(0.2, 0, 0, 1);
+  --ease-in: cubic-bezier(0.4, 0, 1, 1);
+  --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* ============================================================================
+ * Dark mode (default) — bound to shadcn semantic tokens
+ * ========================================================================== */
+:root,
+:root.dark,
+.dark {
+  /* Ark neutral palette (raw) */
+  --ark-bg: #000000;
+  --ark-surface: #0A0A0A;
+  --ark-surface-container: #111111;
+  --ark-surface-container-high: #161616;
+  --ark-surface-container-highest: #1A1A1A;
+  --ark-raised-hover: #222222;
+
+  --ark-fg: #FFFFFF;
+  --ark-fg-87: rgba(255, 255, 255, 0.87);
+  --ark-fg-60: rgba(255, 255, 255, 0.60);
+  --ark-fg-38: rgba(255, 255, 255, 0.38);
+  --ark-fg-30: rgba(255, 255, 255, 0.30);
+
+  --ark-outline: rgba(255, 255, 255, 0.16);
+  --ark-outline-variant: rgba(255, 255, 255, 0.08);
+
+  --ark-state-hover: rgba(255, 255, 255, 0.04);
+  --ark-state-focus: rgba(255, 255, 255, 0.06);
+  --ark-state-pressed: rgba(255, 255, 255, 0.08);
+  --ark-state-selected: rgba(255, 255, 255, 0.10);
+  --ark-state-dragged: rgba(255, 255, 255, 0.12);
+
+  --ark-tertiary: #888888; /* the single permitted gray */
+  --ark-scrim: rgba(0, 0, 0, 0.6);
+
+  /* shadcn semantic bindings (foreground/background) */
+  --background: var(--ark-bg);
+  --foreground: var(--ark-fg);
+  --card: var(--ark-surface);
+  --card-foreground: var(--ark-fg);
+  --popover: var(--ark-surface-container-high);
+  --popover-foreground: var(--ark-fg);
+  --primary: var(--ark-fg);
+  --primary-foreground: var(--ark-bg);
+  --secondary: var(--ark-surface-container-highest);
+  --secondary-foreground: var(--ark-fg);
+  --muted: var(--ark-surface-container);
+  --muted-foreground: var(--ark-fg-60);
+  --accent: var(--ark-tertiary);
+  --accent-foreground: var(--ark-bg);
+  --destructive: var(--ark-fg);
+  --destructive-foreground: var(--ark-bg);
+  --border: var(--ark-outline);
+  --input: var(--ark-outline-variant);
+  --ring: rgba(255, 255, 255, 0.6);
+
+  /* Charts (all monochrome — different opacities, not different hues) */
+  --chart-1: var(--ark-fg);
+  --chart-2: rgba(255, 255, 255, 0.7);
+  --chart-3: rgba(255, 255, 255, 0.5);
+  --chart-4: rgba(255, 255, 255, 0.3);
+  --chart-5: rgba(255, 255, 255, 0.15);
+
+  /* Sidebar (shadcn block) */
+  --sidebar: var(--ark-surface-container);
+  --sidebar-foreground: var(--ark-fg);
+  --sidebar-primary: var(--ark-fg);
+  --sidebar-primary-foreground: var(--ark-bg);
+  --sidebar-accent: var(--ark-surface-container-highest);
+  --sidebar-accent-foreground: var(--ark-fg);
+  --sidebar-border: var(--ark-outline);
+  --sidebar-ring: var(--ring);
+}
+
+/* ============================================================================
+ * Light mode — mirrored semantics, calibrated for matching contrast ratios
+ * ========================================================================== */
+:root.light,
+.light {
+  --ark-bg: #FFFFFF;
+  --ark-surface: #F8F8F8;
+  --ark-surface-container: #F0F0F0;
+  --ark-surface-container-high: #E8E8E8;
+  --ark-surface-container-highest: #E0E0E0;
+  --ark-raised-hover: #D8D8D8;
+
+  --ark-fg: #000000;
+  --ark-fg-87: rgba(0, 0, 0, 0.87);
+  --ark-fg-60: rgba(0, 0, 0, 0.60);
+  --ark-fg-38: rgba(0, 0, 0, 0.38);
+  --ark-fg-30: rgba(0, 0, 0, 0.30);
+
+  --ark-outline: rgba(0, 0, 0, 0.16);
+  --ark-outline-variant: rgba(0, 0, 0, 0.08);
+
+  --ark-state-hover: rgba(0, 0, 0, 0.04);
+  --ark-state-focus: rgba(0, 0, 0, 0.06);
+  --ark-state-pressed: rgba(0, 0, 0, 0.08);
+  --ark-state-selected: rgba(0, 0, 0, 0.10);
+  --ark-state-dragged: rgba(0, 0, 0, 0.12);
+
+  --ark-tertiary: #666666;
+  --ark-scrim: rgba(0, 0, 0, 0.4);
+
+  --background: var(--ark-bg);
+  --foreground: var(--ark-fg);
+  --card: var(--ark-surface);
+  --card-foreground: var(--ark-fg);
+  --popover: var(--ark-surface-container-high);
+  --popover-foreground: var(--ark-fg);
+  --primary: var(--ark-fg);
+  --primary-foreground: var(--ark-bg);
+  --secondary: var(--ark-surface-container-highest);
+  --secondary-foreground: var(--ark-fg);
+  --muted: var(--ark-surface-container);
+  --muted-foreground: var(--ark-fg-60);
+  --accent: var(--ark-tertiary);
+  --accent-foreground: var(--ark-bg);
+  --destructive: var(--ark-fg);
+  --destructive-foreground: var(--ark-bg);
+  --border: var(--ark-outline);
+  --input: var(--ark-outline-variant);
+  --ring: rgba(0, 0, 0, 0.6);
+
+  --chart-1: var(--ark-fg);
+  --chart-2: rgba(0, 0, 0, 0.7);
+  --chart-3: rgba(0, 0, 0, 0.5);
+  --chart-4: rgba(0, 0, 0, 0.3);
+  --chart-5: rgba(0, 0, 0, 0.15);
+
+  --sidebar: var(--ark-surface-container);
+  --sidebar-foreground: var(--ark-fg);
+  --sidebar-primary: var(--ark-fg);
+  --sidebar-primary-foreground: var(--ark-bg);
+  --sidebar-accent: var(--ark-surface-container-highest);
+  --sidebar-accent-foreground: var(--ark-fg);
+  --sidebar-border: var(--ark-outline);
+  --sidebar-ring: var(--ring);
+}
+
+/* ============================================================================
+ * Threat hierarchy (opacity + weight, never hue) — Bible §3.3
+ * ========================================================================== */
+.threat-critical {
+  color: var(--foreground);
+  font-weight: 600;
+  border-color: rgba(255, 255, 255, 0.15);
+  background-color: rgba(255, 255, 255, 0.02);
+}
+.threat-high     { color: var(--ark-fg-87); font-weight: 600; border-color: rgba(255, 255, 255, 0.10); }
+.threat-medium   { color: var(--ark-fg-60); font-weight: 500; border-color: rgba(255, 255, 255, 0.08); }
+.threat-low      { color: var(--ark-fg-38); font-weight: 400; border-color: rgba(255, 255, 255, 0.06); }
+.threat-info     { color: var(--ark-fg-60); font-weight: 400; border-color: rgba(255, 255, 255, 0.08); }
+
+.light .threat-critical {
+  border-color: rgba(0, 0, 0, 0.15);
+  background-color: rgba(0, 0, 0, 0.02);
+}
+.light .threat-high   { border-color: rgba(0, 0, 0, 0.10); }
+.light .threat-medium { border-color: rgba(0, 0, 0, 0.08); }
+.light .threat-low    { border-color: rgba(0, 0, 0, 0.06); }
+.light .threat-info   { border-color: rgba(0, 0, 0, 0.08); }
+
+/* ============================================================================
+ * Numbers are ALWAYS mono with tabular-nums — Bible §4.3
+ * ========================================================================== */
+.num,
+.font-mono,
+[data-numeric="true"] {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
+}
+
+/* ============================================================================
+ * Named animations — Bible §6.3
+ * ========================================================================== */
+@keyframes ark-pulse-live {
+  0%, 100% { transform: scale(1);   opacity: 0.7; }
+  50%      { transform: scale(1.4); opacity: 0;   }
+}
+.ark-live-dot {
+  animation: ark-pulse-live 2s ease-in-out infinite;
+}
+
+@keyframes ark-pulse-critical-border {
+  0%, 100% { border-color: rgba(255, 255, 255, 0.10); }
+  50%      { border-color: rgba(255, 255, 255, 0.25); }
+}
+.ark-critical-border {
+  animation: ark-pulse-critical-border 1.6s ease-in-out infinite;
+}
+
+@keyframes ark-skeleton-shimmer {
+  0%   { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+.ark-skeleton {
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0.04) 0%,
+    rgba(255, 255, 255, 0.08) 50%,
+    rgba(255, 255, 255, 0.04) 100%
+  );
+  background-size: 200% 100%;
+  animation: ark-skeleton-shimmer 1.6s linear infinite;
+}
+
+/* ============================================================================
+ * Reduced-motion override — Bible §6, §12.5
+ * ========================================================================== */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  .ark-live-dot,
+  .ark-critical-border,
+  .ark-skeleton {
+    animation: none;
+  }
+  .ark-skeleton {
+    background: rgba(255, 255, 255, 0.08);
+  }
+}

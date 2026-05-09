@@ -9,6 +9,7 @@ from aperture.contracts import ApertureRunConfig, CompressionResult
 from aperture.observability.trace import RunTrace
 from aperture.routing.effort_modes import get_effort_config
 from aperture.routing.intelligent_effort import EffortDecision, select_effort
+from aperture.routing.quality_gate import QualityGateResult, select_mode_for_quality
 from aperture.tokenization import count_tokens
 from aperture.tokenization.budget_manager import ContextBudgetManager
 
@@ -37,8 +38,24 @@ class ApertureRunner:
         executor: Callable[[], Any],
         toolkit_slug: str | None = None,
         user_query: str | None = None,
+        required_signals: list[str] | None = None,
+        task: str | None = None,
     ) -> dict[str, Any]:
-        """Execute a tool and return compressed result + observability data."""
+        """Execute a tool and return compressed result + observability data.
+
+        Args:
+            tool_slug: Composio tool identifier.
+            arguments: Tool arguments.
+            executor: Callable that returns the raw tool result.
+            toolkit_slug: Optional toolkit identifier for telemetry.
+            user_query: User's natural-language ask. Used by `auto` mode to
+                classify ask difficulty.
+            required_signals: Substrings or dot-paths the LLM-bound payload
+                MUST still contain. When `effort_mode == "auto"` and signals
+                are provided, the quality gate picks the most aggressive
+                mode that preserves every signal.
+            task: Optional task profile name for task-aware compression.
+        """
         arg_count = count_tokens(arguments, self.config.model)
         self.trace.events.emit_token(
             event_type="argument",
@@ -53,6 +70,7 @@ class ApertureRunner:
         )
 
         decision: EffortDecision | None = None
+        gate_result: QualityGateResult | None = None
         if self._auto_mode:
             decision = select_effort(
                 tool_slug=tool_slug,
@@ -92,12 +110,31 @@ class ApertureRunner:
                 compression_ratio=1.0,
                 strategy="cache_hit",
             )
+        elif self._auto_mode and required_signals:
+            # Auto mode + signals → calibrate against the actual schema.
+            gate_result = select_mode_for_quality(
+                raw_payload=raw_result,
+                tool_slug=tool_slug,
+                required_signals=required_signals,
+                ask=user_query,
+                model=self.config.model,
+                task=task,
+            )
+            compressed_result = compress_tool_output(
+                raw_payload=raw_result,
+                tool_slug=tool_slug,
+                mode=gate_result.selected_mode,
+                model=self.config.model,
+                task=task,
+            )
+            compression_mode = gate_result.selected_mode
         else:
             compressed_result = compress_tool_output(
                 raw_payload=raw_result,
                 tool_slug=tool_slug,
                 mode=compression_mode,
                 model=self.config.model,
+                task=task,
             )
 
         self.budget.add_tool_call(
@@ -128,6 +165,8 @@ class ApertureRunner:
         }
         if decision:
             result["effort_decision"] = decision
+        if gate_result:
+            result["quality_gate"] = gate_result
         return result
 
     def finish(self) -> dict[str, Any]:
