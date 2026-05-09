@@ -36,12 +36,13 @@ _CACHE: dict[str, set[str]] = {}
 _CACHE_TRACE: list[dict[str, object]] = []   # for the dashboard explain view
 
 
-# HF inference router: defaults to a tiny instruct model that's actually
-# routable on the free hf-inference provider. Gemma 3 base (270m / 1b) and
-# SmolLM are not currently served by the free provider — pick a different
-# model via APERTURE_CLASSIFIER_MODEL if you've enabled a paid provider
-# (Together, Fireworks, etc.).
-_HF_DEFAULT_MODEL = "meta-llama/Llama-3.2-1B-Instruct"
+# HF inference router: defaults to Llama-3.1-8B-Instruct. Free hf-inference
+# tier currently skips the 2-3B range entirely (Gemma 2/3, Qwen 1.5B, Phi
+# mini, SmolLM all 400 with "model not supported by any provider"); the
+# next step up from 1B that's actually routable is the 8B class. 8B is
+# noticeably smarter at structured selection than 1B at the cost of a few
+# hundred ms — the cache eats that on the second call anyway.
+_HF_DEFAULT_MODEL = "meta-llama/Llama-3.1-8B-Instruct"
 _ANTHROPIC_DEFAULT_MODEL = "claude-haiku-4-5"
 
 
@@ -85,31 +86,50 @@ def _candidate_fields(field_names: Iterable[str]) -> list[str]:
 
 
 def _parse_keeps(reply: str, allowed: set[str]) -> set[str]:
-    """Extract field names from a reply, intersected with `allowed` so the
-    model can never invent names.
+    """Extract field names from the model reply. Tries three strategies in
+    order; intersects the result with `allowed` so the model can never
+    invent a name that isn't already a candidate.
 
-    Strategy: scan every JSON-array-looking substring in order, return the
-    first that parses to a list of strings. We do NOT fall through to a
-    substring scan because that misfires when the model echoes example
-    fields in non-JSON prose. The intersection-with-allowed-set is the
-    only safety net we trust.
+    1. Strict JSON array (best-case output).
+    2. Quoted-name extraction from prose: `"avatar_url"` → keep "avatar_url".
+       Tiny models embed answers in prose like "you'd need 'clone_url' and
+       'ssh_url'"; pulling quoted names is reliable as long as we intersect.
+    3. Word-boundary scan as a final fallback.
+
+    The "none" sentinel returns empty regardless of what else the model
+    babbled.
     """
+    if re.search(r"^\s*none\b", reply, re.IGNORECASE):
+        return set()
+
     out: set[str] = set()
+
+    # 1. Strict JSON array.
     for candidate in re.finditer(r"\[[^\[\]]*\]", reply, re.DOTALL):
         try:
             parsed = json.loads(candidate.group(0))
         except json.JSONDecodeError:
             continue
-        if not isinstance(parsed, list):
-            continue
-        for item in parsed:
-            if isinstance(item, str) and item in allowed:
-                out.add(item)
-        # First parseable array wins — small models sometimes emit the
-        # candidate-list echo first, then a comment; we'd rather take the
-        # answer-shaped output.
-        if out or parsed == []:
-            return out
+        if isinstance(parsed, list):
+            for item in parsed:
+                if isinstance(item, str) and item in allowed:
+                    out.add(item)
+            if out or parsed == []:
+                return out
+
+    # 2. Quoted-name extraction.
+    for match in re.finditer(r"['\"`]([a-zA-Z_][a-zA-Z0-9_]*)['\"`]", reply):
+        name = match.group(1)
+        if name in allowed:
+            out.add(name)
+    if out:
+        return out
+
+    # 3. Word-boundary scan, but only over field names long enough to
+    # avoid coincidental matches.
+    for name in allowed:
+        if len(name) >= 6 and re.search(rf"\b{re.escape(name)}\b", reply):
+            out.add(name)
     return out
 
 
@@ -135,21 +155,22 @@ def _hf_token() -> str | None:
 # Prompts intentionally tiny. Small instruct models (Llama 3.2 1B) lock
 # onto verbose examples and start writing Python; a single direct
 # instruction with one example pair is far more reliable.
-_HF_SYSTEM_PROMPT = (
-    "Output ONLY a JSON array of strings. No code, no prose, no explanation. "
-    "Empty [] if nothing is needed."
-)
+# Tiny instruct models (Llama 3.2 1B) won't reliably emit pure JSON. They
+# respond best to a relaxed, conversational prompt; we use a permissive
+# parser that pulls quoted field names out of the prose response and
+# intersects them with the candidate list. The intersection is the only
+# safety guarantee we need — the model can never invent names.
+_HF_SYSTEM_PROMPT = ""
 
 
 def _hf_user_prompt(tool_slug: str, ask: str, candidates: list[str]) -> str:
     return (
-        "Pick which of the listed field names the task literally needs.\n"
-        "Task: clone the branch with git\n"
-        f"Fields: [\"node_id\",\"clone_url\",\"ssh_url\",\"avatar_url\"]\n"
-        "Answer: [\"clone_url\",\"ssh_url\"]\n\n"
+        f"Pick the field names from this list that are semantically related "
+        f"to the task. Reply with the names from the list, in quotes, "
+        f"separated by commas. If none are related, reply 'none'.\n\n"
         f"Task: {ask}\n"
-        f"Fields: {json.dumps(candidates)}\n"
-        "Answer:"
+        f"Available fields: {', '.join(candidates)}\n\n"
+        f"Related field names:"
     )
 
 
@@ -196,14 +217,16 @@ def _classify_hf(
     except ImportError:
         return _classify_hf_urllib(tool_slug, ask, candidates, model, token)
 
+    messages = [{"role": "user", "content": _hf_user_prompt(tool_slug, ask, candidates)}]
+    if _HF_SYSTEM_PROMPT:
+        messages.insert(0, {"role": "system", "content": _HF_SYSTEM_PROMPT})
     payload = {
         "model": model,
-        "messages": [
-            {"role": "system", "content": _HF_SYSTEM_PROMPT},
-            {"role": "user", "content": _hf_user_prompt(tool_slug, ask, candidates)},
-        ],
-        "max_tokens": 96,
-        "temperature": 0.0,
+        "messages": messages,
+        "max_tokens": 128,
+        # A bit of temperature lets tiny models commit to an answer;
+        # zero often makes them default to "no" / empty.
+        "temperature": 0.3,
     }
     headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
 

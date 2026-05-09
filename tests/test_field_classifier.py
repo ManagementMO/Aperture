@@ -51,13 +51,29 @@ class TestParseKeeps:
         keeps = _parse_keeps('["avatar_url", "made_up_field"]', {"avatar_url"})
         assert keeps == {"avatar_url"}
 
-    def test_prose_response_rejected(self):
-        # Tiny models love to write Python. Rejecting prose entirely is
-        # safer than greedy substring matching.
-        keeps = _parse_keeps("the agent needs avatar_url here", {"avatar_url", "node_id"})
+    def test_quoted_names_extracted_from_prose(self):
+        # Tiny models embed answers in prose; we pull quoted names out and
+        # intersect with the candidate set.
+        keeps = _parse_keeps(
+            'You would need "clone_url" and \'ssh_url\' for that task',
+            {"clone_url", "ssh_url", "node_id"},
+        )
+        assert keeps == {"clone_url", "ssh_url"}
+
+    def test_none_sentinel_returns_empty(self):
+        keeps = _parse_keeps("none", {"avatar_url"})
         assert keeps == set()
-        keeps = _parse_keeps("def foo(): return ['avatar_url']", {"avatar_url"})
+        keeps = _parse_keeps("None of those are needed.", {"avatar_url"})
         assert keeps == set()
+
+    def test_short_names_not_matched_by_word_boundary(self):
+        # Names < 6 chars wouldn't be reliably matched as bare words.
+        keeps = _parse_keeps("the url is here", {"url"})
+        assert keeps == set()
+
+    def test_long_names_matched_in_prose(self):
+        keeps = _parse_keeps("for cloning use clone_url please", {"clone_url"})
+        assert keeps == {"clone_url"}
 
     def test_invalid_json_returns_empty(self):
         keeps = _parse_keeps("[broken json", {"avatar_url"})
