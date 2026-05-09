@@ -30,6 +30,9 @@ interface Step {
   elapsed_ms: number;
   ultra_summary?: string | null;
   tier?: "full" | "degraded" | "passthrough";
+  cache_status?: "miss" | "hit" | "write_uncached" | "blocked_write";
+  cache_age_seconds?: number;
+  composio_cost_avoided_usd?: number;
 }
 
 interface Summary {
@@ -42,6 +45,9 @@ interface Summary {
   cost_before_usd: number;
   cost_after_usd: number;
   cost_saved_usd: number;
+  composio_calls_made?: number;
+  composio_calls_avoided?: number;
+  composio_cost_avoided_usd?: number;
 }
 
 interface CostBlock {
@@ -267,6 +273,17 @@ function ResultPanel({
                 served from cache · 0 ms · $0.000000 spent
               </span>
             )}
+            {!result.served_from_cache && (s.composio_calls_avoided ?? 0) > 0 && (
+              <span
+                className="inline-flex items-center gap-1 px-2 py-0.5 rounded border border-primary/40 bg-primary/10 text-[10px] font-mono text-primary"
+                title="Tool-call cache hit — Composio was not billed for these calls"
+              >
+                <span className="lime-dot" />
+                {s.composio_calls_avoided} composio call
+                {s.composio_calls_avoided === 1 ? "" : "s"} avoided · ~$
+                {(s.composio_cost_avoided_usd ?? 0).toFixed(4)} saved on Composio
+              </span>
+            )}
           </div>
 
           {result.answer && (
@@ -452,6 +469,21 @@ function StepCard({
             </span>
             {!step.successful && (
               <Badge variant="destructive" className="text-[10px]">error</Badge>
+            )}
+            {step.cache_status === "hit" && (
+              <span
+                className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded border border-primary/30 bg-primary/10 text-[9px] font-mono text-primary"
+                title={`Tool-call cache hit · age ${step.cache_age_seconds ?? 0}s · Composio not billed`}
+              >
+                <span className="lime-dot" />
+                composio skipped · ${step.composio_cost_avoided_usd?.toFixed(4) ?? "0.0000"}
+              </span>
+            )}
+            {step.cache_status === "blocked_write" && (
+              <span className="inline-flex items-center px-1.5 py-0.5 rounded border border-amber-500/40 bg-amber-500/10 text-[9px] font-mono text-amber-300"
+                    title="Read-only mode blocked this write tool before Composio saw it">
+                read-only · blocked
+              </span>
             )}
             {step.tier && step.tier !== "full" && (
               <span

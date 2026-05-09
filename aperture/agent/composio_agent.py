@@ -24,6 +24,13 @@ import time
 from dataclasses import dataclass, field
 from typing import Any
 
+from aperture.agent.tool_cache import (
+    composio_cost_estimate,
+    is_read_only_mode,
+    is_write_tool,
+    lookup as tool_cache_lookup,
+    store as tool_cache_store,
+)
 from aperture.compression.engine import compress_tool_output
 from aperture.compression.rtk_inspired import (
     Tier,
@@ -335,6 +342,14 @@ class StepRecord:
     elapsed_ms: float
     ultra_summary: str | None = None
     tier: str = Tier.FULL.value
+    # Tool-call cache behavior for this step:
+    #   "miss"            — Composio was called, result cached
+    #   "hit"             — served from tool cache, Composio NOT billed
+    #   "write_uncached"  — write tool, deliberately bypassed cache
+    #   "blocked_write"   — read-only mode rejected this write
+    cache_status: str = "miss"
+    cache_age_seconds: float = 0.0
+    composio_cost_avoided_usd: float = 0.0
 
 
 @dataclass
@@ -371,6 +386,10 @@ class AgentRunResult:
     cost: CostBreakdown | None = None
     served_from_cache: bool = False
     cached_age_seconds: float = 0.0
+    # Composio side: tool calls actually billed vs. served from local cache.
+    composio_calls_made: int = 0
+    composio_calls_avoided: int = 0
+    composio_cost_avoided_usd: float = 0.0
 
 
 # ---------------------------------------------------------------------------
@@ -394,11 +413,48 @@ def _execute_tool(
     args = dict(block.input or {})
     started = time.perf_counter()
 
-    try:
-        exec_result = client.tools.execute(
-            slug, args, user_id=user_id,
-            dangerously_skip_version_check=True,
+    # READ-ONLY MODE — refuse any write tool BEFORE Composio sees it.
+    # Sends a clean error back to Claude so it can recover. No bill.
+    if is_read_only_mode() and is_write_tool(slug):
+        msg = (
+            f"refused: {slug} is a write/side-effect tool and Aperture is "
+            f"in read-only mode (APERTURE_READ_ONLY=1). No call was made."
         )
+        step = StepRecord(
+            tool=slug, arguments=args, successful=False,
+            error=msg,
+            raw_tokens=0, sent_tokens=0, saved_tokens=0, saved_percent=0,
+            raw_bytes=0, sent_bytes=0, strategy="blocked", llm_format="json",
+            omitted_fields=[], policy_reason_counts={}, policy_promotions=[],
+            classifier_used=False, classifier_keeps=[],
+            raw_preview="", compressed_preview="",
+            elapsed_ms=(time.perf_counter() - started) * 1000,
+            tier=Tier.PASSTHROUGH.value,
+            cache_status="blocked_write",
+            composio_cost_avoided_usd=composio_cost_estimate(slug),
+        )
+        return step, {
+            "type": "tool_result",
+            "tool_use_id": block.id,
+            "content": msg,
+            "is_error": True,
+        }
+
+    # TOOL-CALL CACHE — same (slug, args, user) within TTL = no Composio bill.
+    cached_value, cache_event = tool_cache_lookup(slug, args, user_id)
+    cache_hit_age = cache_event.get("age_seconds", 0.0) if cache_event else 0.0
+    is_cache_hit = cached_value is not None
+
+    try:
+        if is_cache_hit:
+            exec_result = cached_value
+        else:
+            exec_result = client.tools.execute(
+                slug, args, user_id=user_id,
+                dangerously_skip_version_check=True,
+            )
+            # Cache the wrapper so we replay byte-for-byte next time.
+            tool_cache_store(slug, args, user_id, exec_result)
     except Exception as exc:
         step = StepRecord(
             tool=slug, arguments=args, successful=False,
@@ -477,6 +533,16 @@ def _execute_tool(
         probe_pass=1, probe_total=1,
     )
 
+    if is_cache_hit:
+        cache_status = "hit"
+        composio_avoided = composio_cost_estimate(slug)
+    elif is_write_tool(slug):
+        cache_status = "write_uncached"
+        composio_avoided = 0.0
+    else:
+        cache_status = "miss"
+        composio_avoided = 0.0
+
     step = StepRecord(
         tool=slug,
         arguments=args,
@@ -502,6 +568,9 @@ def _execute_tool(
         elapsed_ms=(time.perf_counter() - started) * 1000,
         ultra_summary=summary_line,
         tier=tier.value,
+        cache_status=cache_status,
+        cache_age_seconds=round(cache_hit_age, 1),
+        composio_cost_avoided_usd=round(composio_avoided, 4),
     )
     tool_result_block = {
         "type": "tool_result",
@@ -660,6 +729,11 @@ def run_agent(
             result.steps.append(step)
             result.total_raw_tokens += step.raw_tokens
             result.total_sent_tokens += step.sent_tokens
+            if step.cache_status == "hit":
+                result.composio_calls_avoided += 1
+                result.composio_cost_avoided_usd += step.composio_cost_avoided_usd
+            elif step.cache_status in ("miss", "write_uncached"):
+                result.composio_calls_made += 1
             tool_result_blocks.append(tr)
 
         if tool_result_blocks:

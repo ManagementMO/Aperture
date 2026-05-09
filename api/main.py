@@ -1077,6 +1077,9 @@ def demo_run(payload: dict) -> dict:
             "elapsed_ms": round(s.elapsed_ms, 0),
             "ultra_summary": s.ultra_summary,
             "tier": s.tier,
+            "cache_status": s.cache_status,
+            "cache_age_seconds": s.cache_age_seconds,
+            "composio_cost_avoided_usd": s.composio_cost_avoided_usd,
         })
 
     raw_total = run.total_raw_tokens
@@ -1126,6 +1129,9 @@ def demo_run(payload: dict) -> dict:
                 cost_block["counterfactual_usd"] if (run.served_from_cache and cost_block)
                 else (cost_block["saved_usd"] if cost_block else 0)
             ),
+            "composio_calls_made": run.composio_calls_made,
+            "composio_calls_avoided": run.composio_calls_avoided,
+            "composio_cost_avoided_usd": round(run.composio_cost_avoided_usd, 4),
         },
         "cost": cost_block,
         "steps": steps_out,
@@ -1144,6 +1150,25 @@ def clear_runtime_cache() -> dict:
 def runtime_cache_stats() -> dict:
     from aperture.agent.composio_agent import result_cache_stats
     return result_cache_stats()
+
+
+@app.get("/api/cache/tools")
+def tool_cache_stats() -> dict:
+    """Per-tool-call cache stats — Composio savings."""
+    from aperture.agent.tool_cache import (
+        cache_stats,
+        estimated_composio_savings_usd,
+    )
+    s = cache_stats()
+    s["estimated_composio_saved_usd"] = estimated_composio_savings_usd()
+    return s
+
+
+@app.post("/api/cache/tools/clear")
+def clear_tool_cache() -> dict:
+    from aperture.agent.tool_cache import clear, cache_stats
+    cleared = clear()
+    return {"cleared": cleared, "stats": cache_stats()}
 
 
 @app.post("/api/agent/prewarm")

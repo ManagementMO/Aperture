@@ -30,6 +30,9 @@ interface Summary {
   cost_before_usd: number;
   cost_after_usd: number;
   cost_saved_usd: number;
+  composio_calls_made?: number;
+  composio_calls_avoided?: number;
+  composio_cost_avoided_usd?: number;
 }
 
 interface CostBlock {
@@ -124,6 +127,9 @@ export default function SpendStudio() {
     let totalRaw = 0;
     let totalSent = 0;
     let totalElapsedMs = 0;
+    let composioMade = 0;
+    let composioAvoided = 0;
+    let composioSavedUsd = 0;
     const familyCost: Record<string, { actual: number; counterfactual: number; calls: number; saved: number }> = {};
     const whatIf: Record<string, number> = { haiku: 0, sonnet: 0, opus: 0 };
 
@@ -134,6 +140,10 @@ export default function SpendStudio() {
       totalRaw += r.summary.raw_tokens;
       totalSent += r.summary.sent_tokens;
       totalElapsedMs += r.summary.elapsed_ms;
+
+      composioMade += r.summary.composio_calls_made ?? 0;
+      composioAvoided += r.summary.composio_calls_avoided ?? 0;
+      composioSavedUsd += r.summary.composio_cost_avoided_usd ?? 0;
 
       if (r.served_from_cache) totalCacheHits += 1;
 
@@ -182,6 +192,9 @@ export default function SpendStudio() {
       sessionMinutes,
       burnPerMin,
       projectedDaily,
+      composioMade,
+      composioAvoided,
+      composioSavedUsd,
     };
   }, [runs]);
 
@@ -248,6 +261,53 @@ export default function SpendStudio() {
           icon={<Flame className="w-3.5 h-3.5" />}
         />
       </div>
+
+      <Card>
+        <CardHeader className="pb-3">
+          <div className="flex items-baseline justify-between gap-3">
+            <CardTitle className="text-[13px] font-medium">
+              Composio bill — tool execution savings
+            </CardTitle>
+            <Badge variant="default" className="text-[10px]">
+              {fmtUsd(stats.composioSavedUsd, 4)} saved
+            </Badge>
+          </div>
+          <p className="text-[11px] text-muted-foreground">
+            When the agent calls the same tool with the same args twice
+            within 5 minutes, the second call is served from local cache —
+            Composio is not re-billed.
+          </p>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="grid grid-cols-3 gap-3">
+            <SmallTile
+              label="Tool calls billed"
+              value={String(stats.composioMade)}
+              sublabel="Composio executions"
+            />
+            <SmallTile
+              label="Calls avoided"
+              primary
+              value={String(stats.composioAvoided)}
+              sublabel={
+                stats.composioAvoided + stats.composioMade > 0
+                  ? `${(
+                      (stats.composioAvoided /
+                        (stats.composioAvoided + stats.composioMade)) *
+                      100
+                    ).toFixed(0)}% cache hit`
+                  : "no traffic yet"
+              }
+            />
+            <SmallTile
+              label="Composio $ avoided"
+              primary
+              value={fmtUsd(stats.composioSavedUsd, 4)}
+              sublabel="estimated at default rate"
+            />
+          </div>
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader className="pb-3">
@@ -359,6 +419,42 @@ function Header() {
         per-tool cost map, what-if comparisons across model tiers, and a
         burn-rate projection. Cache hits cost $0 and are counted separately.
       </p>
+    </div>
+  );
+}
+
+function SmallTile({
+  label,
+  value,
+  sublabel,
+  primary,
+}: {
+  label: string;
+  value: string;
+  sublabel?: string;
+  primary?: boolean;
+}) {
+  return (
+    <div
+      className={`rounded-md border p-2.5 ${
+        primary ? "border-primary/30 bg-primary/[0.04]" : "border-border/40"
+      }`}
+    >
+      <p className="text-[9px] uppercase tracking-[0.14em] text-muted-foreground">
+        {label}
+      </p>
+      <p
+        className={`text-[16px] font-semibold metric-value mt-0.5 ${
+          primary ? "text-primary" : ""
+        }`}
+      >
+        {value}
+      </p>
+      {sublabel && (
+        <p className="text-[9px] text-muted-foreground/80 metric-value">
+          {sublabel}
+        </p>
+      )}
     </div>
   );
 }

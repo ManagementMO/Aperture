@@ -22,6 +22,7 @@ interface NavItem {
 
 const navItems: NavItem[] = [
   { path: "/", label: "Run", icon: Sparkles, blurb: "Real agent · live tools" },
+  { path: "/spend", label: "Spend Studio", icon: Banknote, blurb: "Where the money goes" },
   { path: "/overview", label: "Overview", icon: BarChart3, blurb: "What we're saving" },
   { path: "/waterfall", label: "Token waterfall", icon: ArrowDownWideNarrow, blurb: "Per-tool flow" },
   { path: "/schema", label: "Schema compaction", icon: LayoutTemplate, blurb: "Tool schemas, smaller" },
