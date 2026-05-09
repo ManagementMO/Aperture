@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
 import {
   ArrowDownWideNarrow,
@@ -99,7 +100,7 @@ export function CommandPalette() {
         </kbd>
       </button>
 
-      {open && (
+      {open && createPortal(
         <div
           className="fixed inset-0 z-[100] flex items-start justify-center pt-[14vh] backdrop-blur-md"
           style={{ backgroundColor: "rgba(0, 0, 0, 0.72)" }}
@@ -169,7 +170,8 @@ export function CommandPalette() {
               </span>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </>
   );
