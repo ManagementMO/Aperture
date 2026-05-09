@@ -5,6 +5,7 @@ import Overview from "./pages/Overview";
 import TokenWaterfall from "./pages/TokenWaterfall";
 import SchemaCompaction from "./pages/SchemaCompaction";
 import Benchmarks from "./pages/Benchmarks";
+import VsRtk from "./pages/VsRtk";
 
 function App() {
   return (
@@ -16,6 +17,7 @@ function App() {
           <Route path="/waterfall" element={<TokenWaterfall />} />
           <Route path="/schema" element={<SchemaCompaction />} />
           <Route path="/benchmarks" element={<Benchmarks />} />
+          <Route path="/vs-rtk" element={<VsRtk />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </Layout>

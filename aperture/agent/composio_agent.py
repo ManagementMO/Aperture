@@ -25,6 +25,11 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from aperture.compression.engine import compress_tool_output
+from aperture.compression.rtk_inspired import (
+    Tier,
+    classify_tier,
+    render_ultra_summary,
+)
 from aperture.tokenization import count_tokens
 
 
@@ -215,6 +220,8 @@ class StepRecord:
     raw_preview: str
     compressed_preview: str
     elapsed_ms: float
+    ultra_summary: str | None = None
+    tier: str = Tier.FULL.value
 
 
 @dataclass
@@ -287,6 +294,7 @@ def _execute_tool(
             classifier_used=False, classifier_keeps=[],
             raw_preview="", compressed_preview="",
             elapsed_ms=(time.perf_counter() - started) * 1000,
+            tier=Tier.PASSTHROUGH.value,
         )
         return step, {
             "type": "tool_result",
@@ -320,9 +328,38 @@ def _execute_tool(
         mode="balanced", model="gpt-4o",
         ask=ask, field_policy_mode="model_assisted",
     )
-    sent_tokens = compressed.compressed_tokens
-    sent_payload = compressed.llm_string or json.dumps(
+
+    body_payload = compressed.llm_string or json.dumps(
         compressed.compressed_payload, default=str, ensure_ascii=False
+    )
+
+    # RTK-inspired ultra-summary: prepend a tiny symbol-encoded headline so
+    # the model can answer single-fact questions without reading the body.
+    # STRICTLY ADDITIVE — body is bit-identical with or without it.
+    # Disable with `APERTURE_ULTRA_SUMMARY=0` if you want pure shortening.
+    # Skip on already-tiny payloads (the headline would just be bloat).
+    ultra_enabled = os.getenv("APERTURE_ULTRA_SUMMARY", "1") not in ("0", "false", "False", "")
+    summary = (
+        render_ultra_summary(raw_payload, slug)
+        if ultra_enabled and raw_tokens >= 100
+        else None
+    )
+    summary_line = summary.line if summary else None
+    if summary_line:
+        sent_payload = f"≡ {summary_line}\n{body_payload}"
+    else:
+        sent_payload = body_payload
+
+    sent_tokens = count_tokens(sent_payload, model="gpt-4o").tokens
+
+    # 3-tier degradation marker — Full when we shipped the model-assisted
+    # compressed body; Degraded when we fell back; Passthrough is reserved
+    # for the exception arm above.
+    tier = classify_tier(
+        raised=False,
+        fell_back=compressed.strategy.startswith("inplace_safe")
+                  and not compressed.strategy.endswith("_balanced"),
+        probe_pass=1, probe_total=1,
     )
 
     step = StepRecord(
@@ -348,6 +385,8 @@ def _execute_tool(
         raw_preview=_truncate(raw_serialized),
         compressed_preview=_truncate(sent_payload),
         elapsed_ms=(time.perf_counter() - started) * 1000,
+        ultra_summary=summary_line,
+        tier=tier.value,
     )
     tool_result_block = {
         "type": "tool_result",
@@ -495,10 +534,14 @@ def run_agent(ask: str, *, model: str | None = None) -> AgentRunResult:
         result.stopped_reason = "max_iterations"
 
     # Counterfactual: how much would this have cost if the LLM had read the
-    # raw Composio responses instead of the Aperture-compressed ones? Same
-    # iterations / output tokens, but the input tokens balloon by the
-    # difference between raw and sent tool tokens.
+    # raw Composio responses instead of Aperture-compressed ones?
+    #
+    # Same iterations, same output tokens, same SCHEMA-LEVEL prompt caching
+    # (the cache lives on the schema + system prompt — tool results are
+    # NEVER cached either way). The only delta is input_tokens grows by the
+    # raw-vs-sent gap on every tool turn.
     pricing = _pricing_for(selected_model)
+
     actual_input_cost = (
         cost.input_tokens * pricing["input"]
         + cost.cache_read_tokens * pricing["cache_read"]
@@ -509,10 +552,13 @@ def run_agent(ask: str, *, model: str | None = None) -> AgentRunResult:
 
     extra_input = max(0, result.total_raw_tokens - result.total_sent_tokens)
     cost.raw_input_tokens = cost.input_tokens + extra_input
+    # Counterfactual keeps cache costs identical (tool results aren't cached
+    # either way) — only the non-cached input grows.
     counterfactual_input_cost = (
         cost.raw_input_tokens * pricing["input"]
+        + cost.cache_read_tokens * pricing["cache_read"]
+        + cost.cache_write_tokens * pricing["cache_write"]
     ) / 1_000_000
-    # Counterfactual doesn't use prompt caching either — full price on input.
     cost.counterfactual_usd = round(
         counterfactual_input_cost + actual_output_cost, 6
     )
