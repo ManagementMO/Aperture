@@ -1,10 +1,10 @@
 # Aperture — Lean Execution Plan
 
-## Token Attribution, Schema-Aware Output Compression, Safe Caching, and Schema Optimization for Composio Agents
+## Token Attribution, Tool Context Budgeting, Schema-Aware Compression, Safe Caching, and Effort-Based Routing for Composio Agents
 
 **Status:** Lean implementation plan  
-**Primary focus:** Token attribution, schema-aware tool output compression, safe repeated-call caching  
-**Supporting focus:** Schema description optimization  
+**Primary focus:** Token attribution, tool context budgeting, schema-aware tool output compression, safe repeated-call caching
+**Supporting focus:** Schema compaction, schema description optimization, effort-based routing
 **Final proof layer:** Semantic benchmark suite  
 **Audience:** Coding agents, Composio engineers, QA agents, reviewers, project teammates  
 **Goal:** Reduce the token and API waste caused by Composio tool usage while preserving agent task quality.
@@ -15,19 +15,22 @@
 
 Aperture is an infrastructure layer for Composio-powered agents.
 
-It focuses on four practical improvements:
+It focuses on five practical improvements:
 
-1. **Token Attribution**  
-   Measure how many tokens Composio tool/meta-tool responses contribute before and after optimization.
+1. **Token Attribution**
+   Measure how many tokens Composio tool schemas, arguments, retries, and tool/meta-tool responses contribute before and after optimization.
 
-2. **Schema-Aware Output Compression**  
+2. **Tool Context Budgeting and Effort Routing**
+   Let developers choose low, medium, or high effort modes that control how much tool context, result detail, caching, and fallback expansion a run can use.
+
+3. **Schema-Aware Output Compression**
    Transform verbose raw tool outputs into compact model-facing payloads while preserving task-critical information.
 
-3. **Safe Repeated-Call Caching**  
+4. **Safe Repeated-Call Caching**
    Cache approved read-only tool calls using exact-match keys, strict scoping, TTLs, and bypass support.
 
-4. **Schema Description Optimization**  
-   Reduce the token cost of tool descriptions and parameter descriptions with validation.
+5. **Schema Compaction and Description Optimization**
+   Reduce schema-context cost through toolkit selection, tool selection, field selection, example gating, enum pruning, progressive disclosure, and validated description rewrites.
 
 The benchmark suite comes last. Its job is to prove the improvements with measured token savings and measured task-performance impact.
 
@@ -35,7 +38,7 @@ The benchmark suite comes last. Its job is to prove the improvements with measur
 
 # 2. One-Sentence Pitch
 
-Aperture makes Composio agents cheaper and faster by measuring tool-output token cost, compressing verbose tool results before they hit the model, caching safe repeated reads, and optimizing tool schemas without degrading task performance.
+Aperture makes Composio agents cheaper and faster by measuring tool-context cost, budgeting how much tool context each run can spend, compressing verbose schemas and results before they hit the model, caching safe repeated reads, and proving that task quality does not degrade.
 
 ---
 
@@ -44,6 +47,14 @@ Aperture makes Composio agents cheaper and faster by measuring tool-output token
 ## 3.1 Core system
 
 ```text
+Agent request
+    ↓
+Aperture effort router
+    ↓
+Schema selector / compactor
+    ↓
+Compact tool context sent to model
+    ↓
 Composio tool call
     ↓
 Raw tool output
@@ -61,16 +72,55 @@ Agent continues with fewer tokens
 
 ## 3.2 What Aperture improves
 
-Aperture reduces waste across three main surfaces:
+Aperture reduces waste across four main surfaces:
 
 ```text
 Tool outputs      → schema-aware output compression
 Repeated calls    → safe exact-match caching
-Tool schemas      → schema description optimization
+Tool schemas      → schema compaction and description optimization
+Tool exposure     → tool context budgeting and effort routing
 All of the above  → token attribution / measurement
 ```
 
-## 3.3 What this is not
+## 3.3 Developer-facing control plane
+
+The product surface is a control plane for tool context cost.
+
+Developers should be able to answer:
+
+- which toolkits and tools were exposed to the model
+- which exposed tools were actually called
+- how many schema tokens were loaded
+- how many argument tokens, result tokens, retry tokens, and assistant output tokens were spent
+- how many tokens were saved by schema compaction, result compaction, schema/result caching, and execution caching
+- which calls were repeated
+- which calls were bypassed because they were writes, auth flows, stale, personalized, or unsafe
+- which effort mode was used and whether the run needed fallback expansion
+
+Better product wording:
+
+- token cost observability
+- tool context budgeting
+- schema compaction
+- execution caching
+- result compaction
+- effort-based routing
+
+Tokenization is the measurement mechanism. The product is observability and control over the tool layer.
+
+## 3.4 Effort modes
+
+Developers should not need to tune dozens of settings manually. They should be able to pick an effort mode.
+
+| Mode | Behavior | Best for |
+|---|---|---|
+| `low` | Narrow tool shortlist, required fields only, short descriptions, compact outputs, aggressive safe-read caching, expand only on failure | cheap common reads and production routes where cost matters |
+| `medium` | Selected tool group, required fields plus common optional fields, moderate descriptions, balanced result detail, safe caching, fallback expansion on low confidence | normal agent workflows |
+| `high` | Broader schema exposure, richer descriptions, more optional fields, examples included, fresh execution preferred for volatile data, more validation context | ambiguous, first-time, debugging, or high-stakes workflows |
+
+Low effort must mean smaller and stricter, not unsafe. It must never reuse private data across users, skip writes, guess stale API results, or silently alter tool arguments.
+
+## 3.5 What this is not
 
 Aperture is not:
 
@@ -92,12 +142,16 @@ Aperture optimizes what the model sees while preserving raw access and measureme
 
 | Area | What we will build |
 |---|---|
-| Token attribution | Count raw/compressed tokens, bytes, savings, ratios, and per-tool/session totals |
+| Token attribution | Count schema, argument, retry, raw-result, compressed-result, and output tokens, plus bytes, savings, ratios, and per-tool/session totals |
+| Run-level observability | Record tools exposed, tools called, unused schema context, cache status, effort mode, latency, and before/after estimates |
+| Effort routing | Support low/medium/high modes that select schema exposure, result detail, caching aggressiveness, and fallback expansion policy |
+| Schema compaction | Select relevant toolkits/tools, hide optional fields when safe, gate examples, prune enums, and progressively expand schema detail |
 | Output compression | Compress selected high-value tool outputs using profiles, field pruning, flattening, compaction, deduplication, and optional summarization |
 | Raw output references | Preserve access to full raw outputs when compression removes detail |
-| Safe caching | Exact-match cache for approved read-only calls with TTL, scope, bypass, and safety rules |
-| Schema optimization | Optimize selected tool descriptions and parameter descriptions with validation |
-| Reporting | Generate token/caching/compression/schema reports |
+| Safe caching | Exact-match cache for approved read-only calls with TTL, scope, bypass, schema/API version awareness, and safety rules |
+| Schema/result caching | Cache schema variants and compacted result variants separately from execution cache |
+| Description optimization | Optimize selected tool descriptions and parameter descriptions with validation |
+| Reporting and UI | Generate token/caching/compression/schema reports and a basic dashboard table/waterfall |
 | Benchmarking | Run same tasks with and without Aperture to prove savings and quality |
 
 ## 4.2 Out of scope
@@ -114,6 +168,7 @@ These are intentionally not part of the core plan:
 - automatic deletion of raw outputs
 - aggressive compression without validation
 - productionizing learned compression policies before benchmarks
+- small-model decisions that skip writes, reuse private data across accounts, decide freshness alone, or silently change tool arguments
 
 ---
 
@@ -131,7 +186,39 @@ Raw tool result returns to agent/model
 Raw result enters future model context
 ```
 
-## 5.2 Aperture-enhanced flow
+## 5.2 Full Aperture request lifecycle
+
+The efficiency layer starts before tool execution. It controls which schemas and fields enter the model context, then controls execution reuse and result detail.
+
+```text
+Incoming agent request
+    ↓
+Request normalizer
+    ↓
+Intent / tool relevance classifier
+    ↓
+Effort router
+    ↓
+Token budgeter
+    ↓
+Schema selector and compactor
+    ↓
+Prompt / tool context builder
+    ↓
+Model requests tool call
+    ↓
+Cache eligibility check
+    ↓
+Composio execution if cache misses or tool is not cacheable
+    ↓
+Result compaction
+    ↓
+Telemetry logger
+    ↓
+Compact result returns to model
+```
+
+## 5.3 Aperture-enhanced tool-result flow
 
 ```text
 Agent calls Composio tool
@@ -157,7 +244,7 @@ Emit attribution/compression/cache events
 Return compact model-facing result
 ```
 
-## 5.3 Workbench boundary
+## 5.4 Workbench boundary
 
 Workbench can store or process large results outside normal model context.
 
@@ -201,6 +288,15 @@ It tells us:
 
 Aperture measures:
 
+- run_id and effort_mode
+- toolkits loaded
+- tools exposed
+- tools called
+- full schema tokens
+- exposed schema tokens
+- estimated unused schema tokens
+- tool argument tokens
+- retry-context tokens
 - raw output tokens
 - compressed output tokens
 - tokens saved
@@ -209,7 +305,9 @@ Aperture measures:
 - compressed payload bytes
 - meta-tool response tokens
 - schema response tokens
+- schema compaction savings
 - cache-hit token savings estimate
+- latency before/after where available
 - token cost by tool
 - token cost by toolkit
 - token cost by session
@@ -297,6 +395,8 @@ class TokenAttributionEvent:
     toolkit_slug: str | None
     tool_slug: str | None
     meta_tool_slug: str | None
+    run_id: str | None
+    effort_mode: str | None
     payload_kind: str                # schema/search/result/workbench/cache/compressed
     model: str | None
     tokenizer: str
@@ -307,6 +407,10 @@ class TokenAttributionEvent:
     compressed_tokens: int | None
     input_tokens_contributed: int
     tokens_saved: int
+    schema_tokens_full: int | None
+    schema_tokens_exposed: int | None
+    argument_tokens: int | None
+    retry_tokens: int | None
     compression_ratio: float | None
     cache_status: str | None         # hit/miss/bypass/not_cacheable
     aperture_version: str
@@ -321,6 +425,31 @@ Top expensive tool outputs:
 1. GITHUB_LIST_ISSUES — 182,000 raw tokens
 2. GMAIL_SEARCH_EMAILS — 144,000 raw tokens
 3. SLACK_SEARCH_MESSAGES — 98,000 raw tokens
+```
+
+### Tool-context report
+
+```text
+Run: support-agent-prod / medium effort
+Toolkits loaded: 3
+Tools exposed: 41
+Tools called: 2
+Schema tokens exposed: 22,410
+Estimated unused schema tokens: 19,900
+Tool argument tokens: 420
+Retry-context tokens: 700
+Result tokens returned: 4,812
+```
+
+### Token waterfall
+
+```text
+User prompt:       900
+Tool schemas:    8,700
+Tool arguments:    420
+Tool results:    3,100
+Retries:           700
+Assistant output: 1,200
 ```
 
 ### Compression savings report
@@ -343,7 +472,99 @@ API calls avoided: 220
 Estimated output tokens avoided: 88,000
 ```
 
-## 6.9 Coding tasks
+## 6.9 Run data model sketch
+
+The MVP dashboard and reports need a simple product-level data model in addition to low-level event objects.
+
+### `runs`
+
+```text
+id
+created_at
+tenant_id
+agent_id
+model
+effort_mode
+input_tokens
+output_tokens
+total_schema_tokens_full
+total_schema_tokens_exposed
+total_tool_result_tokens_raw
+total_tool_result_tokens_compacted
+estimated_cost_before
+estimated_cost_after
+latency_ms
+```
+
+### `tool_context_events`
+
+```text
+id
+run_id
+toolkit_slug
+tool_slug
+schema_version
+schema_tokens_full
+schema_tokens_exposed
+schema_tokens_saved
+was_exposed
+was_called
+effort_mode
+```
+
+### `tool_execution_events`
+
+```text
+id
+run_id
+toolkit_slug
+tool_slug
+normalized_args_hash
+execution_type
+cache_status
+cache_key_hash
+raw_result_tokens
+compacted_result_tokens
+result_tokens_saved
+latency_ms
+safety_class
+```
+
+### `schema_variants`
+
+```text
+id
+toolkit_slug
+tool_slug
+schema_version
+effort_mode
+full_schema_hash
+compacted_schema_hash
+full_tokens
+compacted_tokens
+created_at
+```
+
+### `cache_entries`
+
+```text
+cache_key_hash
+tenant_id
+connected_account_id
+toolkit_slug
+tool_slug
+args_hash
+schema_version
+api_version
+auth_scope_hash
+freshness_policy
+result_hash
+created_at
+expires_at
+safety_class
+```
+
+## 6.10 Coding tasks
 
 | Task | Output |
 |---|---|
@@ -353,8 +574,9 @@ Estimated output tokens avoided: 88,000
 | Build event schema | `observability/event_schema.py` |
 | Build event emitter | `observability/event_emitter.py` |
 | Build aggregation/reporting | `observability/aggregations.py`, `observability/reports.py` |
+| Build run trace store/export | `observability/run_trace.py`, `observability/dashboard_export.py` |
 
-## 6.10 Tests
+## 6.11 Tests
 
 - same payload counts the same every time
 - different key order gives same count
@@ -364,8 +586,10 @@ Estimated output tokens avoided: 88,000
 - compression event includes raw/compressed tokens
 - cache-hit event includes estimated savings
 - no raw sensitive payload is stored in token events by default
+- run trace records tools exposed vs tools called
+- dashboard export separates schema, result, argument, retry, and cache savings
 
-## 6.11 Definition of done
+## 6.12 Definition of done
 
 Token attribution is complete when:
 
@@ -766,7 +990,27 @@ Example:
 }
 ```
 
-## 7.10 Coding tasks
+## 7.10 Compacted result cache
+
+Result compaction can be cached separately from execution caching.
+
+Execution caching avoids calling the external tool. Result compaction caching avoids recomputing the compacted representation for the same raw result.
+
+Safe key:
+
+```text
+result_compaction:v1:{tool_slug}:{raw_result_hash}:{profile_version}:{mode}:{schema_version}
+```
+
+Requirements:
+
+- cache by raw result hash, not by a fuzzy semantic match
+- include compression profile version and effort mode
+- never allow compacted private results to escape their tenant/account boundary
+- invalidate when compression profiles change
+- emit separate savings for execution cache hits and result-compaction cache hits
+
+## 7.11 Coding tasks
 
 | Task | Output |
 |---|---|
@@ -777,11 +1021,12 @@ Example:
 | Deduplication | `compression/deduplication.py` |
 | Long-text compression | `compression/text_summarization.py` |
 | Raw output store | `compression/raw_store.py` |
+| Result compaction cache | `compression/result_cache.py` |
 | Envelope builder | `compression/envelope.py` |
 | Main compressor | `compression/compressor.py` |
 | Compression reports | `compression/reports.py` |
 
-## 7.11 Tests
+## 7.12 Tests
 
 - unknown tools use safe mode
 - preserved fields are never removed
@@ -793,8 +1038,10 @@ Example:
 - long text is summarized only when allowed
 - compressed tokens are lower for fixtures
 - no private raw output is placed in public store
+- compacted result cache key changes when raw result/profile/mode changes
+- compacted private results remain scoped to tenant/account boundaries
 
-## 7.12 Definition of done
+## 7.13 Definition of done
 
 Output compression is complete when:
 
@@ -825,6 +1072,8 @@ Caching is primary enough to build, but must stay conservative.
 
 Good candidates:
 
+- schema variants by toolkit, tool, schema version, and effort mode
+- compacted result variants by raw result hash, compression profile version, and effort mode
 - public repo metadata
 - GitHub issue lists
 - GitHub PR lists
@@ -849,7 +1098,20 @@ Never cache:
 - private data under public scope
 - failed or partial responses by default
 
-## 8.5 Cache flow
+## 8.5 Cache classes
+
+Keep these caches separate in implementation and reporting.
+
+| Cache class | Purpose | Safe default |
+|---|---|---|
+| Schema cache | Reuse compacted schema variants by toolkit/tool/version/effort mode | Yes |
+| Read execution cache | Avoid re-running approved read-only external calls | Yes, with exact key and TTL |
+| Search cache | Reuse repeated searches with identical args/account/freshness policy | Sometimes |
+| Result compaction cache | Reuse compacted form of the same raw result | Yes, by raw result hash |
+| Tool relevance cache | Reuse likely tool shortlist for similar route/intent metadata | Yes, as recommendation only |
+| Write dedupe | Prevent accidental duplicate writes through idempotency keys | Separate from cache; no silent reuse |
+
+## 8.6 Cache flow
 
 ```text
 Tool call requested
@@ -875,7 +1137,7 @@ If success: store result with TTL
 Emit miss/store event
 ```
 
-## 8.6 Exact-match only
+## 8.7 Exact-match only
 
 MVP caching should use exact-match keys only.
 
@@ -884,16 +1146,18 @@ Do not use semantic matching for execution outputs.
 Safe cache key:
 
 ```text
-aperture:v1:{scope}:{tool_slug}:{sha256(normalized_params)}
+aperture:v1:{tenant_id}:{scope}:{toolkit_slug}:{tool_slug}:{schema_version}:{api_version}:{auth_scope_hash}:{freshness_policy}:{sha256(normalized_params)}
 ```
 
 Example:
 
 ```text
-aperture:v1:account:ca_123:GMAIL_SEARCH_EMAILS:sha256(...)
+aperture:v1:t_123:account:github:GITHUB_LIST_ISSUES:github@2026-05-09:rest-v3:authhash_abc:ttl_900:sha256(...)
 ```
 
-## 8.7 Cache scopes
+The key must include enough context to prevent cross-user, cross-account, cross-schema, or cross-freshness reuse.
+
+## 8.8 Cache scopes
 
 | Scope | Required ID | Use |
 |---|---|---|
@@ -906,7 +1170,7 @@ aperture:v1:account:ca_123:GMAIL_SEARCH_EMAILS:sha256(...)
 
 If the required scope ID is missing, do not cache.
 
-## 8.8 Cache policy format
+## 8.9 Cache policy format
 
 ```yaml
 version: 1
@@ -926,6 +1190,7 @@ tools:
     privacy_scope: public
     ttl_seconds: 7200
     matching: exact
+    freshness_policy: static_public_metadata
 
   GITHUB_LIST_ISSUES:
     cacheable: true
@@ -933,6 +1198,7 @@ tools:
     privacy_scope: account
     ttl_seconds: 900
     matching: exact
+    freshness_policy: short_live_repo_state
 
   GMAIL_SEARCH_EMAILS:
     cacheable: true
@@ -940,6 +1206,7 @@ tools:
     privacy_scope: account
     ttl_seconds: 300
     matching: exact
+    freshness_policy: private_short_live_search
 
   GMAIL_SEND_EMAIL:
     cacheable: false
@@ -950,7 +1217,7 @@ tools:
     reason: write_operation
 ```
 
-## 8.9 Cache event schema
+## 8.10 Cache event schema
 
 ```python
 @dataclass(frozen=True)
@@ -966,6 +1233,10 @@ class CacheEvent:
     cache_status: str            # hit/miss/bypass/not_cacheable/error
     cache_scope: str
     cache_key_hash: str | None
+    schema_version: str | None
+    api_version: str | None
+    auth_scope_hash: str | None
+    freshness_policy: str | None
     ttl_seconds: int | None
     cached_age_seconds: int | None
     api_call_avoided: bool
@@ -973,7 +1244,7 @@ class CacheEvent:
     reason: str | None
 ```
 
-## 8.10 Bypass support
+## 8.11 Bypass support
 
 Supported:
 
@@ -989,7 +1260,7 @@ Optional tool metadata:
 }
 ```
 
-## 8.11 Coding tasks
+## 8.12 Coding tasks
 
 | Task | Output |
 |---|---|
@@ -998,23 +1269,26 @@ Optional tool metadata:
 | Key builder | `cache/key_builder.py` |
 | Redis/in-memory store | `cache/redis_store.py` |
 | Cache interceptor | `cache/interceptor.py` |
+| Schema cache | `cache/schema_cache.py` |
+| Result compaction cache interface | `cache/result_cache.py` |
 | Bypass handling | `cache/bypass.py` |
 | Cache reports | `cache/reports.py` |
 
-## 8.12 Tests
+## 8.13 Tests
 
 - unknown tools are not cacheable
 - write tools are never cached
 - auth tools are never cached
 - param order does not change key
 - account-scoped keys include account ID
+- cache key changes when schema version, API version, auth scope, or freshness policy changes
 - missing required scope prevents caching
 - failed responses are not cached
 - cache hit avoids execution
 - cache bypass forces execution
 - cache event emitted on hit/miss/bypass/not-cacheable
 
-## 8.13 Definition of done
+## 8.14 Definition of done
 
 Caching is complete when:
 
@@ -1027,13 +1301,15 @@ Caching is complete when:
 
 ---
 
-# 9. Component D — Schema Description Optimization
+# 9. Component D — Schema Compaction and Description Optimization
 
 ## 9.1 Purpose
 
-Schema optimization reduces the token cost of tool discovery and tool schemas.
+Schema compaction reduces the token cost of tool discovery and tool schemas.
 
 Output compression reduces result cost. Caching reduces repeated work. Schema optimization reduces tool-definition cost.
+
+This component covers more than rewriting descriptions. It controls which toolkits, tools, fields, examples, enum values, and description detail are exposed to the model for a given run and effort mode.
 
 ## 9.2 Correct framing
 
@@ -1041,12 +1317,18 @@ Composio already has some schema simplification and schema modifier capabilities
 
 Aperture’s role is:
 
-> measured tokenizer-aware schema description optimization with behavior validation.
+> measured tokenizer-aware schema compaction and description optimization with behavior validation.
 
 ## 9.3 What we optimize
 
 Allowed:
 
+- toolkit selection
+- tool selection inside a toolkit
+- optional field hiding
+- example gating
+- enum pruning
+- progressive disclosure / schema expansion
 - tool description text
 - parameter description text
 - enum description text
@@ -1064,8 +1346,19 @@ Not allowed without explicit review:
 - execution behavior
 - return schemas
 - safety-critical warnings
+- decision-critical enum values
 
-## 9.4 Example
+## 9.4 Effort-mode schema behavior
+
+| Mode | Schema behavior |
+|---|---|
+| `low` | expose only top-ranked tools, required fields, short descriptions, few/no examples |
+| `medium` | expose selected tools, required fields, common optional fields, moderate descriptions |
+| `high` | expose broader tool set, detailed fields, examples, edge cases, and richer optional fields |
+
+If low or medium mode lacks required detail, Aperture should support fallback expansion and log the expansion event.
+
+## 9.5 Description rewrite example
 
 Before:
 
@@ -1079,7 +1372,7 @@ After:
 Create a GitHub issue. Required: owner, repo, title. Optional: body, assignees, labels, milestone.
 ```
 
-## 9.5 Optimization pipeline
+## 9.6 Optimization pipeline
 
 ```text
 Fetch tool schemas
@@ -1088,7 +1381,11 @@ Extract description fields
     ↓
 Count tokens
     ↓
-Rank by token cost × usage frequency
+Rank by token cost × usage frequency × exposure frequency
+    ↓
+Generate toolkit/tool shortlist candidates
+    ↓
+Generate field/example/enum compaction candidates
     ↓
 Generate rewrite candidates
     ↓
@@ -1099,7 +1396,7 @@ Accept safe rewrites
 Generate before/after report
 ```
 
-## 9.6 Validation
+## 9.7 Validation
 
 A rewrite is accepted only if:
 
@@ -1108,6 +1405,7 @@ A rewrite is accepted only if:
 - optional parameters remain clear
 - similar tools are not confused
 - safety/auth meaning is preserved
+- low/medium compaction can expand when the prompt requires hidden fields
 
 Validation case:
 
@@ -1122,7 +1420,7 @@ Validation case:
 }
 ```
 
-## 9.7 Coding tasks
+## 9.8 Coding tasks
 
 | Task | Output |
 |---|---|
@@ -1130,25 +1428,35 @@ Validation case:
 | Field extractor | `schema_optimizer/extract_fields.py` |
 | Schema tokenizer | `schema_optimizer/tokenize_schemas.py` |
 | Candidate ranker | `schema_optimizer/rank_candidates.py` |
+| Tool relevance selector | `schema_optimizer/tool_selector.py` |
+| Field/example/enum compactor | `schema_optimizer/schema_compactor.py` |
+| Progressive disclosure policy | `schema_optimizer/expansion_policy.py` |
 | Rewrite rules | `schema_optimizer/rewrite_rules.py` |
 | Validator | `schema_optimizer/validator.py` |
 | Report generator | `schema_optimizer/reports.py` |
 
-## 9.8 Tests
+## 9.9 Tests
 
 - description fields extracted correctly
 - token counts deterministic
+- low mode exposes required fields
+- medium mode exposes common optional fields
+- high mode can expose full schema
+- hidden optional fields can trigger expansion
 - rewrites do not change parameter names
 - rewrites do not change required fields
 - unsafe rewrite is rejected
 - accepted rewrite has before/after token savings
 - report includes validation status
 
-## 9.9 Definition of done
+## 9.10 Definition of done
 
-Schema optimization is complete when:
+Schema compaction and optimization are complete when:
 
 - top candidate schemas are measured
+- low/medium/high schema modes work for supported toolkits
+- schema variants are cached by schema version and effort mode
+- fallback expansion is logged
 - top rewrites are generated
 - accepted rewrites pass validation
 - before/after report exists
@@ -1178,8 +1486,16 @@ aperture/
     observability/
       event_schema.py
       event_emitter.py
+      run_trace.py
       aggregations.py
       reports.py
+      dashboard_export.py
+
+    routing/
+      effort_modes.py
+      request_normalizer.py
+      tool_relevance.py
+      token_budgeter.py
 
     compression/
       profiles.yaml
@@ -1192,6 +1508,7 @@ aperture/
       deduplication.py
       text_summarization.py
       raw_store.py
+      result_cache.py
       envelope.py
       reports.py
 
@@ -1202,6 +1519,8 @@ aperture/
       key_builder.py
       redis_store.py
       interceptor.py
+      schema_cache.py
+      result_cache.py
       bypass.py
       reports.py
 
@@ -1210,6 +1529,9 @@ aperture/
       extract_fields.py
       tokenize_schemas.py
       rank_candidates.py
+      tool_selector.py
+      schema_compactor.py
+      expansion_policy.py
       rewrite_rules.py
       validator.py
       reports.py
@@ -1239,9 +1561,13 @@ aperture/
   docs/
     architecture.md
     token_attribution.md
+    effort_modes.md
+    tool_context_budgeting.md
     output_compression.md
     caching.md
+    schema_compaction.md
     schema_optimization.md
+    dashboard.md
     benchmark_methodology.md
     security_privacy.md
     workbench_boundary.md
@@ -1258,36 +1584,71 @@ aperture/
 
 # 11. Implementation Plan
 
-## Week 1 — Ground truth and measurement foundations
+## Week 1 — Prove the waste and build measurement foundations
 
 Goals:
 
-- collect sample outputs
-- identify top token-heavy tools
+- wrap a representative Composio tool-loading and tool-execution path
+- count schema tokens, result tokens, argument tokens, and retry-context tokens
+- log tools exposed vs tools called
+- collect sample schemas and outputs
+- identify top token-heavy schemas and tools
 - build tokenizer/serializer
-- create baseline report
+- create baseline report and basic dashboard table
 
 Deliverables:
 
 - tokenization primitives
 - raw output fixtures
+- schema fixtures
+- run trace schema
 - baseline token report
+- tools exposed vs tools called report
+- basic dashboard export
 - integration map
 
 Gate:
 
-> We must know which outputs are expensive before optimizing them.
+> We must show that tool schemas and tool outputs are a measurable part of total context cost.
 
 ---
 
-## Week 2 — Output compression engine v1
+## Week 2 — Schema compaction and effort modes MVP
 
 Goals:
 
-- implement compression profiles
-- implement safe/balanced compression
+- implement low/medium/high effort mode config
+- expose selected tools instead of entire toolkits
+- support required-field-only low mode
+- support selected-tools-plus-common-fields medium mode
+- keep high mode as broad/full-schema baseline
+- measure before/after schema token savings
+
+Deliverables:
+
+- effort mode config
+- request normalizer
+- tool relevance selector
+- schema compactor
+- schema variant cache
+- schema before/after report
+- tests for required field preservation and fallback expansion
+
+Gate:
+
+> Schema tokens must drop materially without breaking tool selection or required parameter extraction.
+
+---
+
+## Week 3 — Output compression engine v1
+
+Goals:
+
+- implement result compression profiles
+- implement safe/balanced output compression
 - add raw references
-- compress selected fixtures
+- preserve IDs, URLs, timestamps, and fields needed for follow-up tool calls
+- cache compacted result variants by raw result hash
 
 Deliverables:
 
@@ -1296,44 +1657,51 @@ Deliverables:
 - flattening
 - list compaction
 - raw output store
+- result compaction cache
 - compression envelope
 - tests for GitHub/Gmail/Slack/Notion
 
 Gate:
 
-> Preserved fields must never be removed.
+> Preserved fields must never be removed, and compressed outputs must remain actionable.
 
 ---
 
-## Week 3 — Token events and compression reporting
+## Week 4 — Token events, dashboard, and recommendations
 
 Goals:
 
-- integrate token measurement with compression
+- integrate token measurement with schema compaction and output compression
 - emit savings events
 - generate reports
+- add token waterfall and top-waste views
+- generate recommendation cards for bloated/unused schemas and repeated calls
 
 Deliverables:
 
-- token/compression event schema
+- token/compression/schema event schema
 - event emitter
 - aggregation/reporting
+- dashboard export
 - compression savings report
+- schema savings report
+- recommendation report
 
 Gate:
 
-> Every compressed output must report raw tokens, compressed tokens, and tokens saved.
+> Every optimized run must report full tokens, exposed tokens, result tokens, and tokens saved by strategy.
 
 ---
 
-## Week 4 — Safe repeated-call caching
+## Week 5 — Safe repeated-call caching
 
 Goals:
 
 - implement exact-match caching
 - add cache policy
-- add scoped keys
+- add scoped keys with tenant/account/auth/schema/API/freshness context
 - emit cache events
+- separate execution cache, schema cache, and result compaction cache metrics
 
 Deliverables:
 
@@ -1350,34 +1718,42 @@ Gate:
 
 ---
 
-## Week 5 — Schema description optimization
+## Week 6 — Smart routing and schema description optimization
 
 Goals:
 
 - measure schema token costs
+- rank tools by relevance, token cost, and usage frequency
+- recommend effort mode by route/request type
 - optimize top descriptions
 - validate behavior
+- use small models only for tool ranking, rewrite suggestions, summaries, or expansion suggestions
 
 Deliverables:
 
 - schema tokenizer
+- tool relevance ranker
+- effort recommendation policy
 - rewrite candidate generator
 - validator
 - schema optimization report
 
 Gate:
 
-> No accepted rewrite can change tool selection or required parameter behavior.
+> Small-model assistance must never be the sole authority for skipping writes, reusing private data, deciding freshness, or changing tool arguments.
 
 ---
 
-## Week 6 — Integration and hardening
+## Week 7 — Integration, hardening, and benchmark suite
 
 Goals:
 
-- connect token attribution, compression, caching, and schema optimization
+- connect token attribution, effort routing, schema compaction, output compression, caching, and schema optimization
 - add end-to-end tests
 - prepare demo agent integration
+- run raw vs Aperture tasks
+- measure savings/performance
+- capture failure cases
 
 Deliverables:
 
@@ -1385,23 +1761,6 @@ Deliverables:
 - end-to-end test
 - security/privacy checks
 - docs
-
-Gate:
-
-> Aperture must work as a coherent layer, not separate scripts.
-
----
-
-## Week 7 — Benchmark suite
-
-Goals:
-
-- run raw vs Aperture tasks
-- measure savings/performance
-- capture failure cases
-
-Deliverables:
-
 - benchmark tasks
 - runner
 - evaluators
@@ -1409,7 +1768,7 @@ Deliverables:
 
 Gate:
 
-> Benchmark must measure both token savings and task quality.
+> Aperture must work as a coherent layer, and the benchmark must measure both token savings and task quality.
 
 ---
 
@@ -1459,14 +1818,23 @@ Gate:
 - Never cache failed responses by default.
 - Never use public scope for private data.
 - Include account/user scope for private reads.
+- Include tenant, account, auth scope, schema version, API version, and freshness policy in execution cache keys.
 - Log cache key hashes, not raw keys.
+- Report schema cache, result compaction cache, and execution cache separately.
 
-## 12.4 Schema optimization
+## 12.4 Schema compaction and optimization
 
 - Do not change parameter names/types.
 - Do not change required fields.
 - Do not remove safety-critical wording without review.
 - Keep before/after diffs.
+- Low and medium effort modes must support fallback expansion when hidden detail is required.
+- Tool relevance recommendations cannot be treated as permission to skip a required tool.
+
+## 12.5 Small-model assistance
+
+- Small models may suggest tool ranking, description rewrites, result summaries, and expansion candidates.
+- Small models must not be the sole authority for skipping writes, reusing private data, deciding freshness, or changing tool arguments.
 
 ---
 
@@ -1480,8 +1848,21 @@ Gate:
 | Event coverage for compressed outputs | 95%+ |
 | Reports by tool/session/toolkit | Yes |
 | Raw vs compressed savings visibility | Yes |
+| Tools exposed vs tools called visibility | Yes |
+| Schema/result/argument/retry token breakdown | Yes |
 
-## 13.2 Output compression
+## 13.2 Effort routing and schema compaction
+
+| Metric | Target |
+|---|---:|
+| Low/medium/high modes implemented | Yes |
+| Required fields preserved | 100% |
+| Tool selection preserved on validation tasks | 100% |
+| Schema token reduction on common workflows | 50%+ target |
+| Fallback expansion logged | Yes |
+| Private/cross-account schema cache leakage | 0 |
+
+## 13.3 Output compression
 
 | Metric | Target |
 |---|---:|
@@ -1490,8 +1871,9 @@ Gate:
 | Critical field preservation | 100% |
 | Raw reference availability when omitting detail | 100% |
 | Unknown-tool safe fallback | Yes |
+| Result compaction cache scoped correctly | 100% |
 
-## 13.3 Caching
+## 13.4 Caching
 
 | Metric | Target |
 |---|---:|
@@ -1502,7 +1884,7 @@ Gate:
 | API calls avoided | Measured |
 | Cache hit rate | Measured, no fake target until real traffic |
 
-## 13.4 Schema optimization
+## 13.5 Schema optimization
 
 | Metric | Target |
 |---|---:|
@@ -1532,6 +1914,9 @@ It answers:
 | Mode | Description |
 |---|---|
 | `raw` | Normal Composio behavior |
+| `aperture_low` | Low effort: narrow schema exposure, compact outputs, safe-read cache where allowed |
+| `aperture_medium` | Medium effort: selected schemas, balanced result detail, safe cache |
+| `aperture_high` | High effort: broader schemas, richer detail, fresh execution preferred for volatile data |
 | `aperture_compressed` | Compression enabled |
 | `aperture_cached` | Compression + safe cache |
 | `aperture_full` | Compression + cache + schema optimization |
@@ -1563,6 +1948,11 @@ Create a release readiness report from GitHub + Slack + docs.
 |---|---|
 | Raw output tokens | Tokens before compression |
 | Compressed output tokens | Tokens after compression |
+| Full schema tokens | Tokens in unoptimized loaded schemas |
+| Exposed schema tokens | Tokens actually exposed after effort routing/schema compaction |
+| Unused schema tokens estimate | Tokens for exposed tools that were not called |
+| Argument tokens | Tokens spent on tool arguments |
+| Retry-context tokens | Tokens spent on retries/tool errors |
 | Tokens saved | Raw minus compressed |
 | Compression ratio | Compressed / raw |
 | Cache hits | Repeated calls served from cache |
@@ -1572,6 +1962,7 @@ Create a release readiness report from GitHub + Slack + docs.
 | Critical omission rate | Did compression remove needed info? |
 | Extra tool calls | Did compression cause more retrieval? |
 | Raw fallback rate | How often the agent needed raw details? |
+| Schema expansion rate | How often low/medium needed more schema detail? |
 | Latency | End-to-end task time |
 
 ## 14.5 Evaluation methods
@@ -1592,10 +1983,12 @@ Targets are hypotheses until measured:
 | Metric | Target |
 |---|---:|
 | Output token reduction | 40%+ on profiled tools |
+| Schema token reduction | 50%+ on common workflows |
 | Task success degradation | <5% absolute drop |
 | Critical omission rate | <3% |
 | Extra tool-call increase | <10% |
 | Raw fallback rate | <15% |
+| Schema expansion rate | Measured, no fake target until real traffic |
 
 ## 14.7 Final benchmark report
 
@@ -1632,8 +2025,16 @@ Benchmarking is complete when:
 - tokenizer registry
 - token counter
 - event schema/emitter
+- run trace exporter
+- effort mode router
+- request normalizer
+- tool relevance selector
+- token budgeter
+- schema compactor
+- schema variant cache
 - compression profile loader
 - output compressor
+- result compaction cache
 - raw output store
 - cache policy loader
 - cache key builder
@@ -1645,9 +2046,13 @@ Benchmarking is complete when:
 
 - architecture
 - token attribution
+- effort modes
+- tool context budgeting
 - output compression
 - caching
+- schema compaction
 - schema optimization
+- dashboard
 - benchmark methodology
 - security/privacy
 - Workbench boundary
@@ -1655,6 +2060,7 @@ Benchmarking is complete when:
 ## Reports
 
 - raw token baseline
+- schema exposure report
 - compression savings
 - cache savings
 - schema optimization
@@ -1669,12 +2075,14 @@ Aperture is a token-efficiency layer for Composio agents.
 It focuses on:
 
 1. measuring token cost,
-2. compressing verbose tool outputs,
-3. caching safe repeated calls,
-4. optimizing schema descriptions,
-5. proving everything with benchmarks.
+2. budgeting tool context through low/medium/high effort modes,
+3. compacting schemas before they reach the model,
+4. compressing verbose tool outputs,
+5. caching safe repeated calls and reusable schema/result variants,
+6. optimizing schema descriptions,
+7. proving everything with benchmarks.
 
-The main technical contribution is schema-aware output compression. The main measurement layer is token attribution. The main operational efficiency layer is safe repeated-call caching.
+The main product contribution is developer control over how much tool context a run is allowed to spend. The main technical contributions are schema compaction, schema-aware output compression, and safe repeated-call caching. The main measurement layer is token attribution.
 
 The final proof is the benchmark:
 
