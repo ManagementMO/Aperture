@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { apiGet } from "@/lib/api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { TerminalBlock, type TerminalLine } from "@/components/TerminalBlock";
 
 interface DatasetInfo {
   items: number;
@@ -19,6 +20,15 @@ const STRATEGIES: { key: string; label: string; detail: string }[] = [
   { key: "03", label: "Schema-aware compression", detail: "Tool normalizers, field pruning, TOON for tabular." },
   { key: "04", label: "Quality gate", detail: "Walk modes from cheapest until required signals survive." },
   { key: "05", label: "Safe caching", detail: "Exact-match scoped cache; writes & auth never cached." },
+];
+
+const TERMINAL_LINES: TerminalLine[] = [
+  { kind: "command", text: "uv run python scripts/vanilla_vs_aperture.py" },
+  { kind: "output", text: "research_repo  raw=22,146  aperture=6,563    saved 70%" },
+  { kind: "output", text: "triage_bugs    raw=11,351  aperture=3,195    saved 72%" },
+  { kind: "output", text: "datasets       raw=453,896 aperture=117,180  saved 74%" },
+  { kind: "comment", text: "9 quality probes — every signal preserved" },
+  { kind: "spinner", text: "Composing… cost  $1.2185 → $0.3173" },
 ];
 
 export default function Overview() {
@@ -86,6 +96,8 @@ export default function Overview() {
           </CardContent>
         </Card>
       </div>
+
+      <TerminalBlock lines={TERMINAL_LINES} animate />
 
       <div className="grid grid-cols-2 gap-3">
         <Card>

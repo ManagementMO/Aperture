@@ -54,6 +54,15 @@ class CompressionResult:
     # `compressed_tokens` reflects the LLM-bound representation, not the JSON.
     llm_format: str = "json"
     llm_string: str | None = None
+    # Smart field policy telemetry (populated when the engine routes through
+    # FieldPolicy — i.e., always, after the wiring; values stay empty when
+    # no fields were touched).
+    policy_mode: str = "static"
+    policy_reason_counts: dict[str, int] = field(default_factory=dict)
+    policy_promotions: list[dict[str, str]] = field(default_factory=list)
+    classifier_used: bool = False
+    classifier_keeps: list[str] = field(default_factory=list)
+    classifier_cost_usd: float = 0.0
 
 
 @dataclass

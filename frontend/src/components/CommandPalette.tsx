@@ -12,6 +12,7 @@ import {
   LayoutTemplate,
   Minimize2,
   Search,
+  ShieldCheck,
   Target,
 } from "lucide-react";
 
@@ -33,6 +34,7 @@ const ITEMS: PaletteItem[] = [
   { id: "cache",      label: "Cache stats",       hint: "/cache",       icon: Database,         group: "Navigation", path: "/cache",       keywords: ["redis", "hit", "miss"] },
   { id: "benchmarks", label: "Benchmarks",        hint: "/benchmarks",  icon: FlaskConical,     group: "Navigation", path: "/benchmarks",  keywords: ["matrix", "modes"] },
   { id: "calibrate",  label: "Effort calibrator", hint: "/calibrate",   icon: Gauge,            group: "Tools",      path: "/calibrate",   keywords: ["auto", "quality", "ask"] },
+  { id: "field-policy",label: "Field policy",     hint: "/field-policy",icon: ShieldCheck,      group: "Tools",      path: "/field-policy", keywords: ["denial", "ask-aware", "classifier", "gemma"] },
   { id: "task-aware", label: "Task-aware",        hint: "/task-aware",  icon: Target,           group: "Tools",      path: "/task-aware",  keywords: ["profile", "protected"] },
   { id: "placeholder",label: "Placeholders",      hint: "/placeholder", icon: CloudCog,         group: "Tools",      path: "/placeholder", keywords: ["hydrate", "lazy", "ref"] },
   { id: "prompt",     label: "Prompt cache",      hint: "/prompt-cache",icon: Layers,           group: "Tools",      path: "/prompt-cache",keywords: ["anthropic", "breakpoint", "ttl"] },

@@ -9,6 +9,8 @@ Pipeline:
 
 from typing import Any
 
+from aperture.compression.field_classifier import ClassifierResult, classify_fields
+from aperture.compression.field_policy import FieldPolicy, make_policy
 from aperture.compression.field_profiles import apply_field_selection
 from aperture.compression.stopwords import prune_payload as caveman_prune_payload
 from aperture.compression.task_profiles import merge_required_fields
@@ -16,91 +18,31 @@ from aperture.compression.toon import is_tabular_records, to_toon
 from aperture.contracts import CompressionResult
 from aperture.tokenization import count_tokens
 
-# Genuinely low-signal fields. URLs, node ids, and bookkeeping pointers an LLM
-# almost never needs. Anything that *might* carry semantic content (body,
-# headers, snippet, payload, parts, team, channel) is intentionally NOT here —
-# tool-specific normalizers handle those.
-_OBVIOUS_API_FIELDS: frozenset[str] = frozenset({
-    # GitHub bookkeeping URLs
-    "node_id",
-    "gravatar_id",
-    "avatar_url",
-    "followers_url",
-    "following_url",
-    "gists_url",
-    "starred_url",
-    "subscriptions_url",
-    "organizations_url",
-    "repos_url",
-    "events_url",
-    "received_events_url",
-    "labels_url",
-    "comments_url",
-    "repository_url",
-    "commits_url",
-    "statuses_url",
-    "pull_request_url",
-    "archive_url",
-    "assignees_url",
-    "blobs_url",
-    "branches_url",
-    "clone_url",
-    "collaborators_url",
-    "compare_url",
-    "contents_url",
-    "contributors_url",
-    "deployments_url",
-    "downloads_url",
-    "forks_url",
-    "git_commits_url",
-    "git_refs_url",
-    "git_tags_url",
-    "hooks_url",
-    "issue_comment_url",
-    "issue_events_url",
-    "issues_url",
-    "keys_url",
-    "merges_url",
-    "milestones_url",
-    "notifications_url",
-    "pulls_url",
-    "releases_url",
-    "stargazers_url",
-    "tags_url",
-    "teams_url",
-    "trees_url",
-    "ssh_url",
-    "svn_url",
-    "mirror_url",
-    "languages_url",
-    "subscribers_url",
-    "subscription_url",
-    "raw_url",
-    "preview_url",
-    "upload_url",
-    "git_url",
-    # Generic API bookkeeping URL — html_url stays because it's user-facing
-    "url",
-    # Slack/Gmail bookkeeping
-    "image_24",
-    "image_32",
-    "image_48",
-    "image_72",
-    "image_192",
-    "image_512",
-    "avatar_hash",
-    "size_estimate",
-    "sizeEstimate",
-    "internalDate",
-    "internal_date",
-    "history_id",
-    "historyId",
-    "client_msg_id",
-    "permalink_public",
-})
-
-
 _VALID_MODES: frozenset[str] = frozenset({"off", "safe", "balanced", "low", "aggressive"})
+
+# Backwards-compat alias for tests/imports that still reference the old name.
+from aperture.compression.field_policy import _OBVIOUS_API_FIELDS  # noqa: E402,F401
+
+
+def _collect_field_names(payload: object, depth: int = 0, max_depth: int = 4) -> list[str]:
+    """Walk a payload and return every field name that appears at any level.
+    Used to feed the optional model classifier — it never sees values."""
+    seen: set[str] = set()
+
+    def walk(obj: object, level: int) -> None:
+        if level > max_depth:
+            return
+        if isinstance(obj, dict):
+            for key, val in obj.items():
+                if isinstance(key, str):
+                    seen.add(key)
+                walk(val, level + 1)
+        elif isinstance(obj, list):
+            for item in obj[:5]:  # sample — same fields will repeat
+                walk(item, level + 1)
+
+    walk(payload, depth)
+    return sorted(seen)
 
 
 def compress_tool_output(
@@ -111,6 +53,8 @@ def compress_tool_output(
     task: str | None = None,
     required_fields: list[str] | None = None,
     apply_field_filter: list[str] | None = None,
+    ask: str | None = None,
+    field_policy_mode: str = "static",
 ) -> CompressionResult:
     """Compress a raw tool output into a compact model-facing payload.
 
@@ -122,6 +66,11 @@ def compress_tool_output(
         task: Optional task name for task-aware field protection.
         required_fields: Explicit dot-paths that must be preserved.
         apply_field_filter: Phase 4 — simulate upstream field selection.
+        ask: User's natural-language ask. Enables ask-aware promotion of
+            denied fields when `field_policy_mode != "static"`.
+        field_policy_mode: `static` (denial list only) | `ask_aware`
+            (also keep fields the ask mentions) | `model_assisted`
+            (ask-aware + Anthropic Haiku classifier on ambiguous fields).
     """
     if mode not in _VALID_MODES:
         mode = "safe"
@@ -145,6 +94,26 @@ def compress_tool_output(
     normalized = _normalize_for_tool(raw_payload, tool_slug)
     protected_fields = merge_required_fields(tool_slug, task, required_fields)
 
+    # Build the FieldPolicy. Static mode → no ask, no classifier. Ask-aware
+    # mode → ask flows through to word-bounded matches. Model-assisted →
+    # also asks Haiku once per (tool, ask) and merges its keep-set.
+    classifier_result: ClassifierResult | None = None
+    classifier_keeps: set[str] = set()
+    if field_policy_mode == "model_assisted" and ask:
+        classifier_result = classify_fields(
+            tool_slug=tool_slug,
+            ask=ask,
+            field_names=_collect_field_names(normalized),
+            enabled=True,
+        )
+        classifier_keeps = classifier_result.keeps
+
+    policy = make_policy(
+        required_signals=protected_fields,
+        ask=ask if field_policy_mode in ("ask_aware", "model_assisted") else None,
+        classifier_keeps=classifier_keeps,
+    )
+
     if _is_tabular(normalized):
         is_small = (
             isinstance(normalized, list)
@@ -153,25 +122,25 @@ def compress_tool_output(
         )
         if is_small:
             compressed = _compress_records(
-                normalized, mode=mode, protected_fields=protected_fields, skip_wrapper=True
+                normalized, mode=mode, protected_fields=protected_fields, skip_wrapper=True, policy=policy
             )
             strategy = f"inplace_{mode}"
         else:
             compressed = _compress_tabular(
-                normalized, mode=mode, protected_fields=protected_fields
+                normalized, mode=mode, protected_fields=protected_fields, policy=policy
             )
             strategy = f"tabular_{mode}"
     elif mode == "safe":
-        compressed = _safe_compress(normalized, protected_fields=protected_fields)
+        compressed = _safe_compress(normalized, protected_fields=protected_fields, policy=policy)
         strategy = "safe"
     elif mode == "balanced":
-        compressed = _balanced_compress(normalized, protected_fields=protected_fields)
+        compressed = _balanced_compress(normalized, protected_fields=protected_fields, policy=policy)
         strategy = "balanced"
     elif mode == "low":
-        compressed = _low_compress(normalized, protected_fields=protected_fields)
+        compressed = _low_compress(normalized, protected_fields=protected_fields, policy=policy)
         strategy = "low"
     else:  # aggressive
-        compressed = _aggressive_compress(normalized, protected_fields=protected_fields)
+        compressed = _aggressive_compress(normalized, protected_fields=protected_fields, policy=policy)
         compressed = caveman_prune_payload(compressed, level="full")
         strategy = "aggressive_caveman"
 
@@ -199,6 +168,15 @@ def compress_tool_output(
         warnings.append(f"protected_fields={len(protected_fields)}")
     if llm_format == "toon":
         warnings.append("encoding=toon")
+    if field_policy_mode != "static":
+        warnings.append(f"field_policy={field_policy_mode}")
+    if classifier_keeps:
+        warnings.append(f"classifier_promoted={len(classifier_keeps)}")
+
+    promotions = [
+        {"name": d.name, "path": d.full_path, "reason": d.reason}
+        for d in policy.promotions()
+    ]
 
     return CompressionResult(
         compressed_payload=compressed,
@@ -211,6 +189,12 @@ def compress_tool_output(
         warnings=warnings,
         llm_format=llm_format,
         llm_string=llm_string,
+        policy_mode=field_policy_mode,
+        policy_reason_counts=policy.reason_counts(),
+        policy_promotions=promotions,
+        classifier_used=bool(classifier_result and classifier_result.available),
+        classifier_keeps=sorted(classifier_keeps),
+        classifier_cost_usd=classifier_result.cost_estimate_usd if classifier_result else 0.0,
     )
 
 
@@ -337,12 +321,13 @@ def _is_tabular(payload: object) -> bool:
 
 
 def _compress_tabular(
-    payload: list, mode: str = "balanced", protected_fields: set[str] | None = None
+    payload: list, mode: str = "balanced", protected_fields: set[str] | None = None,
+    policy: FieldPolicy | None = None,
 ) -> object:
     if not payload:
         return payload
     if isinstance(payload[0], dict):
-        return _compress_records(payload, mode, protected_fields=protected_fields)
+        return _compress_records(payload, mode, protected_fields=protected_fields, policy=policy)
     return _compress_2d_array(payload, mode)
 
 
@@ -425,9 +410,11 @@ def _compress_records(
     mode: str = "balanced",
     protected_fields: set[str] | None = None,
     skip_wrapper: bool = False,
+    policy: FieldPolicy | None = None,
 ) -> object:
     total_rows = len(payload)
     protected = protected_fields or set()
+    policy = policy or make_policy(required_signals=protected)
 
     sample, _ = _build_sample(payload, mode)
 
@@ -444,7 +431,16 @@ def _compress_records(
         )
     }
 
-    fields_to_drop = empty_fields | _OBVIOUS_API_FIELDS
+    # Build the drop set the same way the old engine did: every denied name,
+    # minus anything the policy decided to keep (ask-aware / classifier /
+    # explicit signals can promote a denied name back to keep). We use the
+    # full _OBVIOUS_API_FIELDS so nested keys (avatar_url inside user, etc.)
+    # are also dropped — the policy filter is the single arbiter.
+    denial_drops = {
+        k for k in _OBVIOUS_API_FIELDS
+        if policy.decide(k, "").decision == "drop"
+    }
+    fields_to_drop = empty_fields | denial_drops
 
     constant_fields = set()
     for key in all_keys - fields_to_drop:
@@ -607,20 +603,20 @@ def _build_sample(data_rows: list, mode: str) -> tuple[list, int]:
 # Generic value compression
 # ---------------------------------------------------------------------------
 
-def _safe_compress(payload: object, protected_fields: set[str] | None = None) -> object:
-    return _compress_value(payload, level="safe", protected_fields=protected_fields)
+def _safe_compress(payload: object, protected_fields: set[str] | None = None, policy: FieldPolicy | None = None) -> object:
+    return _compress_value(payload, level="safe", protected_fields=protected_fields, policy=policy)
 
 
-def _balanced_compress(payload: object, protected_fields: set[str] | None = None) -> object:
-    return _compress_value(payload, level="balanced", protected_fields=protected_fields)
+def _balanced_compress(payload: object, protected_fields: set[str] | None = None, policy: FieldPolicy | None = None) -> object:
+    return _compress_value(payload, level="balanced", protected_fields=protected_fields, policy=policy)
 
 
-def _low_compress(payload: object, protected_fields: set[str] | None = None) -> object:
-    return _compress_value(payload, level="low", protected_fields=protected_fields)
+def _low_compress(payload: object, protected_fields: set[str] | None = None, policy: FieldPolicy | None = None) -> object:
+    return _compress_value(payload, level="low", protected_fields=protected_fields, policy=policy)
 
 
-def _aggressive_compress(payload: object, protected_fields: set[str] | None = None) -> object:
-    return _compress_value(payload, level="aggressive", protected_fields=protected_fields)
+def _aggressive_compress(payload: object, protected_fields: set[str] | None = None, policy: FieldPolicy | None = None) -> object:
+    return _compress_value(payload, level="aggressive", protected_fields=protected_fields, policy=policy)
 
 
 def _compress_value(
@@ -628,6 +624,7 @@ def _compress_value(
     level: str = "balanced",
     protected_fields: set[str] | None = None,
     parent_path: str = "",
+    policy: FieldPolicy | None = None,
 ) -> object:
     if value is None or isinstance(value, (bool, int, float)):
         return value
@@ -637,9 +634,9 @@ def _compress_value(
             return value[: max_len - 3] + "..."
         return value
     if isinstance(value, list):
-        return _compress_list(value, level, protected_fields, parent_path)
+        return _compress_list(value, level, protected_fields, parent_path, policy)
     if isinstance(value, dict):
-        return _compress_dict(value, level, protected_fields, parent_path)
+        return _compress_dict(value, level, protected_fields, parent_path, policy)
     return value
 
 
@@ -648,24 +645,22 @@ def _compress_dict(
     level: str,
     protected_fields: set[str] | None,
     parent_path: str,
+    policy: FieldPolicy | None = None,
 ) -> dict[str, Any]:
     protected = protected_fields or set()
+    policy = policy or make_policy(required_signals=protected)
     result: dict[str, Any] = {}
     flatten = level in ("balanced", "low", "aggressive")
 
     for key, val in d.items():
         full_path = f"{parent_path}.{key}" if parent_path else key
-        is_protected = full_path in protected or key in protected
-        if not is_protected:
-            for p in protected:
-                if p.startswith(f"{full_path}.") or p.startswith(f"{key}."):
-                    is_protected = True
-                    break
+        decision = policy.decide(key, parent_path)
+        is_protected = decision.reason in ("explicit", "explicit_descendant")
 
         if not is_protected:
             if val is None or val == "" or val == [] or val == {}:
                 continue
-            if key in _OBVIOUS_API_FIELDS:
+            if decision.decision == "drop":
                 continue
 
         if flatten and isinstance(val, dict) and not is_protected:
@@ -674,7 +669,7 @@ def _compress_dict(
                 result[key] = short
                 continue
 
-        result[key] = _compress_value(val, level, protected, full_path)
+        result[key] = _compress_value(val, level, protected, full_path, policy)
     return result
 
 
@@ -683,10 +678,11 @@ def _compress_list(
     level: str,
     protected_fields: set[str] | None,
     parent_path: str,
+    policy: FieldPolicy | None = None,
 ) -> list:
     out = []
     for item in lst:
-        compressed = _compress_value(item, level, protected_fields, parent_path)
+        compressed = _compress_value(item, level, protected_fields, parent_path, policy)
         if compressed not in (None, "", [], {}):
             out.append(compressed)
 

@@ -11,7 +11,10 @@ import {
   Layers,
   Filter,
   Gauge,
+  ShieldCheck,
 } from "lucide-react";
+import { CommandPalette } from "@/components/CommandPalette";
+import { WorkspaceChip } from "@/components/WorkspaceChip";
 
 interface NavItem {
   path: string;
@@ -40,6 +43,7 @@ const sections: NavSection[] = [
     title: "Optimizations",
     items: [
       { path: "/calibrate", label: "Effort calibrator", icon: Gauge },
+      { path: "/field-policy", label: "Field policy", icon: ShieldCheck },
       { path: "/task-aware", label: "Task-aware", icon: Target },
       { path: "/placeholder", label: "Placeholders", icon: CloudCog },
       { path: "/prompt-cache", label: "Prompt cache", icon: Layers },
@@ -70,20 +74,29 @@ function ApertureMark() {
   );
 }
 
+function titleFor(pathname: string): string {
+  const flat = sections.flatMap((s) => s.items);
+  const match = flat.find((i) => i.path === pathname);
+  return match?.label ?? "Overview";
+}
+
 export default function Layout({ children }: { children: React.ReactNode }) {
   const location = useLocation();
 
   return (
     <div className="min-h-screen bg-background text-foreground flex">
       <aside className="w-60 border-r border-border bg-sidebar flex flex-col">
-        <div className="p-5 border-b border-sidebar-border flex items-center gap-2.5">
-          <span className="text-foreground"><ApertureMark /></span>
-          <div className="flex flex-col leading-tight">
-            <span className="text-[15px] font-semibold tracking-tight">Aperture</span>
-            <span className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
-              Composio · efficiency layer
-            </span>
+        <div className="p-4 border-b border-sidebar-border space-y-3">
+          <div className="flex items-center gap-2.5">
+            <span className="text-foreground"><ApertureMark /></span>
+            <div className="flex flex-col leading-tight">
+              <span className="text-[15px] font-semibold tracking-tight">Aperture</span>
+              <span className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
+                Composio · efficiency layer
+              </span>
+            </div>
           </div>
+          <WorkspaceChip workspace="default_project" initial="A" identity="Aperture" />
         </div>
 
         <nav className="flex-1 p-3 space-y-5 overflow-auto">
@@ -135,6 +148,17 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       </aside>
 
       <main className="flex-1 overflow-auto">
+        <header className="sticky top-0 z-20 backdrop-blur bg-background/80 border-b border-border">
+          <div className="max-w-6xl mx-auto px-8 h-12 flex items-center justify-between">
+            <div className="flex items-center gap-3 text-[12px] text-muted-foreground">
+              <span className="lime-dot" />
+              <span>For you</span>
+              <span className="text-muted-foreground/40">/</span>
+              <span className="text-foreground">{titleFor(location.pathname)}</span>
+            </div>
+            <CommandPalette />
+          </div>
+        </header>
         <div className="max-w-6xl mx-auto px-8 py-7">{children}</div>
       </main>
     </div>

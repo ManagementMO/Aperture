@@ -11,6 +11,7 @@ import Placeholder from "./pages/Placeholder";
 import PromptCache from "./pages/PromptCache";
 import FieldSelect from "./pages/FieldSelect";
 import EffortCalibrator from "./pages/EffortCalibrator";
+import FieldPolicy from "./pages/FieldPolicy";
 
 function App() {
   return (
@@ -24,6 +25,7 @@ function App() {
           <Route path="/cache" element={<CacheStats />} />
           <Route path="/benchmarks" element={<Benchmarks />} />
           <Route path="/calibrate" element={<EffortCalibrator />} />
+          <Route path="/field-policy" element={<FieldPolicy />} />
           <Route path="/task-aware" element={<TaskAware />} />
           <Route path="/placeholder" element={<Placeholder />} />
           <Route path="/prompt-cache" element={<PromptCache />} />

@@ -32,6 +32,7 @@ from aperture.compression.field_profiles import (
     list_field_profiles_for_tool,
     apply_field_selection,
 )
+from aperture.compression.field_classifier import classifier_health
 from aperture.routing.quality_gate import select_mode_for_quality
 from aperture.schema_optimizer.type_group import compact_schema, measure_compaction
 from aperture.tokenization import count_tokens
@@ -75,7 +76,16 @@ app.add_middleware(
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _measure_compression(data, tool_slug, mode, task=None, required_fields=None, apply_field_filter=None):
+def _measure_compression(
+    data,
+    tool_slug,
+    mode,
+    task=None,
+    required_fields=None,
+    apply_field_filter=None,
+    ask=None,
+    field_policy_mode="static",
+):
     """Run real compression and return real measurements (all in gpt-4o tokens)."""
     model = "gpt-4o"
     raw_tc = count_tokens(data, model=model)
@@ -87,12 +97,14 @@ def _measure_compression(data, tool_slug, mode, task=None, required_fields=None,
         task=task,
         required_fields=required_fields,
         apply_field_filter=apply_field_filter,
+        ask=ask,
+        field_policy_mode=field_policy_mode,
     )
     json_tc = count_tokens(result.compressed_payload, model=model)
     return {
         "raw_tokens": raw_tc.tokens,
-        "compressed_tokens": result.compressed_tokens,  # LLM-bound tokens (TOON if applicable)
-        "json_tokens": json_tc.tokens,                  # what JSON would cost
+        "compressed_tokens": result.compressed_tokens,
+        "json_tokens": json_tc.tokens,
         "tokens_saved": raw_tc.tokens - result.compressed_tokens,
         "compression_ratio": result.compression_ratio,
         "strategy": result.strategy,
@@ -104,6 +116,12 @@ def _measure_compression(data, tool_slug, mode, task=None, required_fields=None,
         "protected_field_count": len(result.warnings),
         "omitted_fields": result.omitted_fields,
         "warnings": result.warnings,
+        "policy_mode": result.policy_mode,
+        "policy_reason_counts": result.policy_reason_counts,
+        "policy_promotions": result.policy_promotions[:50],
+        "classifier_used": result.classifier_used,
+        "classifier_keeps": result.classifier_keeps,
+        "classifier_cost_usd": result.classifier_cost_usd,
     }
 
 # ---------------------------------------------------------------------------
@@ -783,6 +801,56 @@ def calibrate_effort(payload: dict):
             for a in gate.attempts
         ],
         "reason": gate.reason,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Smart field policy (denial-list replacement)
+# ---------------------------------------------------------------------------
+
+@app.get("/api/field-policy/health")
+def field_policy_health():
+    """Provider availability + recent classifier calls for the dashboard."""
+    return classifier_health()
+
+
+@app.post("/api/field-policy/explain")
+def explain_field_policy(payload: dict):
+    """Run compression three ways (static / ask-aware / model-assisted) and
+    return the per-mode tokens + policy decision trace.
+
+    Body: {tool_slug, arguments?, dataset?, ask?, mode?, required_signals?}
+    """
+    tool_slug = payload.get("tool_slug")
+    if not tool_slug:
+        return {"error": "tool_slug is required"}
+
+    arguments = payload.get("arguments", {})
+    ask = payload.get("ask") or ""
+    mode = payload.get("mode", "balanced")
+    required_signals = payload.get("required_signals") or []
+    dataset_name = payload.get("dataset")
+
+    if dataset_name in DATASETS and DATASETS[dataset_name] is not None:
+        raw = DATASETS[dataset_name]
+    else:
+        raw = get_mock_result(tool_slug, arguments)
+
+    runs = {}
+    for policy_mode in ("static", "ask_aware", "model_assisted"):
+        runs[policy_mode] = _measure_compression(
+            raw, tool_slug, mode,
+            ask=ask if policy_mode != "static" else None,
+            field_policy_mode=policy_mode,
+            required_fields=required_signals,
+        )
+
+    return {
+        "tool_slug": tool_slug,
+        "ask": ask,
+        "mode": mode,
+        "runs": runs,
+        "classifier_health": classifier_health(),
     }
 
 
