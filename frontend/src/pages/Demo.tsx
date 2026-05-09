@@ -1,9 +1,9 @@
 import { useState } from "react";
-import { apiPost } from "@/lib/api";
+import { apiPost, describeApiError } from "@/lib/api";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { ArrowUpRight, Check, ChevronDown, ChevronUp } from "lucide-react";
+import { ComposingSpinner } from "@/components/ComposingSpinner";
 
 interface Step {
   tool: string;
@@ -30,95 +30,121 @@ interface RunResult {
   steps: Step[];
 }
 
-const PROMPTS = [
-  "Look up the composio repo — stars, open issues, recent PRs",
-  "Find all OAuth bugs and tell me who's assigned",
-  "Summarize 500 Notion pages, 200 Linear issues, and 1000 Supabase users",
-  "Scan my inbox for anything urgent from this week",
+const PROMPTS: { label: string; ask: string }[] = [
+  { label: "Open issues + recent PRs", ask: "Look up the composio repo — stars, open issues, recent PRs" },
+  { label: "Triage OAuth bugs", ask: "Find OAuth bugs and tell me who's assigned" },
+  { label: "Bulk dataset scan", ask: "Summarize 500 Notion pages, 200 Linear issues, and 1000 Supabase users" },
+  { label: "Inbox urgency scan", ask: "Scan my inbox for anything urgent from this week" },
 ];
 
 export default function Demo() {
   const [ask, setAsk] = useState("");
   const [running, setRunning] = useState(false);
   const [result, setResult] = useState<RunResult | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const [showSteps, setShowSteps] = useState(false);
 
-  const submit = async () => {
+  const submit = async (): Promise<void> => {
     const trimmed = ask.trim();
     if (!trimmed || running) return;
     setRunning(true);
     setResult(null);
+    setError(null);
     setShowSteps(false);
-    const r: RunResult = await apiPost("/api/demo/run", { ask: trimmed });
-    setResult(r);
-    setRunning(false);
+    try {
+      const r = await apiPost<RunResult>("/api/demo/run", { ask: trimmed });
+      if (!r || !r.summary) {
+        setError("The backend returned an empty response.");
+      } else {
+        setResult(r);
+      }
+    } catch (err) {
+      setError(describeApiError(err));
+    } finally {
+      setRunning(false);
+    }
   };
 
-  const onKey = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if ((e.metaKey || e.ctrlKey) && e.key === "Enter") submit();
+  const onKey = (e: React.KeyboardEvent<HTMLTextAreaElement>): void => {
+    if ((e.metaKey || e.ctrlKey) && e.key === "Enter") void submit();
   };
 
   return (
-    <div className="max-w-2xl mx-auto py-12 space-y-6">
+    <div className="max-w-2xl mx-auto py-8 space-y-6">
       <div>
         <p className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
           Aperture
         </p>
-        <h1 className="text-2xl font-semibold tracking-tight mt-1">
+        <h1 className="text-3xl font-semibold tracking-tight mt-1">
           What do you want your agent to do?
         </h1>
+        <p className="text-sm text-muted-foreground mt-2">
+          Aperture stays between your agent and its tools. We measure the raw
+          tokens coming back from each call, then compress what the agent
+          actually needs to read.
+        </p>
       </div>
 
-      <div className="rounded-xl border border-border bg-card p-4 space-y-3">
+      <div className="rounded-xl border border-border bg-card/80 backdrop-blur-sm p-4 space-y-3">
         <textarea
           value={ask}
           onChange={(e) => setAsk(e.target.value)}
           onKeyDown={onKey}
-          placeholder="Describe a task in plain English — e.g. find open OAuth bugs and tell me who's assigned"
+          placeholder="Describe a task in plain English. ⌘+Enter to run."
           rows={3}
-          className="w-full resize-none bg-transparent text-[14px] outline-none placeholder:text-muted-foreground/70"
+          className="w-full resize-none bg-transparent text-[14px] outline-none placeholder:text-muted-foreground/60"
           autoFocus
         />
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between gap-3">
           <div className="flex flex-wrap gap-1.5">
             {PROMPTS.map((p) => (
               <button
-                key={p}
+                key={p.label}
                 type="button"
-                onClick={() => setAsk(p)}
+                onClick={() => setAsk(p.ask)}
                 className="text-[11px] px-2 py-1 rounded-md border border-border text-muted-foreground hover:text-foreground hover:border-primary/50 transition-colors"
               >
-                {p.length > 40 ? p.slice(0, 40) + "…" : p}
+                {p.label}
               </button>
             ))}
           </div>
           <Button
-            onClick={submit}
+            onClick={() => void submit()}
             disabled={!ask.trim() || running}
             className="bg-primary text-primary-foreground hover:bg-primary/90"
           >
-            {running ? "Running…" : (
-              <>Run <ArrowUpRight className="w-4 h-4 ml-1" /></>
+            {running ? (
+              <ComposingSpinner label="Running" className="text-primary-foreground" />
+            ) : (
+              <>
+                Run <ArrowUpRight className="w-4 h-4 ml-1" />
+              </>
             )}
           </Button>
         </div>
       </div>
 
-      {running && <RunningSpinner />}
+      {running && (
+        <Card>
+          <CardContent className="pt-5 pb-5 flex items-center gap-3">
+            <ComposingSpinner size="md" />
+          </CardContent>
+        </Card>
+      )}
 
-      {!running && result && <ResultPopup result={result} showSteps={showSteps} setShowSteps={setShowSteps} />}
+      {!running && error && (
+        <Card className="border-rose-500/40">
+          <CardContent className="pt-5 pb-5 space-y-1">
+            <p className="text-sm font-medium text-rose-400">Couldn't run that.</p>
+            <p className="text-[12px] text-muted-foreground">{error}</p>
+          </CardContent>
+        </Card>
+      )}
+
+      {!running && result && result.summary && (
+        <ResultPopup result={result} showSteps={showSteps} setShowSteps={setShowSteps} />
+      )}
     </div>
-  );
-}
-
-function RunningSpinner() {
-  return (
-    <Card>
-      <CardContent className="pt-5 pb-5 flex items-center gap-3">
-        <span className="text-primary text-[16px] aperture-pulse">✽</span>
-        <span className="text-sm text-muted-foreground">working…</span>
-      </CardContent>
-    </Card>
   );
 }
 
@@ -146,8 +172,8 @@ function ResultPopup({
           </div>
 
           <div className="grid grid-cols-3 gap-4 pt-1">
-            <Metric label="Raw" value={s.raw_tokens.toLocaleString()} sublabel="tokens" />
-            <Metric label="Sent" value={s.sent_tokens.toLocaleString()} sublabel="tokens" />
+            <Metric label="Raw" value={s.raw_tokens.toLocaleString()} sublabel="tokens from tools" />
+            <Metric label="Sent" value={s.sent_tokens.toLocaleString()} sublabel="tokens to LLM" />
             <Metric label="Saved" value={`${s.saved_percent}%`} sublabel={`$${s.cost_saved_usd.toFixed(4)} cheaper`} primary />
           </div>
 
@@ -181,8 +207,12 @@ function Metric({
   return (
     <div>
       <p className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground">{label}</p>
-      <p className={`text-xl font-semibold metric-value ${primary ? "text-primary" : ""}`}>{value}</p>
-      {sublabel && <p className="text-[10px] text-muted-foreground metric-value">{sublabel}</p>}
+      <p className={`text-xl font-semibold metric-value ${primary ? "text-primary" : ""}`}>
+        {value}
+      </p>
+      {sublabel && (
+        <p className="text-[10px] text-muted-foreground metric-value">{sublabel}</p>
+      )}
     </div>
   );
 }
@@ -235,6 +265,3 @@ function ToolCallChart({ steps }: { steps: Step[] }) {
     </Card>
   );
 }
-
-// Re-export with a type — components expect Badge but we don't actually use it
-export { Badge };

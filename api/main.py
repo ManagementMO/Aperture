@@ -517,6 +517,68 @@ def get_benchmarks():
     return {"benchmarks": benchmarks}
 
 
+@app.get("/api/quality")
+def get_quality_check() -> dict:
+    """Quality check: run real agent scenarios and report whether each
+    compressed payload still contains the values an agent would have used.
+
+    Aperture-internal — no third-party SDK is involved. Probes are concrete
+    field-value lookups (e.g. titles, addressees, IDs) the wrapper proves
+    survived compression.
+    """
+    from aperture.benchmarks.vanilla_vs_aperture import (
+        BenchCache,
+        compare_call,
+        scenario_dataset_summarize,
+        scenario_research_repo,
+        scenario_triage_bugs,
+    )
+
+    BenchCache()  # noqa: F841 (reset import side effect quirks if any)
+    scenarios = [scenario_research_repo(), scenario_triage_bugs(), scenario_dataset_summarize()]
+
+    out = []
+    for sc in scenarios:
+        probes = []
+        for call in sc.calls:
+            for label, passed in call.quality.items():
+                probes.append({
+                    "tool": call.tool_slug,
+                    "label": label,
+                    "passed": bool(passed),
+                })
+        out.append({
+            "name": sc.name,
+            "description": sc.description,
+            "tokens_raw": sc.total_raw,
+            "tokens_sent": sc.total_aperture,
+            "saved_percent": round(sc.saved_percent, 1),
+            "quality_passed": sc.quality_passed,
+            "probes": probes,
+        })
+
+    # One canonical compare_call to demonstrate per-call quality probes,
+    # for the dashboard "live preserved-signal" panel.
+    sample = compare_call(
+        "GITHUB_LIST_ISSUES",
+        {"owner": "composioHQ", "repo": "composio", "per_page": 5},
+        mode="balanced",
+    )
+
+    return {
+        "scenarios": out,
+        "sample": {
+            "tool": sample.tool_slug,
+            "raw_tokens": sample.raw_tokens,
+            "sent_tokens": sample.aperture_tokens,
+            "saved_percent": round(sample.saved_percent, 1),
+            "quality": [
+                {"label": k, "passed": bool(v)} for k, v in sample.quality.items()
+            ],
+        },
+    }
+
+
 _SAMPLE_SCHEMAS = {
     "GITHUB_GET_A_REPOSITORY": {
         "name": "GITHUB_GET_A_REPOSITORY",
@@ -562,22 +624,45 @@ _SAMPLE_SCHEMAS = {
 }
 
 
+def _source_label(tool_slug: str) -> str:
+    if tool_slug.startswith("GITHUB"):
+        return "GitHub"
+    if tool_slug.startswith("GMAIL"):
+        return "Gmail"
+    if tool_slug.startswith("SLACK"):
+        return "Slack"
+    if tool_slug.startswith("NOTION"):
+        return "Notion"
+    if tool_slug.startswith("LINEAR"):
+        return "Linear"
+    if tool_slug.startswith("SUPABASE"):
+        return "Supabase"
+    return tool_slug.split("_")[0].title()
+
+
 @app.get("/api/waterfall")
-def get_waterfall():
-    """Build a real token waterfall from a simulated multi-tool run."""
-    tools = [
-        ("GITHUB_GET_A_REPOSITORY", {"owner": "composioHQ", "repo": "composio"}),
-        ("GITHUB_LIST_ISSUES", {"owner": "composioHQ", "repo": "composio", "per_page": 5}),
-        ("GMAIL_SEARCH_EMAILS", {"query": "bug OR error", "max_results": 3}),
+def get_waterfall() -> dict:
+    """Token waterfall across heterogeneous sources.
+
+    Mixed sources on purpose — GitHub repo + Linear issues + Notion docs +
+    Supabase user table + Slack chatter. The waterfall surfaces different
+    shapes of upstream data, not the same source repeated.
+    """
+    tools: list[tuple[str, dict, str]] = [
+        ("GITHUB_GET_A_REPOSITORY", {"owner": "composioHQ", "repo": "composio"}, "Repository overview"),
+        ("LINEAR_GET_LINEAR_USER_ISSUES", {}, "Linear issue list (200)"),
+        ("NOTION_SEARCH_NOTION_PAGE", {}, "Notion search (500 pages)"),
+        ("SUPABASE_FETCH_TABLE_ROWS", {"table": "users"}, "Supabase users (1000)"),
+        ("SLACK_SEARCH_MESSAGES", {"query": "bug OR error", "count": 4}, "Slack messages"),
     ]
 
-    run_steps = []
+    run_steps: list[dict] = []
     total_raw = 0
     total_compressed = 0
     schema_tokens = 0
     arg_tokens = 0
 
-    for tool_slug, args in tools:
+    for tool_slug, args, label in tools:
         schema = _SAMPLE_SCHEMAS.get(tool_slug, {"name": tool_slug, "parameters": {}})
         schema_tokens += count_tokens(schema, model="gpt-4o").tokens
         arg_tokens += count_tokens(args, model="gpt-4o").tokens
@@ -585,17 +670,21 @@ def get_waterfall():
         raw = get_mock_result(tool_slug, args)
         raw_tc = count_tokens(raw, model="gpt-4o")
         result = compress_tool_output(raw, tool_slug, mode="balanced", model="gpt-4o")
-        comp_tc = count_tokens(result.compressed_payload, model="gpt-4o")
+        # Use the LLM-bound count (TOON-aware) instead of re-counting JSON,
+        # so we never accidentally report sent > raw.
+        comp_tokens = result.compressed_tokens
 
         run_steps.append({
             "tool_slug": tool_slug,
+            "label": label,
+            "source": _source_label(tool_slug),
             "raw_tokens": raw_tc.tokens,
-            "compressed_tokens": comp_tc.tokens,
-            "tokens_saved": max(0, raw_tc.tokens - comp_tc.tokens),
+            "compressed_tokens": comp_tokens,
+            "tokens_saved": max(0, raw_tc.tokens - comp_tokens),
             "strategy": result.strategy,
         })
         total_raw += raw_tc.tokens
-        total_compressed += comp_tc.tokens
+        total_compressed += comp_tokens
 
     return {
         "steps": run_steps,

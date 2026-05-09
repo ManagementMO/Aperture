@@ -1,25 +1,39 @@
 interface ComposingSpinnerProps {
   label?: string;
   className?: string;
+  size?: "sm" | "md" | "lg";
 }
 
 /**
- * The "Composing..." asterisk used across Composio's surfaces during
- * pending tool calls. We use it whenever Aperture is mid-calibration or
- * mid-compression on the dashboard.
+ * "Composing..." indicator with a spinning ✽. Used wherever Aperture is
+ * in-flight (waiting on a tool, classifying, compressing, etc.).
  */
 export function ComposingSpinner({
   label = "Composing",
   className = "",
+  size = "sm",
 }: ComposingSpinnerProps) {
+  const sizing = {
+    sm: { wrap: "text-[12px]", glyph: "text-[14px]", label: "text-[12px]" },
+    md: { wrap: "text-sm", glyph: "text-base", label: "text-sm" },
+    lg: { wrap: "text-base", glyph: "text-xl", label: "text-base" },
+  }[size];
+
   return (
     <span
-      className={`inline-flex items-center gap-2 text-[12px] text-muted-foreground ${className}`}
+      className={`inline-flex items-center gap-2 text-muted-foreground ${sizing.wrap} ${className}`}
       role="status"
       aria-live="polite"
     >
-      <span className="text-primary text-[14px] leading-none aperture-pulse">✽</span>
-      <span className="font-mono lowercase tracking-tight">{label}…</span>
+      <span
+        aria-hidden
+        className={`text-primary leading-none aperture-spin ${sizing.glyph}`}
+      >
+        ✽
+      </span>
+      <span className={`font-mono lowercase tracking-tight ${sizing.label}`}>
+        {label}…
+      </span>
     </span>
   );
 }

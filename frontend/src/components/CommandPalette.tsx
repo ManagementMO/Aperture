@@ -3,18 +3,10 @@ import { useNavigate } from "react-router-dom";
 import {
   ArrowDownWideNarrow,
   BarChart3,
-  CloudCog,
-  Database,
-  Filter,
   FlaskConical,
-  Gauge,
-  Layers,
   LayoutTemplate,
-  Minimize2,
   Search,
-  ShieldCheck,
   Sparkles,
-  Target,
 } from "lucide-react";
 
 interface PaletteItem {
@@ -23,24 +15,15 @@ interface PaletteItem {
   hint: string;
   path: string;
   icon: typeof Search;
-  group: "Navigation" | "Tools";
   keywords: string[];
 }
 
 const ITEMS: PaletteItem[] = [
-  { id: "demo",       label: "Demo",              hint: "/", icon: Sparkles,         group: "Navigation", path: "/",            keywords: ["run", "ask", "agent", "input"] },
-  { id: "overview",   label: "Overview",          hint: "/overview", icon: BarChart3, group: "Navigation", path: "/overview",    keywords: ["home", "summary", "datasets"] },
-  { id: "waterfall",  label: "Token waterfall",   hint: "/waterfall", icon: ArrowDownWideNarrow, group: "Navigation", path: "/waterfall",   keywords: ["schema", "argument", "result"] },
-  { id: "compress",   label: "Compression",       hint: "/compression", icon: Minimize2,        group: "Navigation", path: "/compression", keywords: ["mode", "raw", "toon"] },
-  { id: "schema",     label: "Schema compaction", hint: "/schema",      icon: LayoutTemplate,   group: "Navigation", path: "/schema",      keywords: ["type-grouped", "tool", "openai"] },
-  { id: "cache",      label: "Cache stats",       hint: "/cache",       icon: Database,         group: "Navigation", path: "/cache",       keywords: ["redis", "hit", "miss"] },
-  { id: "benchmarks", label: "Benchmarks",        hint: "/benchmarks",  icon: FlaskConical,     group: "Navigation", path: "/benchmarks",  keywords: ["matrix", "modes"] },
-  { id: "calibrate",  label: "Effort calibrator", hint: "/calibrate",   icon: Gauge,            group: "Tools",      path: "/calibrate",   keywords: ["auto", "quality", "ask"] },
-  { id: "field-policy",label: "Field policy",     hint: "/field-policy",icon: ShieldCheck,      group: "Tools",      path: "/field-policy", keywords: ["denial", "ask-aware", "classifier", "gemma"] },
-  { id: "task-aware", label: "Task-aware",        hint: "/task-aware",  icon: Target,           group: "Tools",      path: "/task-aware",  keywords: ["profile", "protected"] },
-  { id: "placeholder",label: "Placeholders",      hint: "/placeholder", icon: CloudCog,         group: "Tools",      path: "/placeholder", keywords: ["hydrate", "lazy", "ref"] },
-  { id: "prompt",     label: "Prompt cache",      hint: "/prompt-cache",icon: Layers,           group: "Tools",      path: "/prompt-cache",keywords: ["anthropic", "breakpoint", "ttl"] },
-  { id: "field",      label: "Field select",      hint: "/field-select",icon: Filter,           group: "Tools",      path: "/field-select",keywords: ["upstream", "fetch"] },
+  { id: "demo",       label: "Demo",              hint: "/",            icon: Sparkles,             path: "/",            keywords: ["run", "ask", "agent", "input"] },
+  { id: "overview",   label: "Overview",          hint: "/overview",    icon: BarChart3,            path: "/overview",    keywords: ["home", "summary", "datasets"] },
+  { id: "waterfall",  label: "Token waterfall",   hint: "/waterfall",   icon: ArrowDownWideNarrow,  path: "/waterfall",   keywords: ["schema", "argument", "result"] },
+  { id: "schema",     label: "Schema compaction", hint: "/schema",      icon: LayoutTemplate,       path: "/schema",      keywords: ["type-grouped", "tool", "schema"] },
+  { id: "benchmarks", label: "Benchmarks",        hint: "/benchmarks",  icon: FlaskConical,         path: "/benchmarks",  keywords: ["modes", "quality"] },
 ];
 
 export function CommandPalette() {
@@ -84,15 +67,6 @@ export function CommandPalette() {
       return hay.includes(needle);
     });
   }, [q]);
-
-  const groups = useMemo(() => {
-    const map = new Map<string, PaletteItem[]>();
-    for (const item of filtered) {
-      if (!map.has(item.group)) map.set(item.group, []);
-      map.get(item.group)!.push(item);
-    }
-    return Array.from(map.entries());
-  }, [filtered]);
 
   const flat = filtered;
 
@@ -146,33 +120,27 @@ export function CommandPalette() {
                   No matches.
                 </p>
               )}
-              {groups.map(([group, items]) => (
-                <div key={group} className="px-1.5 pb-1">
-                  <p className="px-2.5 pt-2 pb-1 text-[10px] uppercase tracking-[0.16em] text-muted-foreground/80">
-                    {group}
-                  </p>
-                  {items.map((item) => {
-                    const flatIdx = flat.indexOf(item);
-                    const isActive = flatIdx === active;
-                    const Icon = item.icon;
-                    return (
-                      <button
-                        key={item.id}
-                        type="button"
-                        onMouseEnter={() => setActive(flatIdx)}
-                        onClick={() => navigateTo(item)}
-                        className={`w-full flex items-center gap-3 px-2.5 py-2 rounded-md text-sm transition-colors ${
-                          isActive ? "bg-primary/10 text-foreground" : "text-muted-foreground hover:text-foreground"
-                        }`}
-                      >
-                        <Icon className={`w-3.5 h-3.5 ${isActive ? "text-primary" : "text-muted-foreground/70"}`} />
-                        <span className="flex-1 text-left">{item.label}</span>
-                        <span className="text-[11px] font-mono text-muted-foreground/60">{item.hint}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-              ))}
+              <div className="px-1.5 pb-1">
+                {flat.map((item, flatIdx) => {
+                  const isActive = flatIdx === active;
+                  const Icon = item.icon;
+                  return (
+                    <button
+                      key={item.id}
+                      type="button"
+                      onMouseEnter={() => setActive(flatIdx)}
+                      onClick={() => navigateTo(item)}
+                      className={`w-full flex items-center gap-3 px-2.5 py-2 rounded-md text-sm transition-colors ${
+                        isActive ? "bg-primary/10 text-foreground" : "text-muted-foreground hover:text-foreground"
+                      }`}
+                    >
+                      <Icon className={`w-3.5 h-3.5 ${isActive ? "text-primary" : "text-muted-foreground/70"}`} />
+                      <span className="flex-1 text-left">{item.label}</span>
+                      <span className="text-[11px] font-mono text-muted-foreground/60">{item.hint}</span>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
             <div className="flex items-center justify-between px-3 py-2 border-t border-border text-[10px] text-muted-foreground">
               <span className="flex items-center gap-1">

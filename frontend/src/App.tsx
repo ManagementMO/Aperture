@@ -1,18 +1,10 @@
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import Layout from "./components/Layout";
 import Demo from "./pages/Demo";
 import Overview from "./pages/Overview";
 import TokenWaterfall from "./pages/TokenWaterfall";
-import Compression from "./pages/Compression";
 import SchemaCompaction from "./pages/SchemaCompaction";
-import CacheStats from "./pages/CacheStats";
 import Benchmarks from "./pages/Benchmarks";
-import TaskAware from "./pages/TaskAware";
-import Placeholder from "./pages/Placeholder";
-import PromptCache from "./pages/PromptCache";
-import FieldSelect from "./pages/FieldSelect";
-import EffortCalibrator from "./pages/EffortCalibrator";
-import FieldPolicy from "./pages/FieldPolicy";
 
 function App() {
   return (
@@ -22,16 +14,9 @@ function App() {
           <Route path="/" element={<Demo />} />
           <Route path="/overview" element={<Overview />} />
           <Route path="/waterfall" element={<TokenWaterfall />} />
-          <Route path="/compression" element={<Compression />} />
           <Route path="/schema" element={<SchemaCompaction />} />
-          <Route path="/cache" element={<CacheStats />} />
           <Route path="/benchmarks" element={<Benchmarks />} />
-          <Route path="/calibrate" element={<EffortCalibrator />} />
-          <Route path="/field-policy" element={<FieldPolicy />} />
-          <Route path="/task-aware" element={<TaskAware />} />
-          <Route path="/placeholder" element={<Placeholder />} />
-          <Route path="/prompt-cache" element={<PromptCache />} />
-          <Route path="/field-select" element={<FieldSelect />} />
+          <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </Layout>
     </BrowserRouter>

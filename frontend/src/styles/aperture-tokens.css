@@ -181,6 +181,25 @@
   animation: aperture-pulse 1.6s ease-in-out infinite;
 }
 
+@keyframes aperture-spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+.aperture-spin {
+  display: inline-block;
+  animation: aperture-spin 1.4s linear infinite;
+  transform-origin: 50% 55%;
+}
+
+@keyframes aperture-stroke-grow {
+  from { stroke-dashoffset: 1000; }
+  to   { stroke-dashoffset: 0; }
+}
+.aperture-stroke-grow {
+  stroke-dasharray: 1000;
+  animation: aperture-stroke-grow 1.6s ease-out forwards;
+}
+
 @keyframes aperture-shimmer {
   0%   { background-position: -200% 0; }
   100% { background-position: 200% 0; }
