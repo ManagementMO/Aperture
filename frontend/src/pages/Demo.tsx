@@ -28,6 +28,8 @@ interface Step {
   raw_preview?: string;
   compressed_preview?: string;
   elapsed_ms?: number;
+  ultra_summary?: string | null;
+  tier?: "full" | "degraded" | "passthrough";
   breakdown?: TokenBreakdown;
 }
 
@@ -471,6 +473,18 @@ function StepCard({
             {!successful && (
               <Badge variant="destructive" className="text-[10px]">error</Badge>
             )}
+            {step.tier && step.tier !== "full" && (
+              <span
+                className={`inline-flex items-center px-1.5 py-0.5 rounded border text-[9px] font-mono uppercase tracking-wider ${
+                  step.tier === "degraded"
+                    ? "border-amber-500/30 bg-amber-500/5 text-amber-300"
+                    : "border-rose-500/30 bg-rose-500/5 text-rose-300"
+                }`}
+                title="3-tier degradation marker · ported from rtk"
+              >
+                {step.tier}
+              </span>
+            )}
             {step.classifier_used && classifierKeeps.length > 0 && (
               <span
                 className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded border border-primary/30 bg-primary/5 text-[9px] font-mono text-primary"
@@ -501,6 +515,16 @@ function StepCard({
 
         {open && successful && (
           <div className="space-y-3 pt-1 border-t border-border/40">
+            {step.ultra_summary && (
+              <div className="rounded-md border border-primary/30 bg-primary/[0.04] px-2.5 py-2">
+                <p className="text-[9px] uppercase tracking-[0.14em] text-muted-foreground mb-0.5">
+                  Ultra-summary <span className="text-muted-foreground/60">(rtk-style headline · top of payload)</span>
+                </p>
+                <p className="text-[12px] font-mono text-primary leading-relaxed">
+                  ≡ {step.ultra_summary}
+                </p>
+              </div>
+            )}
             <div className="grid grid-cols-3 gap-2 pt-3">
               <KV label="Strategy" value={strategy} />
               <KV label="Encoding" value={llmFormat} />

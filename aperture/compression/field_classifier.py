@@ -6,8 +6,11 @@ the model can only ADD names to the keep set — it never causes a field to
 be dropped.
 
 Providers (set via `APERTURE_CLASSIFIER_PROVIDER`):
-    - `huggingface` — default. HuggingFace Inference Router (OpenAI chat
-      schema). Needs `HF_API_TOKEN` or `HUGGINGFACE_API_KEY`.
+    - `groq` — Groq's LPU-served Llama-3.1-8B-Instant (~800 tok/s, ~150-250
+      ms round trip). OpenAI-compatible. Needs `GROQ_API_KEY`. The fastest
+      option by far when available.
+    - `huggingface` — default fallback. HuggingFace Inference Router
+      (OpenAI chat schema). Needs `HF_API_TOKEN` / `HUGGINGFACE_API_KEY`.
     - `anthropic` — Anthropic Haiku via the official SDK. Needs
       `ANTHROPIC_API_KEY` and the `anthropic` package installed.
     - `none` (or any unknown value) — disabled, returns empty set.
@@ -83,6 +86,12 @@ _CACHE_STATS: dict[str, int] = {
 # hundred ms — the cache eats that on the second call anyway.
 _HF_DEFAULT_MODEL = "meta-llama/Llama-3.1-8B-Instruct"
 _ANTHROPIC_DEFAULT_MODEL = "claude-haiku-4-5"
+# Groq's served weights — same model class as HF, served on LPUs at
+# ~800 tok/s. The "instant" suffix is Groq's tag for the smaller, faster
+# variant. Their 70b ("versatile") option is also valid here if you want
+# to trade latency for accuracy.
+_GROQ_DEFAULT_MODEL = "llama-3.1-8b-instant"
+_GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
 
 
 @dataclass
@@ -461,16 +470,87 @@ def _classify_anthropic(
 
 
 # ---------------------------------------------------------------------------
+# Groq provider — Llama-3.1-8B at ~800 tok/s on LPUs. Same OpenAI chat
+# schema as HF/OpenAI, just a different base URL. Drop-in replacement.
+# ---------------------------------------------------------------------------
+
+def _classify_groq(
+    tool_slug: str,
+    ask: str,
+    candidates: list[str],
+    model: str,
+    timeout_ms: int = _DEFAULT_TIMEOUT_MS,
+) -> tuple[set[str], str | None, float, float, bool]:
+    token = _groq_token()
+    if not token:
+        return set(), None, 0.0, 0.0, False
+
+    try:
+        import httpx
+    except ImportError:
+        return set(), None, 0.0, 0.0, False
+
+    messages = [{"role": "user", "content": _hf_user_prompt(tool_slug, ask, candidates)}]
+    payload = {
+        "model": model,
+        "messages": messages,
+        "max_tokens": 128,
+        "temperature": 0.2,
+    }
+    headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+    timeout_seconds = max(timeout_ms / 1000.0, 0.05)
+
+    start = time.perf_counter()
+    try:
+        with httpx.Client(timeout=httpx.Timeout(timeout_seconds, connect=timeout_seconds)) as client:
+            resp = client.post(_GROQ_URL, json=payload, headers=headers)
+        latency_ms = (time.perf_counter() - start) * 1000
+    except (httpx.TimeoutException, httpx.ConnectError, httpx.ReadError):
+        return set(), None, (time.perf_counter() - start) * 1000, 0.0, True
+    except Exception:
+        return set(), None, (time.perf_counter() - start) * 1000, 0.0, False
+
+    if resp.status_code != 200:
+        return set(), None, latency_ms, 0.0, False
+
+    try:
+        data = resp.json()
+        text = data["choices"][0]["message"]["content"]
+    except (KeyError, IndexError, TypeError, ValueError):
+        return set(), None, latency_ms, 0.0, False
+
+    if latency_ms > timeout_ms:
+        return set(), text.strip(), latency_ms, 0.0, True
+
+    keeps = _parse_keeps(text, set(candidates))
+    return keeps, text.strip(), latency_ms, 0.0, False
+
+
+# ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
 
+def _groq_token() -> str | None:
+    return os.getenv("GROQ_API_KEY")
+
+
 def _selected_provider() -> str:
-    return (os.getenv("APERTURE_CLASSIFIER_PROVIDER") or "huggingface").lower()
+    explicit = os.getenv("APERTURE_CLASSIFIER_PROVIDER")
+    if explicit:
+        return explicit.lower()
+    # Auto-pick: prefer Groq when available (10× faster), otherwise HF.
+    if _groq_token():
+        return "groq"
+    if _hf_token():
+        return "huggingface"
+    return "huggingface"
 
 
 def _selected_model(provider: str) -> str:
     if provider == "anthropic":
         return os.getenv("APERTURE_CLASSIFIER_MODEL") or _ANTHROPIC_DEFAULT_MODEL
+    if provider == "groq":
+        return os.getenv("APERTURE_CLASSIFIER_MODEL") or _GROQ_DEFAULT_MODEL
     return os.getenv("APERTURE_CLASSIFIER_MODEL") or _HF_DEFAULT_MODEL
 
 
@@ -478,8 +558,10 @@ def classifier_health() -> dict[str, object]:
     """Quick provider availability check for the dashboard."""
     return {
         "selected_provider": _selected_provider(),
+        "groq_available": bool(_groq_token()),
         "huggingface_available": bool(_hf_token()),
         "anthropic_available": _anthropic_credentials(),
+        "groq_default_model": _GROQ_DEFAULT_MODEL,
         "hf_default_model": _HF_DEFAULT_MODEL,
         "anthropic_default_model": _ANTHROPIC_DEFAULT_MODEL,
         "prompt_version": _PROMPT_VERSION,
@@ -535,6 +617,11 @@ def classify_fields(
     if provider == "anthropic":
         keeps, raw, latency_ms, cost = _classify_anthropic(tool_slug, ask, candidates, model)
         available = _anthropic_credentials()
+    elif provider == "groq":
+        keeps, raw, latency_ms, cost, timed_out = _classify_groq(
+            tool_slug, ask, candidates, model, timeout_ms,
+        )
+        available = bool(_groq_token())
     else:  # default: huggingface
         keeps, raw, latency_ms, cost, timed_out = _classify_hf(
             tool_slug, ask, candidates, model, timeout_ms=timeout_ms,

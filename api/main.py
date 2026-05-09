@@ -1075,6 +1075,8 @@ def demo_run(payload: dict) -> dict:
             "raw_preview": s.raw_preview,
             "compressed_preview": s.compressed_preview,
             "elapsed_ms": round(s.elapsed_ms, 0),
+            "ultra_summary": s.ultra_summary,
+            "tier": s.tier,
         })
 
     raw_total = run.total_raw_tokens
@@ -1120,6 +1122,27 @@ def demo_run(payload: dict) -> dict:
         "cost": cost_block,
         "steps": steps_out,
     }
+
+
+# ---------------------------------------------------------------------------
+# Aperture vs RTK head-to-head
+# ---------------------------------------------------------------------------
+
+_RTK_BENCH_CACHE: dict | None = None
+
+
+@app.get("/api/bench/rtk")
+def bench_vs_rtk(refresh: bool = False) -> dict:
+    """Run the same fixtures through `rtk json` and Aperture's compression
+    engine, count tokens, and run quality probes against both outputs.
+
+    Cached after first run because subprocess calls aren't free."""
+    global _RTK_BENCH_CACHE
+    if _RTK_BENCH_CACHE is not None and not refresh:
+        return _RTK_BENCH_CACHE
+    from aperture.benchmarks.vs_rtk import run_all
+    _RTK_BENCH_CACHE = run_all()
+    return _RTK_BENCH_CACHE
 
 
 if __name__ == "__main__":
