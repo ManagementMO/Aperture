@@ -1108,6 +1108,8 @@ def demo_run(payload: dict) -> dict:
         "iterations": run.iterations,
         "stopped_reason": run.stopped_reason,
         "error": run.error,
+        "served_from_cache": run.served_from_cache,
+        "cached_age_seconds": run.cached_age_seconds,
         "summary": {
             "tool_calls": len(steps_out),
             "raw_tokens": raw_total,
@@ -1116,12 +1118,39 @@ def demo_run(payload: dict) -> dict:
             "saved_percent": saved_pct,
             "elapsed_ms": round(run.total_elapsed_ms, 0),
             "cost_before_usd": cost_block["counterfactual_usd"] if cost_block else 0,
-            "cost_after_usd": cost_block["actual_usd"] if cost_block else 0,
-            "cost_saved_usd": cost_block["saved_usd"] if cost_block else 0,
+            "cost_after_usd": (
+                0.0 if run.served_from_cache
+                else (cost_block["actual_usd"] if cost_block else 0)
+            ),
+            "cost_saved_usd": (
+                cost_block["counterfactual_usd"] if (run.served_from_cache and cost_block)
+                else (cost_block["saved_usd"] if cost_block else 0)
+            ),
         },
         "cost": cost_block,
         "steps": steps_out,
     }
+
+
+@app.post("/api/cache/clear")
+def clear_runtime_cache() -> dict:
+    """Wipe the agent result cache. Useful for the demo."""
+    from aperture.agent.composio_agent import clear_result_cache, result_cache_stats
+    cleared = clear_result_cache()
+    return {"cleared": cleared, "stats": result_cache_stats()}
+
+
+@app.get("/api/cache/runtime")
+def runtime_cache_stats() -> dict:
+    from aperture.agent.composio_agent import result_cache_stats
+    return result_cache_stats()
+
+
+@app.post("/api/agent/prewarm")
+def prewarm() -> dict:
+    """Pre-warm Anthropic prompt cache so first user request hits warm."""
+    from aperture.agent.composio_agent import prewarm_prompt_cache
+    return prewarm_prompt_cache()
 
 
 # ---------------------------------------------------------------------------

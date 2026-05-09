@@ -67,6 +67,8 @@ interface RunResult {
   summary: Summary;
   cost?: CostBlock | null;
   steps: Step[];
+  served_from_cache?: boolean;
+  cached_age_seconds?: number;
 }
 
 interface RunHistoryEntry {
@@ -76,6 +78,8 @@ interface RunHistoryEntry {
   model: string;
   summary: Summary;
   steps: Step[];
+  cost?: CostBlock | null;
+  served_from_cache?: boolean;
 }
 
 const HISTORY_KEY = "aperture.runs.v1";
@@ -92,6 +96,8 @@ function appendRunToHistory(result: RunResult): void {
       model: result.model,
       summary: result.summary,
       steps: result.steps,
+      cost: result.cost,
+      served_from_cache: result.served_from_cache,
     });
     const trimmed = list.slice(0, HISTORY_LIMIT);
     window.localStorage.setItem(HISTORY_KEY, JSON.stringify(trimmed));
@@ -255,6 +261,12 @@ function ResultPanel({
               Done. {s.tool_calls} tool call{s.tool_calls === 1 ? "" : "s"} in{" "}
               {s.elapsed_ms} ms.
             </p>
+            {result.served_from_cache && (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded border border-primary/40 bg-primary/10 text-[10px] font-mono text-primary">
+                <span className="lime-dot" />
+                served from cache · 0 ms · $0.000000 spent
+              </span>
+            )}
           </div>
 
           {result.answer && (

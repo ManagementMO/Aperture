@@ -128,6 +128,119 @@ _USER_ID_CACHE: str | None = None
 _TOOLKITS_CACHE: list[str] | None = None
 _TOOL_LIST_CACHE: list[dict] | None = None
 
+# ---------------------------------------------------------------------------
+# Whole-question result cache. Hit means the EXACT same ask within the TTL —
+# we skip Claude, skip Composio, skip everything. The agent's previous result
+# is returned with `served_from_cache=True` so the dashboard can render the
+# free win. Compression has already happened on the cached payload.
+# ---------------------------------------------------------------------------
+
+_RESULT_CACHE: dict[str, tuple[float, "AgentRunResult"]] = {}
+_RESULT_CACHE_TTL = int(os.getenv("APERTURE_RESULT_CACHE_TTL", "300"))   # 5 min
+_RESULT_CACHE_MAX = int(os.getenv("APERTURE_RESULT_CACHE_MAX", "200"))
+
+
+def _result_cache_key(ask: str, model: str) -> str:
+    return f"{model}::{(ask or '').strip().lower()}"
+
+
+def _result_cache_get(key: str) -> "AgentRunResult | None":
+    entry = _RESULT_CACHE.get(key)
+    if entry is None:
+        return None
+    expires_at, result = entry
+    if time.time() > expires_at:
+        _RESULT_CACHE.pop(key, None)
+        return None
+    return result
+
+
+def _result_cache_put(key: str, result: "AgentRunResult") -> None:
+    if len(_RESULT_CACHE) >= _RESULT_CACHE_MAX:
+        # Evict oldest. Cheap O(n) — TTL keeps n small in practice.
+        oldest = min(_RESULT_CACHE.items(), key=lambda kv: kv[1][0])[0]
+        _RESULT_CACHE.pop(oldest, None)
+    _RESULT_CACHE[key] = (time.time() + _RESULT_CACHE_TTL, result)
+
+
+def clear_result_cache() -> int:
+    n = len(_RESULT_CACHE)
+    _RESULT_CACHE.clear()
+    return n
+
+
+def result_cache_stats() -> dict[str, int]:
+    return {
+        "entries": len(_RESULT_CACHE),
+        "ttl_seconds": _RESULT_CACHE_TTL,
+        "max_entries": _RESULT_CACHE_MAX,
+    }
+
+
+# Has the schema cache been warmed in this process? Set on first
+# successful Anthropic request.
+_PROMPT_CACHE_WARMED: bool = False
+
+
+def prewarm_prompt_cache(model: str | None = None) -> dict:
+    """Fire a tiny Anthropic request so the schema + system prompt land
+    in the prompt cache before the first user request. Saves ~$0.02 of
+    cache_write tax on the first user-facing call.
+
+    Returns a dict the dashboard can render (warmed?, ms, cost)."""
+    global _PROMPT_CACHE_WARMED
+    if _PROMPT_CACHE_WARMED:
+        return {"warmed": True, "skipped": True}
+    if not (os.getenv("ANTHROPIC_API_KEY") and os.getenv("COMPOSIO_API_KEY")):
+        return {"warmed": False, "reason": "missing keys"}
+
+    try:
+        import anthropic  # type: ignore
+        user_id = _resolved_user_id()
+        toolkits = _resolved_toolkits(user_id)
+        tool_list = _resolved_tool_list(user_id, toolkits)
+        if not tool_list:
+            return {"warmed": False, "reason": "no tools"}
+
+        cached_tools: list[dict] = []
+        for i, t in enumerate(tool_list):
+            copy = dict(t)
+            if i == len(tool_list) - 1:
+                copy["cache_control"] = {"type": "ephemeral"}
+            cached_tools.append(copy)
+        cached_system = [
+            {"type": "text", "text": _SYSTEM_PROMPT,
+             "cache_control": {"type": "ephemeral"}}
+        ]
+
+        selected = model or _DEFAULT_MODEL
+        client = anthropic.Anthropic()
+        t = time.perf_counter()
+        resp = client.messages.create(
+            model=selected,
+            max_tokens=4,            # essentially nothing
+            system=cached_system,
+            tools=cached_tools,
+            messages=[{"role": "user", "content": "ok"}],
+        )
+        elapsed_ms = (time.perf_counter() - t) * 1000
+
+        usage = getattr(resp, "usage", None)
+        cw = getattr(usage, "cache_creation_input_tokens", 0) if usage else 0
+        out = getattr(usage, "output_tokens", 0) if usage else 0
+        pricing = _pricing_for(selected)
+        cost = (cw * pricing["cache_write"] + out * pricing["output"]) / 1_000_000
+        _PROMPT_CACHE_WARMED = True
+        return {
+            "warmed": True,
+            "elapsed_ms": round(elapsed_ms, 0),
+            "cache_write_tokens": cw,
+            "warm_cost_usd": round(cost, 6),
+            "model": selected,
+        }
+    except Exception as exc:
+        return {"warmed": False, "reason": f"{type(exc).__name__}: {exc}"}
+
 
 def _composio_client():
     global _COMPOSIO_CLIENT
@@ -256,6 +369,8 @@ class AgentRunResult:
     stopped_reason: str = "end_turn"
     error: str | None = None
     cost: CostBreakdown | None = None
+    served_from_cache: bool = False
+    cached_age_seconds: float = 0.0
 
 
 # ---------------------------------------------------------------------------
@@ -419,7 +534,9 @@ _SYSTEM_PROMPT = (
 )
 
 
-def run_agent(ask: str, *, model: str | None = None) -> AgentRunResult:
+def run_agent(
+    ask: str, *, model: str | None = None, bypass_cache: bool = False
+) -> AgentRunResult:
     if not ask.strip():
         return AgentRunResult(ask=ask, answer="", model=model or _DEFAULT_MODEL,
                               error="empty ask")
@@ -438,6 +555,25 @@ def run_agent(ask: str, *, model: str | None = None) -> AgentRunResult:
                               error="COMPOSIO_API_KEY not set in .env")
 
     selected_model = model or _DEFAULT_MODEL
+
+    # Result cache short-circuit: same ask + same model within TTL = $0.
+    cache_key = _result_cache_key(ask, selected_model)
+    if not bypass_cache:
+        cached = _result_cache_get(cache_key)
+        if cached is not None:
+            # Find when it was put: TTL minus remaining
+            entry = _RESULT_CACHE.get(cache_key)
+            age = 0.0
+            if entry is not None:
+                expires_at, _ = entry
+                age = max(0.0, _RESULT_CACHE_TTL - (expires_at - time.time()))
+            # Return a copy with cache fields set; do NOT mutate the cached.
+            from copy import deepcopy
+            replay = deepcopy(cached)
+            replay.served_from_cache = True
+            replay.cached_age_seconds = round(age, 1)
+            replay.total_elapsed_ms = 0.0   # served instantly
+            return replay
 
     try:
         user_id = _resolved_user_id()
@@ -565,4 +701,9 @@ def run_agent(ask: str, *, model: str | None = None) -> AgentRunResult:
     cost.saved_usd = round(cost.counterfactual_usd - cost.actual_usd, 6)
     result.cost = cost
     result.total_elapsed_ms = (time.perf_counter() - started) * 1000
+
+    # Cache only successful, non-error results.
+    if not result.error and result.answer:
+        _result_cache_put(cache_key, result)
+
     return result
