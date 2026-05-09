@@ -46,7 +46,7 @@ def make_composio_executor(tool_slug: str, arguments: dict):
         composio = Composio(api_key=api_key)
 
         def _unwrap(resp):
-            """Unwrap Composio response wrapper {data, error, successful}."""
+            """Unwrap Composio response wrapper {data, error, log_id}."""
             if isinstance(resp, dict) and "data" in resp:
                 return resp["data"]
             if hasattr(resp, "model_dump"):
@@ -58,12 +58,15 @@ def make_composio_executor(tool_slug: str, arguments: dict):
 
         def execute():
             try:
-                # Live call — uses the connected account linked to this user_id
-                resp = composio.tools.execute(
-                    slug=tool_slug,
-                    arguments=arguments,
+                # Modern Composio SessionContext pattern
+                session = composio.create(
                     user_id="pg-test-77d7fa29-5fa4-4868-b9ba-39b07a17e2f6",
-                    dangerously_skip_version_check=True,
+                    toolkits=["github"],
+                    connected_accounts={"github": "ca_UZkzCbGtSDdE"},
+                )
+                resp = session.execute(
+                    tool_slug=tool_slug,
+                    arguments=arguments,
                 )
                 return _unwrap(resp)
             except Exception as e:
