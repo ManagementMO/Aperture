@@ -59,10 +59,12 @@ def make_composio_executor(tool_slug: str, arguments: dict):
         def execute():
             try:
                 # Modern Composio SessionContext pattern
+                user_id = Config.COMPOSIO_USER_ID or "pg-test-77d7fa29-5fa4-4868-b9ba-39b07a17e2f6"
+                account_id = Config.COMPOSIO_GITHUB_ACCOUNT_ID or "ca_UZkzCbGtSDdE"
                 session = composio.create(
-                    user_id="pg-test-77d7fa29-5fa4-4868-b9ba-39b07a17e2f6",
+                    user_id=user_id,
                     toolkits=["github"],
-                    connected_accounts={"github": "ca_UZkzCbGtSDdE"},
+                    connected_accounts={"github": account_id},
                 )
                 resp = session.execute(
                     tool_slug=tool_slug,

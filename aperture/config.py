@@ -16,6 +16,9 @@ class Config:
     """Simple config container loaded from environment."""
 
     COMPOSIO_API_KEY: str | None = os.getenv("COMPOSIO_API_KEY")
+    COMPOSIO_USER_ID: str | None = os.getenv("COMPOSIO_USER_ID")
+    COMPOSIO_GITHUB_ACCOUNT_ID: str | None = os.getenv("COMPOSIO_GITHUB_ACCOUNT_ID")
+    COMPOSIO_GMAIL_ACCOUNT_ID: str | None = os.getenv("COMPOSIO_GMAIL_ACCOUNT_ID")
     UPSTASH_REDIS_REST_URL: str | None = os.getenv("UPSTASH_REDIS_REST_URL")
     UPSTASH_REDIS_REST_TOKEN: str | None = os.getenv("UPSTASH_REDIS_REST_TOKEN")
     APERTURE_ENV: str = os.getenv("APERTURE_ENV", "local")
