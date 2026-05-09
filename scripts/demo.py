@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""CLI demo script for Aperture.
+"""CLI demo script for Aperture — agent workflow scenarios.
 
 Usage:
-    uv run python scripts/demo.py --tool GITHUB_GET_REPO --owner composioHQ --repo composio --mode medium
-    uv run python scripts/demo.py --tool GITHUB_LIST_ISSUES --owner composioHQ --repo composio --mode medium
+    uv run python scripts/demo.py --scenario research_project --mode medium
+    uv run python scripts/demo.py --scenario triage_bugs --mode medium --cache
+    uv run python scripts/demo.py --scenario research_project --compare
 """
 
 import sys
@@ -14,332 +15,146 @@ if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
 import argparse
-import uuid
-from typing import Any
 
 from rich.console import Console
+from rich.panel import Panel
 from rich.table import Table
+from rich.tree import Tree
 
-from aperture.contracts import ApertureRunConfig
-from aperture.integration import ApertureRunner
-from aperture.tokenization import count_tokens
+from aperture.config import Config
+from aperture.demo.agent_simulator import (
+    run_workflow_with_aperture,
+    run_workflow_without_aperture,
+)
+from aperture.demo.scenarios import SCENARIOS
 
 console = Console()
 
 
-def make_composio_executor(tool_slug: str, arguments: dict):
-    """Create an executor that calls Composio (or returns fixture data)."""
-    from aperture.config import Config
+def run_comparative_demo(scenario_name: str, enable_cache: bool = True):
+    """Run the same agent workflow with and without Aperture, side by side."""
+    scenario = SCENARIOS[scenario_name]
 
-    api_key = Config.COMPOSIO_API_KEY
-    if not api_key or api_key == "your_composio_api_key_here":
-        console.print("[yellow]COMPOSIO_API_KEY not configured, using simulated data[/yellow]")
+    console.print()
+    console.print(Panel(
+        f"[bold blue]Aperture Agent Demo[/bold blue]\n"
+        f"[dim]{scenario.description}[/dim]\n"
+        f"Steps: {len(scenario.steps)} tool calls",
+        title=f"Scenario: {scenario_name}",
+        border_style="blue",
+    ))
 
-        def execute():
-            return _simulate_output(tool_slug, arguments)
-
-        return execute
-
-    try:
-        from composio import Composio
-
-        composio = Composio(api_key=api_key)
-
-        def _unwrap(resp):
-            """Unwrap Composio response wrapper {data, error, log_id}."""
-            if isinstance(resp, dict) and "data" in resp:
-                return resp["data"]
-            if hasattr(resp, "model_dump"):
-                d = resp.model_dump()
-                if isinstance(d, dict) and "data" in d:
-                    return d["data"]
-                return d
-            return dict(resp)
-
-        def execute():
-            try:
-                # Modern Composio SessionContext pattern
-                user_id = Config.COMPOSIO_USER_ID or "pg-test-77d7fa29-5fa4-4868-b9ba-39b07a17e2f6"
-                account_id = Config.COMPOSIO_GITHUB_ACCOUNT_ID or "ca_UZkzCbGtSDdE"
-                session = composio.create(
-                    user_id=user_id,
-                    toolkits=["github"],
-                    connected_accounts={"github": account_id},
-                )
-                resp = session.execute(
-                    tool_slug=tool_slug,
-                    arguments=arguments,
-                )
-                return _unwrap(resp)
-            except Exception as e:
-                console.print(f"[yellow]Composio API call failed ({e}), using simulated data[/yellow]")
-                return _simulate_output(tool_slug, arguments)
-
-        return execute
-    except Exception as e:
-        console.print(f"[yellow]Composio SDK error ({e}), using simulated data[/yellow]")
-
-        def execute():
-            return _simulate_output(tool_slug, arguments)
-
-        return execute
-
-
-def _simulate_output(tool_slug: str, arguments: dict) -> dict[str, Any]:
-    """Return realistic simulated tool output for demo purposes."""
-    if "GITHUB_GET_REPO" in tool_slug:
-        return {
-            "id": 123456,
-            "node_id": "R_kgDOExample",
-            "name": arguments.get("repo", "repo"),
-            "full_name": f"{arguments.get('owner', 'owner')}/{arguments.get('repo', 'repo')}",
-            "private": False,
-            "owner": {
-                "login": arguments.get("owner", "owner"),
-                "id": 123,
-                "node_id": "U_kgDOExample",
-                "avatar_url": "https://avatars.githubusercontent.com/u/123?v=4",
-                "gravatar_id": "",
-                "url": "https://api.github.com/users/example",
-                "html_url": "https://github.com/example",
-                "followers_url": "https://api.github.com/users/example/followers",
-                "following_url": "https://api.github.com/users/example/following{/other_user}",
-                "gists_url": "https://api.github.com/users/example/gists{/gist_id}",
-                "starred_url": "https://api.github.com/users/example/starred{/owner}{/repo}",
-                "subscriptions_url": "https://api.github.com/users/example/subscriptions",
-                "organizations_url": "https://api.github.com/users/example/orgs",
-                "repos_url": "https://api.github.com/users/example/repos",
-                "events_url": "https://api.github.com/users/example/events{/privacy}",
-                "received_events_url": "https://api.github.com/users/example/received_events",
-                "type": "Organization",
-                "site_admin": False,
-            },
-            "html_url": f"https://github.com/{arguments.get('owner', 'owner')}/{arguments.get('repo', 'repo')}",
-            "description": "The tool framework for AI agents",
-            "fork": False,
-            "url": f"https://api.github.com/repos/{arguments.get('owner', 'owner')}/{arguments.get('repo', 'repo')}",
-            "forks_url": "https://api.github.com/repos/example/repo/forks",
-            "keys_url": "https://api.github.com/repos/example/repo/keys{/key_id}",
-            "collaborators_url": "https://api.github.com/repos/example/repo/collaborators{/collaborator}",
-            "teams_url": "https://api.github.com/repos/example/repo/teams",
-            "hooks_url": "https://api.github.com/repos/example/repo/hooks",
-            "issue_events_url": "https://api.github.com/repos/example/repo/issues/events{/number}",
-            "events_url": "https://api.github.com/repos/example/repo/events",
-            "assignees_url": "https://api.github.com/repos/example/repo/assignees{/user}",
-            "branches_url": "https://api.github.com/repos/example/repo/branches{/branch}",
-            "tags_url": "https://api.github.com/repos/example/repo/tags",
-            "blobs_url": "https://api.github.com/repos/example/repo/git/blobs{/sha}",
-            "git_tags_url": "https://api.github.com/repos/example/repo/git/tags{/sha}",
-            "git_refs_url": "https://api.github.com/repos/example/repo/git/refs{/sha}",
-            "trees_url": "https://api.github.com/repos/example/repo/git/trees{/sha}",
-            "statuses_url": "https://api.github.com/repos/example/repo/statuses/{sha}",
-            "languages_url": "https://api.github.com/repos/example/repo/languages",
-            "stargazers_url": "https://api.github.com/repos/example/repo/stargazers",
-            "contributors_url": "https://api.github.com/repos/example/repo/contributors",
-            "subscribers_url": "https://api.github.com/repos/example/repo/subscribers",
-            "subscription_url": "https://api.github.com/repos/example/repo/subscription",
-            "commits_url": "https://api.github.com/repos/example/repo/commits{/sha}",
-            "git_commits_url": "https://api.github.com/repos/example/repo/git/commits{/sha}",
-            "comments_url": "https://api.github.com/repos/example/repo/comments{/number}",
-            "issue_comment_url": "https://api.github.com/repos/example/repo/issues/comments{/number}",
-            "contents_url": "https://api.github.com/repos/example/repo/contents/{+path}",
-            "compare_url": "https://api.github.com/repos/example/repo/compare/{base}...{head}",
-            "merges_url": "https://api.github.com/repos/example/repo/merges",
-            "archive_url": "https://api.github.com/repos/example/repo/{archive_format}{/ref}",
-            "downloads_url": "https://api.github.com/repos/example/repo/downloads",
-            "issues_url": "https://api.github.com/repos/example/repo/issues{/number}",
-            "pulls_url": "https://api.github.com/repos/example/repo/pulls{/number}",
-            "milestones_url": "https://api.github.com/repos/example/repo/milestones{/number}",
-            "notifications_url": "https://api.github.com/repos/example/repo/notifications{?since,all,participating}",
-            "labels_url": "https://api.github.com/repos/example/repo/labels{/name}",
-            "releases_url": "https://api.github.com/repos/example/repo/releases{/id}",
-            "deployments_url": "https://api.github.com/repos/example/repo/deployments",
-            "created_at": "2023-01-15T10:30:00Z",
-            "updated_at": "2024-05-08T14:22:00Z",
-            "pushed_at": "2024-05-08T12:00:00Z",
-            "git_url": "git://github.com/example/repo.git",
-            "ssh_url": "git@github.com:example/repo.git",
-            "clone_url": "https://github.com/example/repo.git",
-            "svn_url": "https://github.com/example/repo",
-            "homepage": "https://example.com",
-            "size": 12345,
-            "stargazers_count": 4200,
-            "watchers_count": 4200,
-            "language": "Python",
-            "forks_count": 350,
-            "open_issues_count": 42,
-            "master_branch": "main",
-            "default_branch": "main",
-            "score": 1.0,
-        }
-
-    if "GITHUB_LIST_ISSUES" in tool_slug:
-        issues = []
-        for i in range(5):
-            issues.append(
-                {
-                    "id": 1000000 + i,
-                    "node_id": f"I_kwDOExample{i}",
-                    "url": f"https://api.github.com/repos/example/repo/issues/{i+1}",
-                    "repository_url": "https://api.github.com/repos/example/repo",
-                    "labels_url": f"https://api.github.com/repos/example/repo/issues/{i+1}/labels{{/name}}",
-                    "comments_url": f"https://api.github.com/repos/example/repo/issues/{i+1}/comments",
-                    "events_url": f"https://api.github.com/repos/example/repo/issues/{i+1}/events",
-                    "html_url": f"https://github.com/example/repo/issues/{i+1}",
-                    "number": i + 1,
-                    "title": f"Issue #{i+1}: Login fails after OAuth redirect" if i == 0 else f"Issue #{i+1}: Something else",
-                    "user": {
-                        "login": f"user{i}",
-                        "id": 1000 + i,
-                        "avatar_url": f"https://avatars.githubusercontent.com/u/{1000+i}?v=4",
-                        "gravatar_id": "",
-                        "url": f"https://api.github.com/users/user{i}",
-                        "html_url": f"https://github.com/user{i}",
-                        "followers_url": f"https://api.github.com/users/user{i}/followers",
-                        "following_url": f"https://api.github.com/users/user{i}/following{{/other_user}}",
-                        "gists_url": f"https://api.github.com/users/user{i}/gists{{/gist_id}}",
-                        "starred_url": f"https://api.github.com/users/user{i}/starred{{/owner}}{{/repo}}",
-                        "subscriptions_url": f"https://api.github.com/users/user{i}/subscriptions",
-                        "organizations_url": f"https://api.github.com/users/user{i}/orgs",
-                        "repos_url": f"https://api.github.com/users/user{i}/repos",
-                        "events_url": f"https://api.github.com/users/user{i}/events{{/privacy}}",
-                        "received_events_url": f"https://api.github.com/users/user{i}/received_events",
-                        "type": "User",
-                        "site_admin": False,
-                    },
-                    "labels": [
-                        {
-                            "id": i,
-                            "node_id": f"MDU6TGFiZWw{i}",
-                            "url": f"https://api.github.com/repos/example/repo/labels/bug",
-                            "name": "bug",
-                            "color": "d73a4a",
-                            "default": True,
-                            "description": "Something isn't working",
-                        }
-                    ],
-                    "state": "open",
-                    "locked": False,
-                    "assignee": None,
-                    "assignees": [],
-                    "milestone": None,
-                    "comments": 3,
-                    "created_at": "2024-05-01T10:00:00Z",
-                    "updated_at": "2024-05-08T14:00:00Z",
-                    "closed_at": None,
-                    "author_association": "NONE",
-                    "active_lock_reason": None,
-                    "body": "Very long markdown body describing the issue in detail...\n\n## Steps to reproduce\n1. Go to login page\n2. Click OAuth\n3. Redirect succeeds but session cookie not set\n\n## Expected behavior\nUser should be logged in after redirect.",
-                    "reactions": {
-                        "url": f"https://api.github.com/repos/example/repo/issues/{i+1}/reactions",
-                        "total_count": 2,
-                        "+1": 1,
-                        "-1": 0,
-                        "laugh": 0,
-                        "hooray": 0,
-                        "confused": 0,
-                        "heart": 0,
-                        "rocket": 0,
-                        "eyes": 1,
-                    },
-                    "timeline_url": f"https://api.github.com/repos/example/repo/issues/{i+1}/timeline",
-                    "performed_via_github_app": None,
-                    "state_reason": None,
-                }
-            )
-        return issues
-
-    # Fallback
-    return {"message": "Simulated output", "tool": tool_slug, "args": arguments}
-
-
-def main():
-    parser = argparse.ArgumentParser(description="Aperture demo")
-    parser.add_argument("--tool", required=True, help="Tool slug")
-    parser.add_argument("--owner", default="composioHQ", help="Repo owner")
-    parser.add_argument("--repo", default="composio", help="Repo name")
-    parser.add_argument("--mode", default="medium", choices=["off", "low", "medium", "high"])
-    parser.add_argument("--cache", action="store_true", help="Enable caching")
-    args = parser.parse_args()
-
-    run_id = str(uuid.uuid4())[:8]
-    config = ApertureRunConfig(
-        run_id=run_id,
-        model="gpt-4o",
-        effort_mode=args.mode,
-        cache_bypass=not args.cache,
-    )
-
-    arguments = {"owner": args.owner, "repo": args.repo}
-    if "LIST_ISSUES" in args.tool:
-        arguments["state"] = "open"
-        arguments["per_page"] = 5
-
-    console.print(f"\n[bold blue]Aperture Demo[/bold blue] — run_id={run_id}, mode={args.mode}\n")
-
-    # Baseline: raw tokens without Aperture
-    executor = make_composio_executor(args.tool, arguments)
-    raw_result = executor()
-    raw_tokens = count_tokens(raw_result, config.model)
-
-    console.print(f"[dim]Raw result type:[/dim] {type(raw_result).__name__}")
-    console.print(f"[dim]Raw tokens:[/dim] {raw_tokens.tokens:,}")
+    # Without Aperture
+    console.print("\n[bold red]❌ WITHOUT Aperture[/bold red] — raw Composio outputs")
+    raw = run_workflow_without_aperture(scenario_name)
+    _print_workflow(raw, color="red")
 
     # With Aperture
-    runner = ApertureRunner(config)
-    result = runner.run_tool(
-        tool_slug=args.tool,
-        arguments=arguments,
-        executor=executor,
-        toolkit_slug="GITHUB",
-    )
+    mode = scenario.expected_effort_mode
+    console.print(f"\n[bold green]✅ WITH Aperture[/bold green] — mode={mode}, cache={'on' if enable_cache else 'off'}")
+    opt = run_workflow_with_aperture(scenario_name, mode=mode, enable_cache=enable_cache)
+    _print_workflow(opt, color="green")
 
-    compression = result["compression"]
-    cache_event = result["cache_event"]
+    # Summary comparison
+    console.print("\n[bold]📊 Side-by-Side Summary[/bold]")
+    table = Table(show_header=True, header_style="bold")
+    table.add_column("Metric")
+    table.add_column("Without Aperture", style="red")
+    table.add_column("With Aperture", style="green")
+    table.add_column("Improvement", style="cyan")
 
-    # Display results
-    table = Table(title="Aperture Results")
-    table.add_column("Metric", style="cyan")
-    table.add_column("Value", style="green")
+    raw_total = raw.total_raw_tokens
+    opt_total = opt.total_compressed_tokens
+    saved = raw_total - opt_total
+    ratio = saved / raw_total if raw_total > 0 else 0
 
-    table.add_row("Mode", args.mode)
-    table.add_row("Raw Tokens", f"{compression.raw_tokens:,}")
-    table.add_row("Compressed Tokens", f"{compression.compressed_tokens:,}")
-    table.add_row("Tokens Saved", f"{compression.tokens_saved:,}")
-    table.add_row("Compression Ratio", f"{compression.compression_ratio:.1%}")
-    table.add_row("Cache Status", cache_event.cache_status)
-    table.add_row("Strategy", compression.strategy)
+    table.add_row("Total Tokens", f"{raw_total:,}", f"{opt_total:,}", f"-{saved:,} ({ratio:.1%})")
+    table.add_row("Context Window", f"{raw.context_window_used:,}", f"{opt.context_window_used:,}", f"-{raw.context_window_used - opt.context_window_used:,}")
+    table.add_row("Cache Hits", "0", f"{opt.cache_hits}", f"{opt.api_calls_avoided} API calls avoided")
+    table.add_row("Avg Compression", "0%", f"{ratio:.1%}", "—")
 
     console.print(table)
 
-    if compression.omitted_fields:
-        console.print(f"\n[dim]Omitted fields ({len(compression.omitted_fields)}):[/dim]")
-        console.print(", ".join(compression.omitted_fields[:10]) + "..." if len(compression.omitted_fields) > 10 else "")
+    # Per-step breakdown
+    console.print("\n[bold]🔍 Per-Step Breakdown[/bold]")
+    step_table = Table(show_header=True, header_style="bold")
+    step_table.add_column("Step")
+    step_table.add_column("Tool")
+    step_table.add_column("Raw")
+    step_table.add_column("Compressed")
+    step_table.add_column("Saved")
+    step_table.add_column("Cache")
+    step_table.add_column("Strategy")
 
-    # Run summary
-    summary = runner.finish()
-    console.print(f"\n[bold]Run Summary:[/bold]")
-    console.print(f"  Total raw tokens: {summary.get('total_raw_tokens', 0):,}")
-    console.print(f"  Total saved: {summary.get('total_tokens_saved', 0):,}")
-    console.print(f"  Cache hits: {summary.get('cache_hits', 0)}")
-    console.print(f"  API calls avoided: {summary.get('api_calls_avoided', 0)}")
+    for i, step in enumerate(opt.steps):
+        step_table.add_row(
+            str(i + 1),
+            step.tool_slug.replace("GITHUB_", "").replace("GMAIL_", "").replace("SLACK_", ""),
+            f"{step.raw_tokens:,}",
+            f"{step.compressed_tokens:,}",
+            f"{step.tokens_saved:,}",
+            step.cache_status,
+            step.strategy,
+        )
 
-    # Show cache hit if running again with same args
-    if args.cache and cache_event.cache_status != "hit":
+    console.print(step_table)
+
+    # Show context window pressure visually
+    console.print("\n[bold]🌊 Context Window Pressure[/bold]")
+    _print_context_bar(raw.context_window_used, opt.context_window_used)
+
+    # If cached, run again to show cache hit
+    if enable_cache and opt.cache_misses > 0:
         console.print("\n[yellow]Running again to test cache...[/yellow]")
-        runner2 = ApertureRunner(
-            ApertureRunConfig(run_id=str(uuid.uuid4())[:8], model="gpt-4o", effort_mode=args.mode)
-        )
-        result2 = runner2.run_tool(
-            tool_slug=args.tool,
-            arguments=arguments,
-            executor=executor,
-            toolkit_slug="GITHUB",
-        )
-        if result2["cache_event"].cache_status == "hit":
-            console.print("[green]✓ Cache hit! No API call made.[/green]")
+        opt2 = run_workflow_with_aperture(scenario_name, mode=mode, enable_cache=True)
+        if opt2.cache_hits > 0:
+            console.print(f"[green]✅ {opt2.cache_hits}/{len(opt2.steps)} steps served from cache — zero API calls![/green]")
         else:
             console.print("[red]✗ Cache miss[/red]")
+
+
+def _print_workflow(result, color: str = "white"):
+    """Print a workflow result."""
+    for i, step in enumerate(result.steps):
+        icon = "🔄" if step.cache_status == "hit" else "📡"
+        console.print(
+            f"  {icon} Step {i+1}: [bold]{step.tool_slug}[/bold] → "
+            f"{step.raw_tokens:,} raw → {step.compressed_tokens:,} compressed "
+            f"([{color}]{step.strategy}[/{color}], cache={step.cache_status})"
+        )
+    console.print(f"  Total: [{color}]{result.total_raw_tokens:,}[/{color}] tokens")
+
+
+def _print_context_bar(raw_total: int, opt_total: int, max_context: int = 128_000):
+    """Print a visual context window bar."""
+    bar_width = 50
+    raw_pct = min(raw_total / max_context, 1.0)
+    opt_pct = min(opt_total / max_context, 1.0)
+
+    raw_bars = int(bar_width * raw_pct)
+    opt_bars = int(bar_width * opt_pct)
+
+    raw_bar = "█" * raw_bars + "░" * (bar_width - raw_bars)
+    opt_bar = "█" * opt_bars + "░" * (bar_width - opt_bars)
+
+    console.print(f"  Without Aperture: [{raw_pct*100:5.1f}%] {raw_bar} {raw_total:,} / {max_context:,}")
+    console.print(f"  With Aperture:    [{opt_pct*100:5.1f}%] {opt_bar} {opt_total:,} / {max_context:,}")
+
+    if raw_pct > 0.5:
+        console.print("  [red]⚠️ Without Aperture, you're using >50% of your context window![/red]")
+    if opt_pct < 0.1:
+        console.print("  [green]✅ With Aperture, context pressure is minimal.[/green]")
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Aperture Agent Workflow Demo")
+    parser.add_argument("--scenario", default="research_project", choices=list(SCENARIOS.keys()))
+    parser.add_argument("--mode", default="medium", choices=["off", "low", "medium", "high"])
+    parser.add_argument("--cache", action="store_true", help="Enable caching")
+    parser.add_argument("--compare", action="store_true", help="Show with/without Aperture comparison")
+    args = parser.parse_args()
+
+    run_comparative_demo(args.scenario, enable_cache=args.cache)
 
 
 if __name__ == "__main__":
