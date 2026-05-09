@@ -130,7 +130,16 @@ class TestClassifierHealth:
     def test_health_reports_cache_size(self):
         clear_cache()
         h = classifier_health()
-        assert h["cache_entries"] == 0
+        # Cache stats now live under a nested `cache` block alongside the
+        # eviction counters.
+        assert h["cache"]["entries"] == 0
+        assert h["cache"]["hits"] == 0
+        assert h["cache"]["expired_evictions"] == 0
+        assert h["cache"]["stale_evictions"] == 0
+        assert h["cache"]["timeout_evictions"] == 0
+        assert "ttl_seconds" in h
+        assert "timeout_ms" in h
+        assert "prompt_version" in h
 
 
 class TestPromptShape:

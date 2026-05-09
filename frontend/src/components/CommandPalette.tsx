@@ -13,6 +13,7 @@ import {
   Minimize2,
   Search,
   ShieldCheck,
+  Sparkles,
   Target,
 } from "lucide-react";
 
@@ -27,7 +28,8 @@ interface PaletteItem {
 }
 
 const ITEMS: PaletteItem[] = [
-  { id: "overview",   label: "Overview",          hint: "/", icon: BarChart3,        group: "Navigation", path: "/",            keywords: ["home", "summary", "datasets"] },
+  { id: "demo",       label: "Demo",              hint: "/", icon: Sparkles,         group: "Navigation", path: "/",            keywords: ["run", "ask", "agent", "input"] },
+  { id: "overview",   label: "Overview",          hint: "/overview", icon: BarChart3, group: "Navigation", path: "/overview",    keywords: ["home", "summary", "datasets"] },
   { id: "waterfall",  label: "Token waterfall",   hint: "/waterfall", icon: ArrowDownWideNarrow, group: "Navigation", path: "/waterfall",   keywords: ["schema", "argument", "result"] },
   { id: "compress",   label: "Compression",       hint: "/compression", icon: Minimize2,        group: "Navigation", path: "/compression", keywords: ["mode", "raw", "toon"] },
   { id: "schema",     label: "Schema compaction", hint: "/schema",      icon: LayoutTemplate,   group: "Navigation", path: "/schema",      keywords: ["type-grouped", "tool", "openai"] },

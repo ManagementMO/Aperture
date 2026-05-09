@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import Layout from "./components/Layout";
+import Demo from "./pages/Demo";
 import Overview from "./pages/Overview";
 import TokenWaterfall from "./pages/TokenWaterfall";
 import Compression from "./pages/Compression";
@@ -18,7 +19,8 @@ function App() {
     <BrowserRouter>
       <Layout>
         <Routes>
-          <Route path="/" element={<Overview />} />
+          <Route path="/" element={<Demo />} />
+          <Route path="/overview" element={<Overview />} />
           <Route path="/waterfall" element={<TokenWaterfall />} />
           <Route path="/compression" element={<Compression />} />
           <Route path="/schema" element={<SchemaCompaction />} />

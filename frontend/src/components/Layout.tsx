@@ -12,6 +12,7 @@ import {
   Filter,
   Gauge,
   ShieldCheck,
+  Sparkles,
 } from "lucide-react";
 import { CommandPalette } from "@/components/CommandPalette";
 import { WorkspaceChip } from "@/components/WorkspaceChip";
@@ -29,19 +30,20 @@ interface NavSection {
 
 const sections: NavSection[] = [
   {
-    title: "Measurement",
+    title: "Run",
     items: [
-      { path: "/", label: "Overview", icon: BarChart3 },
+      { path: "/", label: "Demo", icon: Sparkles },
+    ],
+  },
+  {
+    title: "Engine",
+    items: [
+      { path: "/overview", label: "Overview", icon: BarChart3 },
       { path: "/waterfall", label: "Token waterfall", icon: ArrowDownWideNarrow },
       { path: "/compression", label: "Compression", icon: Minimize2 },
       { path: "/schema", label: "Schema compaction", icon: LayoutTemplate },
       { path: "/cache", label: "Cache stats", icon: Database },
       { path: "/benchmarks", label: "Benchmarks", icon: FlaskConical },
-    ],
-  },
-  {
-    title: "Optimizations",
-    items: [
       { path: "/calibrate", label: "Effort calibrator", icon: Gauge },
       { path: "/field-policy", label: "Field policy", icon: ShieldCheck },
       { path: "/task-aware", label: "Task-aware", icon: Target },
@@ -77,7 +79,7 @@ function ApertureMark() {
 function titleFor(pathname: string): string {
   const flat = sections.flatMap((s) => s.items);
   const match = flat.find((i) => i.path === pathname);
-  return match?.label ?? "Overview";
+  return match?.label ?? "Demo";
 }
 
 export default function Layout({ children }: { children: React.ReactNode }) {

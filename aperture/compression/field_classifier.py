@@ -6,18 +6,30 @@ the model can only ADD names to the keep set — it never causes a field to
 be dropped.
 
 Providers (set via `APERTURE_CLASSIFIER_PROVIDER`):
-    - `huggingface` — default. HuggingFace Inference API on a small Gemma
-      base model (default `google/gemma-3-1b-pt`). Few-shot prompt because
-      base models don't follow instructions natively. Needs `HF_API_TOKEN`.
+    - `huggingface` — default. HuggingFace Inference Router (OpenAI chat
+      schema). Needs `HF_API_TOKEN` or `HUGGINGFACE_API_KEY`.
     - `anthropic` — Anthropic Haiku via the official SDK. Needs
       `ANTHROPIC_API_KEY` and the `anthropic` package installed.
     - `none` (or any unknown value) — disabled, returns empty set.
 
-Failure modes are silent. If the provider isn't reachable, returns an empty
-set and the caller falls back to the rule-based policy. Compression must
-never fail because the optional classifier failed.
+Failure modes are silent. If the provider isn't reachable OR if the model
+exceeds the latency budget, returns an empty set and the caller falls back
+to the rule-based policy. Compression must never fail or stall because the
+optional classifier failed.
 
-Cache: in-memory, keyed by sha256 of `(provider, model, tool, ask, fields)`.
+Cache freshness rules (CRITICAL — stale data must NEVER inject into the
+compression pipeline):
+- Each entry has an absolute `expires_at` (default 1 hour). Expired entries
+  are evicted on read; we never reuse them.
+- The cache key includes the prompt-template version (`_PROMPT_VERSION`).
+  Bumping the version invalidates every entry — automatic when the prompt
+  evolves.
+- On every cache hit we re-validate the cached keep-set against the CURRENT
+  candidate list. If any cached name is no longer a candidate (the schema
+  changed, fields were renamed), we evict and re-classify. Better a fresh
+  miss than a wrong hit.
+- Hard latency budget on the model call. If the round-trip exceeds the
+  budget, we return empty without caching the timeout.
 """
 
 from __future__ import annotations
@@ -26,14 +38,41 @@ import hashlib
 import json
 import os
 import re
-from dataclasses import dataclass
+import time
+from dataclasses import dataclass, field as dc_field
 from typing import Iterable
 
 from aperture.compression.field_policy import _OBVIOUS_API_FIELDS
 
-# In-memory cache. Keyed by sha256 hex; value is the keep set.
-_CACHE: dict[str, set[str]] = {}
-_CACHE_TRACE: list[dict[str, object]] = []   # for the dashboard explain view
+
+# Bump this string any time the prompt or parser changes shape. Old cache
+# entries become stale automatically and will be re-classified.
+_PROMPT_VERSION = "v3-quoted-prose-2026-05"
+
+# Defaults — tunable via env vars.
+_DEFAULT_TTL_SECONDS = int(os.getenv("APERTURE_CLASSIFIER_TTL", "3600"))   # 1h
+_DEFAULT_TIMEOUT_MS = int(os.getenv("APERTURE_CLASSIFIER_TIMEOUT_MS", "275"))
+_DEFAULT_MAX_ENTRIES = int(os.getenv("APERTURE_CLASSIFIER_CACHE_MAX", "1000"))
+
+
+@dataclass
+class _CacheEntry:
+    keeps: frozenset[str]
+    candidates_snapshot: frozenset[str]
+    created_at: float
+    expires_at: float
+
+
+# Cache = key -> _CacheEntry. Module-global, single source of truth.
+_CACHE: dict[str, _CacheEntry] = {}
+_CACHE_TRACE: list[dict[str, object]] = []
+_CACHE_STATS: dict[str, int] = {
+    "hits": 0,
+    "expired_evictions": 0,
+    "stale_evictions": 0,
+    "timeout_evictions": 0,
+    "misses": 0,
+}
 
 
 # HF inference router: defaults to Llama-3.1-8B-Instruct. Free hf-inference
@@ -63,7 +102,10 @@ class ClassifierResult:
 # ---------------------------------------------------------------------------
 
 def _cache_key(provider: str, model: str, tool_slug: str, ask: str, candidates: list[str]) -> str:
+    """Cache key includes the prompt-template version so prompt changes
+    automatically invalidate every entry."""
     payload = json.dumps({
+        "v": _PROMPT_VERSION,
         "provider": provider,
         "model": model,
         "tool": tool_slug,
@@ -71,6 +113,56 @@ def _cache_key(provider: str, model: str, tool_slug: str, ask: str, candidates: 
         "fields": sorted(candidates),
     }, sort_keys=True)
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def _cache_get(key: str, candidates: list[str]) -> frozenset[str] | None:
+    """Return a cached keep-set ONLY if:
+    1. The entry exists.
+    2. It hasn't expired (TTL).
+    3. Every cached keep name is still a valid candidate today (no
+       schema drift).
+    Otherwise evict the stale/wrong entry and return None.
+    """
+    entry = _CACHE.get(key)
+    if entry is None:
+        return None
+
+    now = time.time()
+    if entry.expires_at <= now:
+        _CACHE.pop(key, None)
+        _CACHE_STATS["expired_evictions"] += 1
+        return None
+
+    candidate_set = frozenset(candidates)
+    # If the candidate list has changed since we cached, the cached keeps
+    # may reference fields that no longer exist. Drop the entry — better
+    # to re-classify than to inject a stale rescue.
+    if entry.candidates_snapshot != candidate_set:
+        _CACHE.pop(key, None)
+        _CACHE_STATS["stale_evictions"] += 1
+        return None
+    if not entry.keeps.issubset(candidate_set):
+        _CACHE.pop(key, None)
+        _CACHE_STATS["stale_evictions"] += 1
+        return None
+
+    _CACHE_STATS["hits"] += 1
+    return entry.keeps
+
+
+def _cache_put(key: str, keeps: set[str], candidates: list[str], ttl_seconds: int = _DEFAULT_TTL_SECONDS) -> None:
+    """Store a fresh decision. Evicts the oldest entry if we'd exceed the cap."""
+    if len(_CACHE) >= _DEFAULT_MAX_ENTRIES:
+        oldest_key = min(_CACHE, key=lambda k: _CACHE[k].created_at)
+        _CACHE.pop(oldest_key, None)
+
+    now = time.time()
+    _CACHE[key] = _CacheEntry(
+        keeps=frozenset(keeps),
+        candidates_snapshot=frozenset(candidates),
+        created_at=now,
+        expires_at=now + ttl_seconds,
+    )
 
 
 def _candidate_fields(field_names: Iterable[str]) -> list[str]:
@@ -203,19 +295,22 @@ def _classify_hf(
     ask: str,
     candidates: list[str],
     model: str,
-) -> tuple[set[str], str | None, float, float]:
-    """Call HF's OpenAI-compatible chat router. Returns
-    (keeps, raw_reply, latency_ms, cost_estimate_usd). Empty on failure."""
-    import time
+    timeout_ms: int = _DEFAULT_TIMEOUT_MS,
+) -> tuple[set[str], str | None, float, float, bool]:
+    """Call HF's OpenAI-compatible chat router with a hard latency budget.
 
+    Returns (keeps, raw_reply, latency_ms, cost_estimate_usd, timed_out).
+    Empty keeps on any failure. Timed-out responses are NEVER cached.
+    """
     token = _hf_token()
     if not token:
-        return set(), None, 0.0, 0.0
+        return set(), None, 0.0, 0.0, False
 
     try:
         import httpx
     except ImportError:
-        return _classify_hf_urllib(tool_slug, ask, candidates, model, token)
+        keeps, reply, lat, cost = _classify_hf_urllib(tool_slug, ask, candidates, model, token, timeout_ms)
+        return keeps, reply, lat, cost, lat > timeout_ms
 
     messages = [{"role": "user", "content": _hf_user_prompt(tool_slug, ask, candidates)}]
     if _HF_SYSTEM_PROMPT:
@@ -224,33 +319,38 @@ def _classify_hf(
         "model": model,
         "messages": messages,
         "max_tokens": 128,
-        # A bit of temperature lets tiny models commit to an answer;
-        # zero often makes them default to "no" / empty.
         "temperature": 0.3,
     }
     headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
 
+    timeout_seconds = max(timeout_ms / 1000.0, 0.05)
     start = time.perf_counter()
     try:
-        with httpx.Client(timeout=30.0) as client:
+        # `httpx.Timeout` enforces a hard cap on connect + read + write.
+        with httpx.Client(timeout=httpx.Timeout(timeout_seconds, connect=timeout_seconds)) as client:
             resp = client.post(_HF_ROUTER_URL, json=payload, headers=headers)
         latency_ms = (time.perf_counter() - start) * 1000
-        if resp.status_code != 200:
-            return set(), None, latency_ms, 0.0
-        data = resp.json()
+    except (httpx.TimeoutException, httpx.ConnectError, httpx.ReadError):
+        return set(), None, (time.perf_counter() - start) * 1000, 0.0, True
     except Exception:
-        return set(), None, (time.perf_counter() - start) * 1000, 0.0
+        return set(), None, (time.perf_counter() - start) * 1000, 0.0, False
 
-    # OpenAI-style: choices[0].message.content
+    if resp.status_code != 200:
+        return set(), None, latency_ms, 0.0, False
+
     try:
+        data = resp.json()
         text = data["choices"][0]["message"]["content"]
-    except (KeyError, IndexError, TypeError):
-        return set(), None, latency_ms, 0.0
+    except (KeyError, IndexError, TypeError, ValueError):
+        return set(), None, latency_ms, 0.0, False
+
+    # Even if the request completed within timeout_ms+epsilon network jitter,
+    # treat anything past the budget as a timeout — better to be strict.
+    if latency_ms > timeout_ms:
+        return set(), text.strip(), latency_ms, 0.0, True
 
     keeps = _parse_keeps(text, set(candidates))
-    # Asymmetric trust: even if the model returns everything, the worst case
-    # is "we kept too many fields" — never quality loss. So we don't cap.
-    return keeps, text.strip(), latency_ms, 0.0
+    return keeps, text.strip(), latency_ms, 0.0, False
 
 
 def _classify_hf_urllib(
@@ -259,40 +359,44 @@ def _classify_hf_urllib(
     candidates: list[str],
     model: str,
     token: str,
+    timeout_ms: int = _DEFAULT_TIMEOUT_MS,
 ) -> tuple[set[str], str | None, float, float]:
-    """stdlib fallback when httpx isn't installed. Uses the same router."""
+    """stdlib fallback when httpx isn't installed. Uses the same router and
+    enforces the same hard latency budget."""
     import json as _json
-    import time
     import urllib.error
     import urllib.request
 
+    messages = [{"role": "user", "content": _hf_user_prompt(tool_slug, ask, candidates)}]
+    if _HF_SYSTEM_PROMPT:
+        messages.insert(0, {"role": "system", "content": _HF_SYSTEM_PROMPT})
     body = _json.dumps({
         "model": model,
-        "messages": [
-            {"role": "system", "content": _HF_SYSTEM_PROMPT},
-            {"role": "user", "content": _hf_user_prompt(tool_slug, ask, candidates)},
-        ],
-        "max_tokens": 96,
-        "temperature": 0.0,
+        "messages": messages,
+        "max_tokens": 128,
+        "temperature": 0.3,
     }).encode("utf-8")
     req = urllib.request.Request(
         _HF_ROUTER_URL, data=body,
         headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
         method="POST",
     )
+    timeout_seconds = max(timeout_ms / 1000.0, 0.05)
     start = time.perf_counter()
     try:
-        with urllib.request.urlopen(req, timeout=30) as resp:
+        with urllib.request.urlopen(req, timeout=timeout_seconds) as resp:
             raw = resp.read().decode("utf-8")
         latency_ms = (time.perf_counter() - start) * 1000
         data = _json.loads(raw)
-    except (urllib.error.URLError, _json.JSONDecodeError):
+    except (urllib.error.URLError, _json.JSONDecodeError, TimeoutError):
         return set(), None, (time.perf_counter() - start) * 1000, 0.0
 
     try:
         text = data["choices"][0]["message"]["content"]
     except (KeyError, IndexError, TypeError):
         return set(), None, latency_ms, 0.0
+    if latency_ms > timeout_ms:
+        return set(), text.strip(), latency_ms, 0.0
     keeps = _parse_keeps(text, set(candidates))
     return keeps, text.strip(), latency_ms, 0.0
 
@@ -378,7 +482,10 @@ def classifier_health() -> dict[str, object]:
         "anthropic_available": _anthropic_credentials(),
         "hf_default_model": _HF_DEFAULT_MODEL,
         "anthropic_default_model": _ANTHROPIC_DEFAULT_MODEL,
-        "cache_entries": len(_CACHE),
+        "prompt_version": _PROMPT_VERSION,
+        "ttl_seconds": _DEFAULT_TTL_SECONDS,
+        "timeout_ms": _DEFAULT_TIMEOUT_MS,
+        "cache": cache_stats(),
         "recent_calls": _CACHE_TRACE[-10:],
     }
 
@@ -391,8 +498,17 @@ def classify_fields(
     provider: str | None = None,
     model: str | None = None,
     enabled: bool = True,
+    timeout_ms: int = _DEFAULT_TIMEOUT_MS,
+    ttl_seconds: int = _DEFAULT_TTL_SECONDS,
 ) -> ClassifierResult:
-    """Decide which denied fields to promote back for this call."""
+    """Decide which denied fields to promote back for this call.
+
+    Cache invariants enforced here:
+    - Expired entries are evicted on read (TTL-based).
+    - Schema-drifted entries (cached keep referencing fields that no longer
+      exist) are evicted on read.
+    - Timed-out model calls are NEVER cached — we want to retry next call.
+    """
     provider = (provider or _selected_provider()).lower()
     model = model or _selected_model(provider)
 
@@ -404,27 +520,40 @@ def classify_fields(
         return ClassifierResult(set(), False, provider, model, False, 0.0)
 
     key = _cache_key(provider, model, tool_slug, ask, candidates)
-    if key in _CACHE:
-        keeps = set(_CACHE[key])
+    cached_keeps = _cache_get(key, candidates)
+    if cached_keeps is not None:
         _CACHE_TRACE.append({
             "provider": provider, "model": model, "tool": tool_slug,
             "ask": ask, "candidates": len(candidates),
-            "keeps": list(keeps), "cached": True, "latency_ms": 0,
+            "keeps": list(cached_keeps), "cached": True, "latency_ms": 0,
+            "timed_out": False,
         })
-        return ClassifierResult(keeps, True, provider, model, True, 0.0)
+        return ClassifierResult(set(cached_keeps), True, provider, model, True, 0.0)
 
+    _CACHE_STATS["misses"] += 1
+    timed_out = False
     if provider == "anthropic":
         keeps, raw, latency_ms, cost = _classify_anthropic(tool_slug, ask, candidates, model)
         available = _anthropic_credentials()
     else:  # default: huggingface
-        keeps, raw, latency_ms, cost = _classify_hf(tool_slug, ask, candidates, model)
+        keeps, raw, latency_ms, cost, timed_out = _classify_hf(
+            tool_slug, ask, candidates, model, timeout_ms=timeout_ms,
+        )
         available = bool(_hf_token())
 
-    _CACHE[key] = set(keeps)
+    # Asymmetric trust: only cache successful, non-timed-out, fully-validated
+    # decisions. Timeouts must always retry next call so we don't lock in a
+    # bad "no rescue" answer when the model was just slow.
+    if not timed_out:
+        _cache_put(key, keeps, candidates, ttl_seconds=ttl_seconds)
+    else:
+        _CACHE_STATS["timeout_evictions"] += 1
+
     _CACHE_TRACE.append({
         "provider": provider, "model": model, "tool": tool_slug,
         "ask": ask, "candidates": len(candidates),
-        "keeps": list(keeps), "cached": False, "latency_ms": round(latency_ms, 1),
+        "keeps": list(keeps), "cached": False,
+        "latency_ms": round(latency_ms, 1), "timed_out": timed_out,
     })
     return ClassifierResult(
         keeps=keeps,
@@ -441,3 +570,11 @@ def classify_fields(
 def clear_cache() -> None:
     _CACHE.clear()
     _CACHE_TRACE.clear()
+    for k in list(_CACHE_STATS.keys()):
+        _CACHE_STATS[k] = 0
+
+
+def cache_stats() -> dict[str, int]:
+    """Live counters for hits / expired evictions / stale evictions /
+    timeouts / misses. Useful for the dashboard health badge."""
+    return {**_CACHE_STATS, "entries": len(_CACHE)}

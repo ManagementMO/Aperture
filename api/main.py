@@ -854,6 +854,117 @@ def explain_field_policy(payload: dict):
     }
 
 
+# ---------------------------------------------------------------------------
+# Demo run — single-shot ask → summary
+# ---------------------------------------------------------------------------
+
+_DEMO_SCENARIOS: list[dict] = [
+    {
+        "id": "research_repo",
+        "keywords": ["repo", "repository", "stars", "issues", "overview", "summary"],
+        "tools": [
+            ("GITHUB_GET_A_REPOSITORY", {"owner": "composioHQ", "repo": "composio"}),
+            ("GITHUB_LIST_ISSUES", {"owner": "composioHQ", "repo": "composio", "per_page": 5}),
+            ("GITHUB_LIST_PULL_REQUESTS", {"owner": "composioHQ", "repo": "composio", "per_page": 3}),
+        ],
+    },
+    {
+        "id": "triage_bugs",
+        "keywords": ["bug", "triage", "fix", "error", "crash", "issue", "customer", "ticket"],
+        "tools": [
+            ("GITHUB_LIST_ISSUES", {"owner": "composioHQ", "repo": "composio", "labels": "bug", "per_page": 5}),
+            ("GMAIL_SEARCH_EMAILS", {"query": "composio bug", "max_results": 3}),
+            ("SLACK_SEARCH_MESSAGES", {"query": "bug OR error", "count": 4}),
+        ],
+    },
+    {
+        "id": "dataset_summarize",
+        "keywords": ["page", "pages", "user", "users", "linear", "notion", "supabase", "sheet", "table"],
+        "tools": [
+            ("NOTION_SEARCH_NOTION_PAGE", {}),
+            ("LINEAR_GET_LINEAR_USER_ISSUES", {}),
+            ("SUPABASE_FETCH_TABLE_ROWS", {"table": "users"}),
+        ],
+    },
+    {
+        "id": "inbox_scan",
+        "keywords": ["email", "inbox", "message", "mail", "thread", "subject"],
+        "tools": [
+            ("GMAIL_SEARCH_EMAILS", {"query": "this week", "max_results": 3}),
+            ("SLACK_SEARCH_MESSAGES", {"query": "yesterday", "count": 4}),
+        ],
+    },
+]
+
+
+def _pick_scenario(ask: str) -> dict:
+    if not ask:
+        return _DEMO_SCENARIOS[0]
+    lowered = ask.lower()
+    best, best_score = _DEMO_SCENARIOS[0], -1
+    for scenario in _DEMO_SCENARIOS:
+        score = sum(1 for kw in scenario["keywords"] if kw in lowered)
+        if score > best_score:
+            best, best_score = scenario, score
+    return best
+
+
+@app.post("/api/demo/run")
+def demo_run(payload: dict):
+    """Run an end-to-end pass for the demo surface.
+
+    Body: {"ask": "find OAuth bugs and tell me who's assigned"}
+    Output is scrubbed of any tech-stack vocabulary — the caller only sees
+    what was asked, the per-tool token cost, and the final savings.
+    """
+    import time
+
+    ask = (payload.get("ask") or "").strip()
+    scenario = _pick_scenario(ask)
+
+    steps: list[dict] = []
+    total_raw = 0
+    total_sent = 0
+    started = time.perf_counter()
+
+    for tool_slug, args in scenario["tools"]:
+        raw = get_mock_result(tool_slug, args)
+        result = compress_tool_output(
+            raw, tool_slug, mode="balanced", model="gpt-4o",
+            ask=ask if ask else None,
+            field_policy_mode="ask_aware",
+        )
+        steps.append({
+            "tool": tool_slug.replace("_", " ").title(),
+            "raw_tokens": result.raw_tokens,
+            "sent_tokens": result.compressed_tokens,
+            "saved_tokens": result.tokens_saved,
+        })
+        total_raw += result.raw_tokens
+        total_sent += result.compressed_tokens
+
+    elapsed_ms = (time.perf_counter() - started) * 1000
+    saved_pct = round((1 - total_sent / total_raw) * 100, 1) if total_raw else 0
+    cost_before = round(total_raw * 2.50 / 1_000_000, 4)
+    cost_after = round(total_sent * 2.50 / 1_000_000, 4)
+
+    return {
+        "ask": ask,
+        "summary": {
+            "tool_calls": len(steps),
+            "raw_tokens": total_raw,
+            "sent_tokens": total_sent,
+            "saved_tokens": total_raw - total_sent,
+            "saved_percent": saved_pct,
+            "elapsed_ms": round(elapsed_ms, 0),
+            "cost_before_usd": cost_before,
+            "cost_after_usd": cost_after,
+            "cost_saved_usd": round(cost_before - cost_after, 4),
+        },
+        "steps": steps,
+    }
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("api.main:app", host="0.0.0.0", port=8000, reload=True)
