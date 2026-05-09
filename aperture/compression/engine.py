@@ -514,6 +514,22 @@ def _compress_records(
     compressed_sample = [compress_record(row) for row in sample if isinstance(row, dict)]
     compressed_sample = [r for r in compressed_sample if r]
 
+    # Normalize to a uniform key set so TOON can encode densely. Compute the
+    # union of keys actually present, then fill missing entries with None on
+    # each row. JSON cost is similar (None is short); TOON cost drops sharply
+    # because the header is written once per table.
+    if compressed_sample:
+        union_keys: list[str] = []
+        seen: set[str] = set()
+        for row in compressed_sample:
+            for key in row.keys():
+                if key not in seen:
+                    seen.add(key)
+                    union_keys.append(key)
+        compressed_sample = [
+            {k: row.get(k) for k in union_keys} for row in compressed_sample
+        ]
+
     stats = _record_stats(sample, all_keys - fields_to_drop)
 
     if skip_wrapper:
