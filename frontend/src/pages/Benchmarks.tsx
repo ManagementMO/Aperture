@@ -3,7 +3,7 @@ import { apiGet, describeApiError } from "@/lib/api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { ComposingSpinner } from "@/components/ComposingSpinner";
-import { Check, X } from "lucide-react";
+import { Check, ShieldCheck, X } from "lucide-react";
 
 interface BenchmarkRow {
   name: string;
@@ -32,34 +32,19 @@ interface ScenarioQuality {
   probes: Probe[];
 }
 
-interface SampleQuality {
-  tool: string;
-  raw_tokens: number;
-  sent_tokens: number;
-  saved_percent: number;
-  quality: { label: string; passed: boolean }[];
-}
-
-const MODE_LABEL: Record<string, string> = {
-  off: "Off",
-  safe: "Safe",
-  balanced: "Balanced",
-  low: "Low",
-  aggressive: "Aggressive",
-};
-
 const MODE_BLURB: Record<string, string> = {
-  off: "Pass-through, no compression. Baseline.",
-  safe: "Drop nulls and obvious bookkeeping. Conservative.",
-  balanced: "Default. Flatten and prune without losing signal.",
-  low: "Tighter caps, smaller samples, denser tables.",
-  aggressive: "Squeeze prose; only safe at well-understood asks.",
+  off: "Pass-through. Baseline.",
+  safe: "Drop nulls + URL bookkeeping.",
+  balanced: "Default. Flatten + sample without losing signal.",
+  low: "Tighter caps and denser tables.",
+  aggressive: "Squeeze prose; gated by quality probes.",
 };
+
+const MODE_ORDER = ["off", "safe", "balanced", "low", "aggressive"];
 
 export default function Benchmarks() {
   const [rows, setRows] = useState<BenchmarkRow[]>([]);
   const [scenarios, setScenarios] = useState<ScenarioQuality[]>([]);
-  const [sample, setSample] = useState<SampleQuality | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -67,20 +52,15 @@ export default function Benchmarks() {
     let mounted = true;
     Promise.allSettled([
       apiGet<{ benchmarks: BenchmarkRow[] }>("/api/benchmarks"),
-      apiGet<{ scenarios: ScenarioQuality[]; sample: SampleQuality }>("/api/quality"),
+      apiGet<{ scenarios: ScenarioQuality[] }>("/api/quality"),
     ])
       .then(([b, q]) => {
         if (!mounted) return;
         if (b.status === "fulfilled") setRows(b.value.benchmarks ?? []);
         else setError(describeApiError(b.reason));
-        if (q.status === "fulfilled") {
-          setScenarios(q.value.scenarios ?? []);
-          setSample(q.value.sample ?? null);
-        }
+        if (q.status === "fulfilled") setScenarios(q.value.scenarios ?? []);
       })
-      .finally(() => {
-        if (mounted) setLoading(false);
-      });
+      .finally(() => mounted && setLoading(false));
     return () => {
       mounted = false;
     };
@@ -94,21 +74,22 @@ export default function Benchmarks() {
     );
   }
 
-  // Group rows by mode and average savings
-  const modeBuckets: Record<string, BenchmarkRow[]> = {};
-  for (const row of rows) {
-    if (!modeBuckets[row.mode]) modeBuckets[row.mode] = [];
-    modeBuckets[row.mode].push(row);
-  }
-  const modeStats = Object.entries(modeBuckets).map(([mode, list]) => {
-    const totalRaw = list.reduce((s, r) => s + r.raw_tokens, 0);
-    const totalSent = list.reduce((s, r) => s + r.compressed_tokens, 0);
-    const saved = totalRaw - totalSent;
-    const pct = totalRaw > 0 ? (saved / totalRaw) * 100 : 0;
-    return { mode, totalRaw, totalSent, saved, pct };
-  });
+  // Aggregate per-mode
+  const modeStats = MODE_ORDER.map((mode) => {
+    const matching = rows.filter((r) => r.mode === mode);
+    if (matching.length === 0) return null;
+    const totalRaw = matching.reduce((s, r) => s + r.raw_tokens, 0);
+    const totalSent = matching.reduce((s, r) => s + r.compressed_tokens, 0);
+    const pct = totalRaw > 0 ? ((totalRaw - totalSent) / totalRaw) * 100 : 0;
+    return { mode, totalRaw, totalSent, pct };
+  }).filter((x): x is NonNullable<typeof x> => x !== null);
 
-  const allProbesPassed = scenarios.every((s) => s.quality_passed);
+  const allPassed = scenarios.every((s) => s.quality_passed);
+  const totalProbes = scenarios.reduce((s, sc) => s + sc.probes.length, 0);
+  const passedProbes = scenarios.reduce(
+    (s, sc) => s + sc.probes.filter((p) => p.passed).length,
+    0,
+  );
 
   return (
     <div className="space-y-7">
@@ -120,8 +101,8 @@ export default function Benchmarks() {
           Compression × quality
         </h1>
         <p className="text-sm text-muted-foreground mt-2 max-w-3xl">
-          Aperture is graded on two axes: how much it shrinks and whether the
-          shrunken payload still answers the question. Numbers measured by Aperture.
+          Two questions only. Did Aperture shrink the payload? Did the agent
+          still get to read the values it needed? Numbers measured by Aperture.
         </p>
       </div>
 
@@ -135,15 +116,18 @@ export default function Benchmarks() {
 
       <Card>
         <CardHeader className="pb-3">
-          <CardTitle className="text-[13px] font-medium">Aggregate by mode</CardTitle>
+          <div className="flex items-baseline justify-between">
+            <CardTitle className="text-[13px] font-medium">By compression mode</CardTitle>
+            <span className="text-[11px] text-muted-foreground">across all datasets</span>
+          </div>
         </CardHeader>
-        <CardContent className="space-y-3">
-          {modeStats.map(({ mode, totalRaw, totalSent, saved, pct }) => (
+        <CardContent className="space-y-4">
+          {modeStats.map(({ mode, totalRaw, totalSent, pct }) => (
             <div key={mode} className="space-y-1.5">
               <div className="flex items-baseline justify-between gap-3">
                 <div>
-                  <p className="text-sm font-medium capitalize">{MODE_LABEL[mode] ?? mode}</p>
-                  <p className="text-[11px] text-muted-foreground">{MODE_BLURB[mode] ?? ""}</p>
+                  <p className="text-sm font-medium capitalize">{mode}</p>
+                  <p className="text-[11px] text-muted-foreground">{MODE_BLURB[mode]}</p>
                 </div>
                 <div className="flex items-baseline gap-2 flex-none">
                   <span className="text-[11px] metric-value text-muted-foreground">
@@ -151,7 +135,10 @@ export default function Benchmarks() {
                     <span className="mx-1">/</span>
                     {totalRaw.toLocaleString()}
                   </span>
-                  <Badge variant={mode === "off" ? "secondary" : "default"} className="text-[10px]">
+                  <Badge
+                    variant={mode === "off" ? "secondary" : "default"}
+                    className="text-[10px]"
+                  >
                     {pct.toFixed(0)}% saved
                   </Badge>
                 </div>
@@ -165,7 +152,7 @@ export default function Benchmarks() {
                   className="absolute inset-y-0 bg-foreground/20"
                   style={{
                     left: `${(totalSent / Math.max(totalRaw, 1)) * 100}%`,
-                    width: `${(saved / Math.max(totalRaw, 1)) * 100}%`,
+                    width: `${((totalRaw - totalSent) / Math.max(totalRaw, 1)) * 100}%`,
                   }}
                 />
               </div>
@@ -174,35 +161,44 @@ export default function Benchmarks() {
         </CardContent>
       </Card>
 
-      <Card className={allProbesPassed ? "border-primary/30" : "border-amber-500/40"}>
+      <Card className={allPassed ? "border-primary/30" : "border-amber-500/40"}>
         <CardHeader className="pb-3">
-          <div className="flex items-center justify-between">
-            <CardTitle className="text-[13px] font-medium">Quality checker</CardTitle>
-            <Badge variant={allProbesPassed ? "default" : "secondary"} className="text-[10px]">
-              {allProbesPassed ? "all signals preserved" : "some regressions"}
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <div className="flex items-center gap-2">
+                <ShieldCheck className="w-3.5 h-3.5 text-primary" />
+                <CardTitle className="text-[13px] font-medium">Quality gate</CardTitle>
+              </div>
+              <p className="text-[12px] text-muted-foreground mt-1.5 max-w-2xl leading-relaxed">
+                After Aperture shrinks a payload it asks &quot;could the agent
+                still answer with this?&quot; For every scenario we probe the
+                compressed output for the concrete values it would have used
+                &mdash; titles, IDs, statuses, addressees. If a probe fails the
+                schema gets re-run at a lighter mode. The agent never reads a
+                payload that lost signal.
+              </p>
+            </div>
+            <Badge
+              variant={allPassed ? "default" : "secondary"}
+              className="text-[10px] flex-none"
+            >
+              {passedProbes}/{totalProbes} probes
             </Badge>
           </div>
         </CardHeader>
-        <CardContent className="space-y-4">
-          <p className="text-[12px] text-muted-foreground">
-            For each scenario, Aperture runs concrete value probes against the
-            compressed payload &mdash; the same titles, IDs, addressees, and statuses
-            an agent would extract. A probe passes if the value is still
-            present.
-          </p>
+        <CardContent className="space-y-3">
           {scenarios.map((sc) => (
-            <ScenarioBlock key={sc.name} scenario={sc} />
+            <ScenarioRow key={sc.name} scenario={sc} />
           ))}
-          {sample && <SampleProbes sample={sample} />}
         </CardContent>
       </Card>
     </div>
   );
 }
 
-function ScenarioBlock({ scenario }: { scenario: ScenarioQuality }) {
-  const totalProbes = scenario.probes.length;
+function ScenarioRow({ scenario }: { scenario: ScenarioQuality }) {
   const passed = scenario.probes.filter((p) => p.passed).length;
+  const total = scenario.probes.length;
   return (
     <div className="rounded-md border border-border/60 p-3 space-y-2">
       <div className="flex items-baseline justify-between gap-3">
@@ -213,11 +209,6 @@ function ScenarioBlock({ scenario }: { scenario: ScenarioQuality }) {
           <p className="text-[11px] text-muted-foreground">{scenario.description}</p>
         </div>
         <div className="flex items-baseline gap-2 flex-none">
-          <span className="text-[11px] metric-value text-muted-foreground">
-            <span className="text-foreground">{scenario.tokens_sent.toLocaleString()}</span>
-            <span className="mx-1">/</span>
-            {scenario.tokens_raw.toLocaleString()}
-          </span>
           <Badge variant="default" className="text-[10px]">
             {scenario.saved_percent}% saved
           </Badge>
@@ -225,11 +216,11 @@ function ScenarioBlock({ scenario }: { scenario: ScenarioQuality }) {
             variant={scenario.quality_passed ? "default" : "destructive"}
             className="text-[10px]"
           >
-            {passed}/{totalProbes} probes
+            {passed}/{total}
           </Badge>
         </div>
       </div>
-      <div className="flex flex-wrap gap-1 pt-1">
+      <div className="flex flex-wrap gap-1">
         {scenario.probes.map((p, i) => (
           <span
             key={i}
@@ -238,39 +229,10 @@ function ScenarioBlock({ scenario }: { scenario: ScenarioQuality }) {
                 ? "border-primary/30 bg-primary/10 text-primary"
                 : "border-rose-500/40 bg-rose-500/10 text-rose-300"
             }`}
-            title={`${p.tool}: ${p.label}`}
+            title={p.tool}
           >
             {p.passed ? <Check className="w-2.5 h-2.5" /> : <X className="w-2.5 h-2.5" />}
             {p.label}
-          </span>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function SampleProbes({ sample }: { sample: SampleQuality }) {
-  return (
-    <div className="rounded-md border border-border/60 p-3 space-y-2 bg-muted/20">
-      <div className="flex items-baseline justify-between">
-        <p className="text-[12px] font-medium">Live probe · {sample.tool}</p>
-        <span className="text-[11px] metric-value text-muted-foreground">
-          {sample.sent_tokens.toLocaleString()} / {sample.raw_tokens.toLocaleString()} ·{" "}
-          {sample.saved_percent}% saved
-        </span>
-      </div>
-      <div className="flex flex-wrap gap-1">
-        {sample.quality.map((q, i) => (
-          <span
-            key={i}
-            className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded border text-[10px] font-mono ${
-              q.passed
-                ? "border-primary/30 bg-primary/10 text-primary"
-                : "border-rose-500/40 bg-rose-500/10 text-rose-300"
-            }`}
-          >
-            {q.passed ? <Check className="w-2.5 h-2.5" /> : <X className="w-2.5 h-2.5" />}
-            {q.label}
           </span>
         ))}
       </div>

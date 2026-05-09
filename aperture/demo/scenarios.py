@@ -117,6 +117,7 @@ def get_mock_result(tool_slug: str, arguments: dict) -> object:
         return slack_messages(arguments.get("query", ""), count=arguments.get("count", 4))
 
     # Notion / Linear / Supabase — load full mock JSON files
+    import csv
     import json
     import os
 
@@ -137,5 +138,20 @@ def get_mock_result(tool_slug: str, arguments: dict) -> object:
                 with open(path) as f:
                     return json.load(f)
             break
+
+    # Google Sheets / generic spreadsheet — back it with the 10K-row CSV.
+    if (
+        "GOOGLESHEETS" in tool_slug
+        or "SHEET" in tool_slug
+        or "SPREADSHEET" in tool_slug
+        or "CSV" in tool_slug
+    ):
+        path = os.path.join(DATA_DIR, "github_users_10k.csv")
+        rows = max(1, int(arguments.get("rows") or arguments.get("limit") or 10001))
+        if os.path.exists(path):
+            with open(path) as f:
+                reader = csv.reader(f)
+                data = list(reader)
+            return data[:rows]
 
     return {"message": f"Mock result for {tool_slug}", "arguments": arguments}

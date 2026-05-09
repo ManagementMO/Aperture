@@ -141,31 +141,33 @@ export default function Overview() {
 
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-[13px] font-medium">What a quality gate is</CardTitle>
+            <CardTitle className="text-[13px] font-medium">What we read from</CardTitle>
           </CardHeader>
           <CardContent className="space-y-2 text-[12px] text-muted-foreground leading-relaxed">
             <p>
-              Compression alone isn&apos;t enough. A <span className="text-foreground font-medium">quality gate</span> is
-              Aperture&apos;s acceptance check &mdash; for every compressed schema we
-              verify the values an agent would have used (titles, IDs,
-              addressees, statuses) survived the squeeze.
+              Aperture is the layer between an agent and its tools. We watch
+              every payload coming back from those tools and trim what the
+              model doesn&apos;t need to read &mdash; while keeping every value the
+              agent will actually use.
             </p>
-            <p>
-              If a probe fails, the schema gets rerun at a lighter mode until it
-              passes. The agent never sees a payload that lost its signal.
-            </p>
-            <div className="flex items-center gap-3 pt-1">
+            <div className="grid grid-cols-2 gap-1 pt-1">
               <span className="flex items-center gap-1.5 text-[11px]">
-                <GitBranch className="w-3 h-3" /> Repo
+                <GitBranch className="w-3 h-3" /> GitHub repo, issues, PRs
               </span>
               <span className="flex items-center gap-1.5 text-[11px]">
-                <Mail className="w-3 h-3" /> Inbox
+                <ListTodo className="w-3 h-3" /> Linear issues
               </span>
               <span className="flex items-center gap-1.5 text-[11px]">
-                <MessageSquare className="w-3 h-3" /> Channels
+                <FileText className="w-3 h-3" /> Notion pages
               </span>
               <span className="flex items-center gap-1.5 text-[11px]">
-                <ListTodo className="w-3 h-3" /> Issues
+                <Database className="w-3 h-3" /> Supabase tables
+              </span>
+              <span className="flex items-center gap-1.5 text-[11px]">
+                <Mail className="w-3 h-3" /> Gmail threads
+              </span>
+              <span className="flex items-center gap-1.5 text-[11px]">
+                <MessageSquare className="w-3 h-3" /> Slack messages
               </span>
             </div>
           </CardContent>

@@ -2,14 +2,32 @@ import { useState } from "react";
 import { apiPost, describeApiError } from "@/lib/api";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { ArrowUpRight, Check, ChevronDown, ChevronUp } from "lucide-react";
 import { ComposingSpinner } from "@/components/ComposingSpinner";
 
 interface Step {
   tool: string;
+  tool_label: string;
+  arguments: Record<string, unknown>;
+  successful: boolean;
+  error: string | null;
   raw_tokens: number;
   sent_tokens: number;
   saved_tokens: number;
+  saved_percent: number;
+  raw_bytes: number;
+  sent_bytes: number;
+  strategy: string;
+  llm_format: string;
+  omitted_fields: string[];
+  policy_reason_counts: Record<string, number>;
+  policy_promotions: { name: string; reason: string }[];
+  classifier_used: boolean;
+  classifier_keeps: string[];
+  raw_preview: string;
+  compressed_preview: string;
+  elapsed_ms: number;
 }
 
 interface Summary {
@@ -26,23 +44,60 @@ interface Summary {
 
 interface RunResult {
   ask: string;
+  answer: string;
+  model: string;
+  iterations: number;
+  stopped_reason: string;
+  error: string | null;
   summary: Summary;
   steps: Step[];
 }
 
+interface RunHistoryEntry {
+  ts: number;
+  ask: string;
+  answer: string;
+  model: string;
+  summary: Summary;
+  steps: Step[];
+}
+
+const HISTORY_KEY = "aperture.runs.v1";
+const HISTORY_LIMIT = 30;
+
+function appendRunToHistory(result: RunResult): void {
+  try {
+    const raw = window.localStorage.getItem(HISTORY_KEY);
+    const list: RunHistoryEntry[] = raw ? JSON.parse(raw) : [];
+    list.unshift({
+      ts: Date.now(),
+      ask: result.ask,
+      answer: result.answer,
+      model: result.model,
+      summary: result.summary,
+      steps: result.steps,
+    });
+    const trimmed = list.slice(0, HISTORY_LIMIT);
+    window.localStorage.setItem(HISTORY_KEY, JSON.stringify(trimmed));
+    window.dispatchEvent(new CustomEvent("aperture:run", { detail: trimmed[0] }));
+  } catch {
+    // localStorage may be disabled — skip silently
+  }
+}
+
 const PROMPTS: { label: string; ask: string }[] = [
-  { label: "Open issues + recent PRs", ask: "Look up the composio repo — stars, open issues, recent PRs" },
-  { label: "Triage OAuth bugs", ask: "Find OAuth bugs and tell me who's assigned" },
-  { label: "Bulk dataset scan", ask: "Summarize 500 Notion pages, 200 Linear issues, and 1000 Supabase users" },
-  { label: "Inbox urgency scan", ask: "Scan my inbox for anything urgent from this week" },
+  { label: "Repo overview", ask: "Get the composiohq/composio repo overview — stars, language, open issue count" },
+  { label: "Recent commits", ask: "List the last 3 commits on the composiohq/composio main branch" },
+  { label: "Inbox scan", ask: "Pull my last 3 Gmail emails and summarize them" },
+  { label: "Sheet read", ask: "Read the first 50 rows of my Google Sheet" },
 ];
 
-export default function Demo() {
+export default function Run() {
   const [ask, setAsk] = useState("");
   const [running, setRunning] = useState(false);
   const [result, setResult] = useState<RunResult | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [showSteps, setShowSteps] = useState(false);
+  const [openSteps, setOpenSteps] = useState<Set<number>>(new Set());
 
   const submit = async (): Promise<void> => {
     const trimmed = ask.trim();
@@ -50,13 +105,18 @@ export default function Demo() {
     setRunning(true);
     setResult(null);
     setError(null);
-    setShowSteps(false);
+    setOpenSteps(new Set());
     try {
       const r = await apiPost<RunResult>("/api/demo/run", { ask: trimmed });
       if (!r || !r.summary) {
-        setError("The backend returned an empty response.");
+        setError("Backend returned an empty response.");
+      } else if (r.error) {
+        setError(r.error);
+        setResult(r);
+        appendRunToHistory(r);
       } else {
         setResult(r);
+        appendRunToHistory(r);
       }
     } catch (err) {
       setError(describeApiError(err));
@@ -69,8 +129,17 @@ export default function Demo() {
     if ((e.metaKey || e.ctrlKey) && e.key === "Enter") void submit();
   };
 
+  const toggleStep = (i: number) => {
+    setOpenSteps((prev) => {
+      const next = new Set(prev);
+      if (next.has(i)) next.delete(i);
+      else next.add(i);
+      return next;
+    });
+  };
+
   return (
-    <div className="max-w-2xl mx-auto py-8 space-y-6">
+    <div className="max-w-3xl mx-auto py-8 space-y-6">
       <div>
         <p className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
           Aperture
@@ -79,9 +148,9 @@ export default function Demo() {
           What do you want your agent to do?
         </h1>
         <p className="text-sm text-muted-foreground mt-2">
-          Aperture stays between your agent and its tools. We measure the raw
-          tokens coming back from each call, then compress what the agent
-          actually needs to read.
+          Aperture stays between your agent and its tools. Type an ask &mdash;
+          a real agent picks Composio tools, runs them, Aperture compresses
+          each response before the model reads it.
         </p>
       </div>
 
@@ -90,7 +159,7 @@ export default function Demo() {
           value={ask}
           onChange={(e) => setAsk(e.target.value)}
           onKeyDown={onKey}
-          placeholder="Describe a task in plain English. ⌘+Enter to run."
+          placeholder="Ask anything that needs a real tool. ⌘+Enter to run."
           rows={3}
           className="w-full resize-none bg-transparent text-[14px] outline-none placeholder:text-muted-foreground/60"
           autoFocus
@@ -113,12 +182,8 @@ export default function Demo() {
             disabled={!ask.trim() || running}
             className="bg-primary text-primary-foreground hover:bg-primary/90"
           >
-            {running ? (
-              <ComposingSpinner label="Running" className="text-primary-foreground" />
-            ) : (
-              <>
-                Run <ArrowUpRight className="w-4 h-4 ml-1" />
-              </>
+            {running ? <ComposingSpinner label="Running" /> : (
+              <>Run <ArrowUpRight className="w-4 h-4 ml-1" /></>
             )}
           </Button>
         </div>
@@ -126,8 +191,8 @@ export default function Demo() {
 
       {running && (
         <Card>
-          <CardContent className="pt-5 pb-5 flex items-center gap-3">
-            <ComposingSpinner size="md" />
+          <CardContent className="pt-5 pb-5">
+            <ComposingSpinner size="md" label="Agent is composing" />
           </CardContent>
         </Card>
       )}
@@ -135,60 +200,79 @@ export default function Demo() {
       {!running && error && (
         <Card className="border-rose-500/40">
           <CardContent className="pt-5 pb-5 space-y-1">
-            <p className="text-sm font-medium text-rose-400">Couldn't run that.</p>
-            <p className="text-[12px] text-muted-foreground">{error}</p>
+            <p className="text-sm font-medium text-rose-400">Couldn&apos;t run that.</p>
+            <p className="text-[12px] text-muted-foreground whitespace-pre-wrap">{error}</p>
           </CardContent>
         </Card>
       )}
 
       {!running && result && result.summary && (
-        <ResultPopup result={result} showSteps={showSteps} setShowSteps={setShowSteps} />
+        <ResultPanel
+          result={result}
+          openSteps={openSteps}
+          toggleStep={toggleStep}
+        />
       )}
     </div>
   );
 }
 
-function ResultPopup({
+function ResultPanel({
   result,
-  showSteps,
-  setShowSteps,
+  openSteps,
+  toggleStep,
 }: {
   result: RunResult;
-  showSteps: boolean;
-  setShowSteps: (v: boolean) => void;
+  openSteps: Set<number>;
+  toggleStep: (i: number) => void;
 }) {
   const s = result.summary;
   return (
     <div className="space-y-3">
       <Card className="border-primary/40">
         <CardContent className="pt-5 pb-5 space-y-4">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <span className="w-5 h-5 rounded-full bg-primary text-primary-foreground flex items-center justify-center">
               <Check className="w-3 h-3" />
             </span>
             <p className="text-sm font-medium">
-              Done. {s.tool_calls} tool call{s.tool_calls === 1 ? "" : "s"} in {s.elapsed_ms} ms.
+              Done. {s.tool_calls} tool call{s.tool_calls === 1 ? "" : "s"} in{" "}
+              {s.elapsed_ms} ms.
             </p>
           </div>
+
+          {result.answer && (
+            <div className="rounded-md border border-border/60 bg-muted/20 p-3">
+              <p className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground mb-1">
+                Agent reply
+              </p>
+              <p className="text-[13px] whitespace-pre-wrap leading-relaxed">
+                {result.answer}
+              </p>
+            </div>
+          )}
 
           <div className="grid grid-cols-3 gap-4 pt-1">
             <Metric label="Raw" value={s.raw_tokens.toLocaleString()} sublabel="tokens from tools" />
             <Metric label="Sent" value={s.sent_tokens.toLocaleString()} sublabel="tokens to LLM" />
-            <Metric label="Saved" value={`${s.saved_percent}%`} sublabel={`$${s.cost_saved_usd.toFixed(4)} cheaper`} primary />
+            <Metric
+              label="Saved"
+              value={`${s.saved_percent}%`}
+              sublabel={`$${s.cost_saved_usd.toFixed(4)} cheaper`}
+              primary
+            />
           </div>
-
-          <button
-            type="button"
-            onClick={() => setShowSteps(!showSteps)}
-            className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground transition-colors"
-          >
-            {showSteps ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
-            {showSteps ? "Hide" : "Show"} per-tool breakdown
-          </button>
         </CardContent>
       </Card>
 
-      {showSteps && <ToolCallChart steps={result.steps} />}
+      {result.steps.map((step, i) => (
+        <StepCard
+          key={i}
+          step={step}
+          open={openSteps.has(i)}
+          onToggle={() => toggleStep(i)}
+        />
+      ))}
     </div>
   );
 }
@@ -217,51 +301,194 @@ function Metric({
   );
 }
 
-function ToolCallChart({ steps }: { steps: Step[] }) {
-  const max = Math.max(...steps.map((s) => s.raw_tokens), 1);
+function StepCard({
+  step,
+  open,
+  onToggle,
+}: {
+  step: Step;
+  open: boolean;
+  onToggle: () => void;
+}) {
+  const argsKeys = Object.keys(step.arguments);
   return (
-    <Card>
-      <CardContent className="pt-5 pb-5 space-y-3">
-        <p className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground">
-          Per-tool · raw vs sent
-        </p>
-        <div className="space-y-2.5">
-          {steps.map((step, i) => {
-            const sentPct = (step.sent_tokens / max) * 100;
-            const savedPct = (step.saved_tokens / max) * 100;
-            return (
-              <div key={i} className="space-y-1">
-                <div className="flex items-baseline justify-between text-[11px]">
-                  <span className="font-mono text-foreground/85">{step.tool}</span>
-                  <span className="metric-value text-muted-foreground">
-                    <span className="text-foreground">{step.sent_tokens.toLocaleString()}</span>
-                    <span className="mx-1">/</span>
-                    {step.raw_tokens.toLocaleString()}
-                  </span>
-                </div>
-                <div className="relative h-1.5 rounded-full bg-muted overflow-hidden">
-                  <div
-                    className="absolute inset-y-0 left-0 bg-primary"
-                    style={{ width: `${sentPct}%` }}
-                  />
-                  <div
-                    className="absolute inset-y-0 bg-foreground/20"
-                    style={{ left: `${sentPct}%`, width: `${savedPct}%` }}
-                  />
+    <Card className={step.successful ? "" : "border-rose-500/40"}>
+      <CardContent className="pt-4 pb-4 space-y-3">
+        <button
+          type="button"
+          onClick={onToggle}
+          className="w-full flex items-center justify-between gap-3 text-left"
+        >
+          <div className="flex items-center gap-2.5 min-w-0">
+            <span className="font-mono text-[11px] text-foreground truncate">
+              {step.tool}
+            </span>
+            {!step.successful && (
+              <Badge variant="destructive" className="text-[10px]">error</Badge>
+            )}
+          </div>
+          <div className="flex items-center gap-2 flex-none">
+            <span className="text-[11px] metric-value text-muted-foreground">
+              <span className="text-foreground">{step.sent_tokens.toLocaleString()}</span>
+              <span className="mx-1">/</span>
+              {step.raw_tokens.toLocaleString()}
+            </span>
+            <Badge variant="default" className="text-[10px]">
+              {step.saved_percent}% saved
+            </Badge>
+            {open ? <ChevronUp className="w-3.5 h-3.5 text-muted-foreground" />
+                  : <ChevronDown className="w-3.5 h-3.5 text-muted-foreground" />}
+          </div>
+        </button>
+
+        {!step.successful && step.error && (
+          <p className="text-[11px] text-rose-300 font-mono">{step.error}</p>
+        )}
+
+        {open && step.successful && (
+          <div className="space-y-3 pt-1 border-t border-border/40">
+            <div className="grid grid-cols-3 gap-2 pt-3">
+              <KV label="Strategy" value={step.strategy} />
+              <KV label="Encoding" value={step.llm_format} />
+              <KV label="Latency" value={`${Math.round(step.elapsed_ms)} ms`} />
+              <KV label="Raw bytes" value={step.raw_bytes.toLocaleString()} />
+              <KV label="Sent bytes" value={step.sent_bytes.toLocaleString()} />
+              <KV label="Saved" value={`${step.saved_tokens.toLocaleString()} tok`} primary />
+            </div>
+
+            {argsKeys.length > 0 && (
+              <Collapsible label={`Arguments · ${argsKeys.length}`}>
+                <pre className="text-[11px] font-mono bg-muted/40 p-2 rounded overflow-auto">
+                  {JSON.stringify(step.arguments, null, 2)}
+                </pre>
+              </Collapsible>
+            )}
+
+            {step.omitted_fields.length > 0 && (
+              <div>
+                <p className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground mb-1.5">
+                  Aperture dropped {step.omitted_fields.length} bookkeeping field
+                  {step.omitted_fields.length === 1 ? "" : "s"}
+                </p>
+                <div className="flex flex-wrap gap-1">
+                  {step.omitted_fields.slice(0, 18).map((f) => (
+                    <span
+                      key={f}
+                      className="inline-flex items-center px-1.5 py-0.5 rounded border border-rose-500/30 bg-rose-500/5 text-[10px] font-mono text-rose-300"
+                    >
+                      {f}
+                    </span>
+                  ))}
+                  {step.omitted_fields.length > 18 && (
+                    <span className="text-[10px] text-muted-foreground">
+                      +{step.omitted_fields.length - 18} more
+                    </span>
+                  )}
                 </div>
               </div>
-            );
-          })}
-        </div>
-        <div className="flex items-center gap-3 pt-1 text-[10px] text-muted-foreground">
-          <span className="flex items-center gap-1">
-            <span className="w-2 h-2 rounded-sm bg-primary" /> sent
-          </span>
-          <span className="flex items-center gap-1">
-            <span className="w-2 h-2 rounded-sm bg-foreground/20" /> saved
-          </span>
-        </div>
+            )}
+
+            {step.policy_promotions.length > 0 && (
+              <div>
+                <p className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground mb-1.5">
+                  Aperture rescued {step.policy_promotions.length} field
+                  {step.policy_promotions.length === 1 ? "" : "s"} the ask asked for
+                </p>
+                <div className="flex flex-wrap gap-1">
+                  {step.policy_promotions.slice(0, 12).map((p, i) => (
+                    <span
+                      key={i}
+                      className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded border border-primary/30 bg-primary/10 text-[10px] font-mono text-primary"
+                    >
+                      {p.name}
+                      <span className="text-primary/60">· {p.reason}</span>
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="grid grid-cols-2 gap-2">
+              <PreviewPane
+                label="Composio returned"
+                tokens={step.raw_tokens}
+                content={step.raw_preview}
+                tone="muted"
+              />
+              <PreviewPane
+                label="What we sent the model"
+                tokens={step.sent_tokens}
+                content={step.compressed_preview}
+                tone="primary"
+              />
+            </div>
+          </div>
+        )}
       </CardContent>
     </Card>
+  );
+}
+
+function KV({ label, value, primary }: { label: string; value: string; primary?: boolean }) {
+  return (
+    <div className="rounded-md border border-border/40 px-2 py-1.5">
+      <p className="text-[9px] uppercase tracking-[0.14em] text-muted-foreground">{label}</p>
+      <p className={`text-[12px] font-mono metric-value ${primary ? "text-primary" : ""}`}>
+        {value}
+      </p>
+    </div>
+  );
+}
+
+function Collapsible({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="space-y-1.5">
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground hover:text-foreground flex items-center gap-1"
+      >
+        {open ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+        {label}
+      </button>
+      {open && children}
+    </div>
+  );
+}
+
+function PreviewPane({
+  label,
+  tokens,
+  content,
+  tone,
+}: {
+  label: string;
+  tokens: number;
+  content: string;
+  tone: "muted" | "primary";
+}) {
+  return (
+    <div
+      className={`rounded-md border ${
+        tone === "primary" ? "border-primary/40 bg-primary/5" : "border-border/60 bg-muted/20"
+      } overflow-hidden flex flex-col`}
+    >
+      <div className="px-2.5 py-1.5 flex items-center justify-between border-b border-border/40">
+        <p className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground">{label}</p>
+        <span className="text-[10px] metric-value text-muted-foreground">
+          {tokens.toLocaleString()} tok
+        </span>
+      </div>
+      <pre className="text-[10px] font-mono leading-relaxed p-2 overflow-auto whitespace-pre-wrap min-h-[100px] max-h-[220px]">
+        {content || "(empty)"}
+      </pre>
+    </div>
   );
 }

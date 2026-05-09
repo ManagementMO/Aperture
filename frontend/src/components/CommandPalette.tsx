@@ -19,7 +19,7 @@ interface PaletteItem {
 }
 
 const ITEMS: PaletteItem[] = [
-  { id: "demo",       label: "Demo",              hint: "/",            icon: Sparkles,             path: "/",            keywords: ["run", "ask", "agent", "input"] },
+  { id: "demo",       label: "Run",              hint: "/",            icon: Sparkles,             path: "/",            keywords: ["run", "ask", "agent", "input"] },
   { id: "overview",   label: "Overview",          hint: "/overview",    icon: BarChart3,            path: "/overview",    keywords: ["home", "summary", "datasets"] },
   { id: "waterfall",  label: "Token waterfall",   hint: "/waterfall",   icon: ArrowDownWideNarrow,  path: "/waterfall",   keywords: ["schema", "argument", "result"] },
   { id: "schema",     label: "Schema compaction", hint: "/schema",      icon: LayoutTemplate,       path: "/schema",      keywords: ["type-grouped", "tool", "schema"] },

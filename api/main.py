@@ -785,8 +785,10 @@ def compact_tool_schema(payload: dict):
 
 
 @app.get("/api/schema/sample")
-def schema_sample():
-    """Return a few sample schemas and their compacted forms for the demo."""
+def schema_sample() -> dict:
+    """Return sample schemas alongside their compacted forms for the
+    side-by-side dashboard view. Each entry includes the indented JSON
+    string the LLM would otherwise see, so the UI can render a true diff."""
     samples = [
         _SAMPLE_SCHEMAS["GITHUB_LIST_ISSUES"],
         _SAMPLE_SCHEMAS["GITHUB_GET_A_REPOSITORY"],
@@ -809,12 +811,29 @@ def schema_sample():
                 "required": ["query"],
             },
         },
+        {
+            "name": "SUPABASE_FETCH_TABLE_ROWS",
+            "description": "Fetch rows from a Supabase table.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "table": {"type": "string", "description": "Table name."},
+                    "columns": {"type": "array", "items": {"type": "string"}},
+                    "filter": {"type": "object"},
+                    "order_by": {"type": "string"},
+                    "limit": {"type": "integer", "default": 100, "maximum": 1000},
+                    "offset": {"type": "integer", "default": 0},
+                },
+                "required": ["table"],
+            },
+        },
     ]
     out = []
     for sch in samples:
         m = measure_compaction(sch, count_tokens, model="gpt-4o")
         out.append({
             "name": m.name,
+            "json": json.dumps(sch, indent=2),
             "compact": m.compact,
             "json_tokens": m.json_tokens,
             "compact_tokens": m.compact_tokens,
@@ -949,8 +968,25 @@ def explain_field_policy(payload: dict):
 
 _DEMO_SCENARIOS: list[dict] = [
     {
+        "id": "csv_dump",
+        "label": "CSV / large table scan",
+        "keywords": ["csv", "10k", "10,000", "dump", "all rows", "every row"],
+        "tools": [
+            ("GOOGLESHEETS_BATCH_GET", {"spreadsheet": "github_users", "rows": 10001}),
+        ],
+    },
+    {
+        "id": "google_sheets",
+        "label": "Google Sheets bulk read",
+        "keywords": ["sheet", "sheets", "spreadsheet", "entries", "google"],
+        "tools": [
+            ("GOOGLESHEETS_BATCH_GET", {"spreadsheet": "users", "rows": 600}),
+        ],
+    },
+    {
         "id": "research_repo",
-        "keywords": ["repo", "repository", "stars", "issues", "overview", "summary"],
+        "label": "Repo overview",
+        "keywords": ["repo", "repository", "stars", "github", "pull request", "pr"],
         "tools": [
             ("GITHUB_GET_A_REPOSITORY", {"owner": "composioHQ", "repo": "composio"}),
             ("GITHUB_LIST_ISSUES", {"owner": "composioHQ", "repo": "composio", "per_page": 5}),
@@ -959,7 +995,8 @@ _DEMO_SCENARIOS: list[dict] = [
     },
     {
         "id": "triage_bugs",
-        "keywords": ["bug", "triage", "fix", "error", "crash", "issue", "customer", "ticket"],
+        "label": "Triage bugs across stacks",
+        "keywords": ["bug", "triage", "fix", "error", "crash", "issue", "customer", "ticket", "oauth"],
         "tools": [
             ("GITHUB_LIST_ISSUES", {"owner": "composioHQ", "repo": "composio", "labels": "bug", "per_page": 5}),
             ("GMAIL_SEARCH_EMAILS", {"query": "composio bug", "max_results": 3}),
@@ -968,7 +1005,8 @@ _DEMO_SCENARIOS: list[dict] = [
     },
     {
         "id": "dataset_summarize",
-        "keywords": ["page", "pages", "user", "users", "linear", "notion", "supabase", "sheet", "table"],
+        "label": "Bulk dataset scan",
+        "keywords": ["page", "pages", "linear", "notion", "supabase", "table", "users"],
         "tools": [
             ("NOTION_SEARCH_NOTION_PAGE", {}),
             ("LINEAR_GET_LINEAR_USER_ISSUES", {}),
@@ -977,7 +1015,8 @@ _DEMO_SCENARIOS: list[dict] = [
     },
     {
         "id": "inbox_scan",
-        "keywords": ["email", "inbox", "message", "mail", "thread", "subject"],
+        "label": "Inbox + chat scan",
+        "keywords": ["email", "inbox", "message", "mail", "thread", "subject", "urgent"],
         "tools": [
             ("GMAIL_SEARCH_EMAILS", {"query": "this week", "max_results": 3}),
             ("SLACK_SEARCH_MESSAGES", {"query": "yesterday", "count": 4}),
@@ -988,69 +1027,81 @@ _DEMO_SCENARIOS: list[dict] = [
 
 def _pick_scenario(ask: str) -> dict:
     if not ask:
-        return _DEMO_SCENARIOS[0]
+        return _DEMO_SCENARIOS[2]   # research_repo as a sane default
     lowered = ask.lower()
-    best, best_score = _DEMO_SCENARIOS[0], -1
+    best, best_score = None, 0
     for scenario in _DEMO_SCENARIOS:
         score = sum(1 for kw in scenario["keywords"] if kw in lowered)
         if score > best_score:
             best, best_score = scenario, score
-    return best
+    # Fall back to research_repo if nothing matched at all.
+    return best or _DEMO_SCENARIOS[2]
 
 
 @app.post("/api/demo/run")
-def demo_run(payload: dict):
-    """Run an end-to-end pass for the demo surface.
+def demo_run(payload: dict) -> dict:
+    """REAL agent loop — Claude with tool-use, Composio executes, Aperture
+    intercepts every tool result. No mock scenarios, no pre-rendered numbers.
 
-    Body: {"ask": "find OAuth bugs and tell me who's assigned"}
-    Output is scrubbed of any tech-stack vocabulary — the caller only sees
-    what was asked, the per-tool token cost, and the final savings.
+    Per-step we report the actual Composio response size, what Aperture
+    dropped, and what we shipped to the model.
     """
-    import time
+    from aperture.agent.composio_agent import run_agent
 
     ask = (payload.get("ask") or "").strip()
-    scenario = _pick_scenario(ask)
+    run = run_agent(ask)
 
-    steps: list[dict] = []
-    total_raw = 0
-    total_sent = 0
-    started = time.perf_counter()
-
-    for tool_slug, args in scenario["tools"]:
-        raw = get_mock_result(tool_slug, args)
-        result = compress_tool_output(
-            raw, tool_slug, mode="balanced", model="gpt-4o",
-            ask=ask if ask else None,
-            field_policy_mode="ask_aware",
-        )
-        steps.append({
-            "tool": tool_slug.replace("_", " ").title(),
-            "raw_tokens": result.raw_tokens,
-            "sent_tokens": result.compressed_tokens,
-            "saved_tokens": result.tokens_saved,
+    steps_out: list[dict] = []
+    for s in run.steps:
+        steps_out.append({
+            "tool": s.tool,
+            "tool_label": s.tool.replace("_", " ").title(),
+            "arguments": s.arguments,
+            "successful": s.successful,
+            "error": s.error,
+            "raw_tokens": s.raw_tokens,
+            "sent_tokens": s.sent_tokens,
+            "saved_tokens": s.saved_tokens,
+            "saved_percent": s.saved_percent,
+            "raw_bytes": s.raw_bytes,
+            "sent_bytes": s.sent_bytes,
+            "strategy": s.strategy,
+            "llm_format": s.llm_format,
+            "omitted_fields": s.omitted_fields,
+            "policy_reason_counts": s.policy_reason_counts,
+            "policy_promotions": s.policy_promotions,
+            "classifier_used": s.classifier_used,
+            "classifier_keeps": s.classifier_keeps,
+            "raw_preview": s.raw_preview,
+            "compressed_preview": s.compressed_preview,
+            "elapsed_ms": round(s.elapsed_ms, 0),
         })
-        total_raw += result.raw_tokens
-        total_sent += result.compressed_tokens
 
-    elapsed_ms = (time.perf_counter() - started) * 1000
-    saved_pct = round((1 - total_sent / total_raw) * 100, 1) if total_raw else 0
-    cost_before = round(total_raw * 2.50 / 1_000_000, 4)
-    cost_after = round(total_sent * 2.50 / 1_000_000, 4)
+    raw_total = run.total_raw_tokens
+    sent_total = run.total_sent_tokens
+    saved_pct = round((1 - sent_total / raw_total) * 100, 1) if raw_total else 0
+    cost_before = round(raw_total * 2.50 / 1_000_000, 4)
+    cost_after = round(sent_total * 2.50 / 1_000_000, 4)
 
     return {
         "ask": ask,
+        "answer": run.answer,
+        "model": run.model,
+        "iterations": run.iterations,
+        "stopped_reason": run.stopped_reason,
+        "error": run.error,
         "summary": {
-            "tool_calls": len(steps),
-            "raw_tokens": total_raw,
-            "sent_tokens": total_sent,
-            "saved_tokens": total_raw - total_sent,
+            "tool_calls": len(steps_out),
+            "raw_tokens": raw_total,
+            "sent_tokens": sent_total,
+            "saved_tokens": max(0, raw_total - sent_total),
             "saved_percent": saved_pct,
-            "elapsed_ms": round(elapsed_ms, 0),
+            "elapsed_ms": round(run.total_elapsed_ms, 0),
             "cost_before_usd": cost_before,
             "cost_after_usd": cost_after,
             "cost_saved_usd": round(cost_before - cost_after, 4),
         },
-        "steps": steps,
+        "steps": steps_out,
     }
 
 
