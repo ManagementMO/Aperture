@@ -38,7 +38,7 @@ class _MemoryStore:
 
 class CacheStore:
     """Simple cache store using Upstash Redis (or in-memory fallback).
-    
+
     Uses a module-level singleton so cache survives across runner instances.
     """
 

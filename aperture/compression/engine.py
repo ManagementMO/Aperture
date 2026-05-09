@@ -443,14 +443,15 @@ def _compress_records(
     fields_to_drop = empty_fields | denial_drops
 
     constant_fields = set()
-    for key in all_keys - fields_to_drop:
-        values = {
-            str(row.get(key)) for row in payload[: min(50, total_rows)]
-            if isinstance(row, dict)
-        }
-        if len(values) == 1:
-            constant_fields.add(key)
-    fields_to_drop |= constant_fields
+    if total_rows > 1:
+        for key in all_keys - fields_to_drop:
+            values = {
+                str(row.get(key)) for row in payload[: min(50, total_rows)]
+                if isinstance(row, dict)
+            }
+            if len(values) == 1:
+                constant_fields.add(key)
+        fields_to_drop |= constant_fields
 
     max_str_len = 200 if mode in ("safe", "balanced") else 80
     keep_list = {"low": 3, "aggressive": 2}.get(mode, 5)

@@ -45,10 +45,19 @@ cd frontend && npm install && npm run dev -- --port 5173
 
 Open `http://localhost:5173/`.
 
+For the live Claude + Composio agent path, copy `.env.example` to `.env` and
+set `ANTHROPIC_API_KEY`, `COMPOSIO_API_KEY`, `COMPOSIO_USER_ID`, and the
+connected-account ID for each toolkit you want to use. The demos accept both
+`COMPOSIO_GITHUB_CONNECTED_ACCOUNT_ID` and the older `COMPOSIO_GITHUB_ACCOUNT_ID`
+alias. Fixture benchmarks and most dashboard pages do not require live
+credentials.
+
 ## Tests
 
 ```bash
 uv run pytest
+uv run python scripts/vanilla_vs_aperture.py
+cd frontend && npm run lint && npm run build && npm audit --audit-level=moderate
 ```
 
 ## Demo phases

@@ -5,12 +5,21 @@ responses — so Aperture's compression value is visible and meaningful."""
 
 from __future__ import annotations
 
-import random
+import hashlib
 from datetime import datetime, timedelta
 
 
-def _rand_date(days_back: int = 90) -> str:
-    dt = datetime.utcnow() - timedelta(days=random.randint(0, days_back))
+_BASE_DATE = datetime(2026, 5, 1, 12, 0, 0)
+
+
+def _stable_int(low: int, high: int, *parts: object) -> int:
+    digest = hashlib.sha256("|".join(str(p) for p in parts).encode("utf-8")).hexdigest()
+    return low + (int(digest[:12], 16) % (high - low + 1))
+
+
+def _rand_date(days_back: int = 90, *parts: object) -> str:
+    days = _stable_int(0, max(days_back, 0), "date", days_back, *parts)
+    dt = _BASE_DATE - timedelta(days=days)
     return dt.strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
@@ -52,7 +61,7 @@ def _label(name: str, color: str, lid: int) -> dict:
 
 def github_repo(owner: str = "composioHQ", repo: str = "composio") -> dict:
     """Full GitHub GET /repos/{owner}/{repo} response — ~1,900 tokens."""
-    rid = random.randint(100_000, 999_999)
+    rid = _stable_int(100_000, 999_999, "repo", owner, repo)
     return {
         "id": rid,
         "node_id": f"R_kgDO{rid:08x}",
@@ -101,8 +110,8 @@ def github_repo(owner: str = "composioHQ", repo: str = "composio") -> dict:
         "releases_url": f"https://api.github.com/repos/{owner}/{repo}/releases{{/id}}",
         "deployments_url": f"https://api.github.com/repos/{owner}/{repo}/deployments",
         "created_at": "2024-02-23T13:58:27Z",
-        "updated_at": _rand_date(7),
-        "pushed_at": _rand_date(2),
+        "updated_at": _rand_date(7, owner, repo, "updated"),
+        "pushed_at": _rand_date(2, owner, repo, "pushed"),
         "git_url": f"git://github.com/{owner}/{repo}.git",
         "ssh_url": f"git@github.com:{owner}/{repo}.git",
         "clone_url": f"https://github.com/{owner}/{repo}.git",
@@ -190,17 +199,17 @@ def github_issues(owner: str = "composioHQ", repo: str = "composio", count: int 
                 "title": f"v{i+1}.0 Release",
                 "description": f"Target release for {titles[i].split()[0]} fixes",
                 "creator": _user("composioHQ", 149_123),
-                "open_issues": random.randint(3, 12),
-                "closed_issues": random.randint(5, 30),
+                "open_issues": _stable_int(3, 12, "issue", iid, "open"),
+                "closed_issues": _stable_int(5, 30, "issue", iid, "closed"),
                 "state": "open",
-                "created_at": _rand_date(60),
-                "updated_at": _rand_date(7),
+                "created_at": _rand_date(60, "issue", iid, "milestone-created"),
+                "updated_at": _rand_date(7, "issue", iid, "milestone-updated"),
                 "due_on": None,
                 "closed_at": None,
             },
-            "comments": random.randint(2, 15),
-            "created_at": _rand_date(30),
-            "updated_at": _rand_date(5),
+            "comments": _stable_int(2, 15, "issue", iid, "comments"),
+            "created_at": _rand_date(30, "issue", iid, "created"),
+            "updated_at": _rand_date(5, "issue", iid, "updated"),
             "closed_at": None,
             "author_association": "NONE",
             "active_lock_reason": None,
@@ -225,19 +234,19 @@ Error traceback attached in comments.
 
 ## Additional Context
 - Related to issue #{iid - 1}
-- Affects ~{random.randint(10, 200)} users based on Sentry data
+- Affects ~{_stable_int(10, 200, "issue", iid, "users")} users based on Sentry data
 """,
             "reactions": {
                 "url": f"https://api.github.com/repos/{owner}/{repo}/issues/{iid}/reactions",
-                "total_count": random.randint(1, 8),
-                "+1": random.randint(0, 3),
-                "-1": random.randint(0, 1),
+                "total_count": _stable_int(1, 8, "issue", iid, "reactions-total"),
+                "+1": _stable_int(0, 3, "issue", iid, "plus-one"),
+                "-1": _stable_int(0, 1, "issue", iid, "minus-one"),
                 "laugh": 0,
                 "hooray": 0,
-                "confused": random.randint(0, 2),
-                "heart": random.randint(0, 2),
-                "rocket": random.randint(0, 1),
-                "eyes": random.randint(0, 3),
+                "confused": _stable_int(0, 2, "issue", iid, "confused"),
+                "heart": _stable_int(0, 2, "issue", iid, "heart"),
+                "rocket": _stable_int(0, 1, "issue", iid, "rocket"),
+                "eyes": _stable_int(0, 3, "issue", iid, "eyes"),
             },
             "timeline_url": f"https://api.github.com/repos/{owner}/{repo}/issues/{iid}/timeline",
             "performed_via_github_app": None,
@@ -270,8 +279,8 @@ def github_pull_requests(owner: str = "composioHQ", repo: str = "composio", coun
             "title": titles[i],
             "user": _user(f"contributor{i}", 3_000_000 + i),
             "body": f"## Summary\n{titles[i]}\n\n## Changes\n- Modified core parser\n- Added 12 new test cases\n- Updated documentation\n\n## Testing\n- [x] Unit tests pass\n- [x] Integration tests pass\n- [x] Manual QA verified\n\n## Breaking Changes\nNone.",
-            "created_at": _rand_date(14),
-            "updated_at": _rand_date(3),
+            "created_at": _rand_date(14, "pr", pid, "created"),
+            "updated_at": _rand_date(3, "pr", pid, "updated"),
             "closed_at": None,
             "merged_at": None,
             "merge_commit_sha": f"abc{pid:06x}",
@@ -303,8 +312,8 @@ def github_pull_requests(owner: str = "composioHQ", repo: str = "composio", coun
                     "fork": False,
                     "url": f"https://api.github.com/repos/{owner}/{repo}",
                     "created_at": "2024-02-23T13:58:27Z",
-                    "updated_at": _rand_date(7),
-                    "pushed_at": _rand_date(2),
+                    "updated_at": _rand_date(7, "pr", pid, "head-updated"),
+                    "pushed_at": _rand_date(2, "pr", pid, "head-pushed"),
                     "homepage": "https://composio.dev",
                     "size": 45_832,
                     "stargazers_count": 28_127,
@@ -332,8 +341,8 @@ def github_pull_requests(owner: str = "composioHQ", repo: str = "composio", coun
                     "fork": False,
                     "url": f"https://api.github.com/repos/{owner}/{repo}",
                     "created_at": "2024-02-23T13:58:27Z",
-                    "updated_at": _rand_date(7),
-                    "pushed_at": _rand_date(2),
+                    "updated_at": _rand_date(7, "pr", pid, "base-updated"),
+                    "pushed_at": _rand_date(2, "pr", pid, "base-pushed"),
                     "homepage": "https://composio.dev",
                     "size": 45_832,
                     "stargazers_count": 28_127,
@@ -381,12 +390,12 @@ def github_commits(owner: str = "composioHQ", repo: str = "composio", count: int
                 "author": {
                     "name": f"Developer {i}",
                     "email": f"dev{i}@composio.dev",
-                    "date": _rand_date(i),
+                    "date": _rand_date(i, "commit", i, "author"),
                 },
                 "committer": {
                     "name": "GitHub",
                     "email": "noreply@github.com",
-                    "date": _rand_date(i),
+                    "date": _rand_date(i, "commit", i, "committer"),
                 },
                 "message": messages[i],
                 "tree": {
@@ -394,12 +403,12 @@ def github_commits(owner: str = "composioHQ", repo: str = "composio", count: int
                     "url": f"https://api.github.com/repos/{owner}/{repo}/git/trees/tree{i:040x}",
                 },
                 "url": f"https://api.github.com/repos/{owner}/{repo}/git/commits/{sha}",
-                "comment_count": random.randint(0, 4),
+                "comment_count": _stable_int(0, 4, "commit", i, "comments"),
                 "verification": {
                     "verified": True,
                     "reason": "valid",
                     "signature": f"-----BEGIN PGP SIGNATURE-----\n\niQIzBAABCgAdFiEE{i:08x}\n\n-----END PGP SIGNATURE-----",
-                    "payload": f"tree tree{i:040x}\nparent parent{i:040x}\nauthor Developer {i} <dev{i}@composio.dev> {_rand_date(i)}\n\n{messages[i]}",
+                    "payload": f"tree tree{i:040x}\nparent parent{i:040x}\nauthor Developer {i} <dev{i}@composio.dev> {_rand_date(i, 'commit', i, 'payload')}\n\n{messages[i]}",
                 },
             },
             "url": f"https://api.github.com/repos/{owner}/{repo}/commits/{sha}",
@@ -441,7 +450,7 @@ def gmail_search(query: str = "composio", max_results: int = 3) -> list[dict]:
                             {"name": "From", "value": f"Sender {i} <sender{i}@example.com>"},
                             {"name": "To", "value": "team@composio.dev"},
                             {"name": "Subject", "value": subjects[i]},
-                            {"name": "Date", "value": _rand_date(i * 3)},
+                            {"name": "Date", "value": _rand_date(i * 3, "gmail", i)},
                             {"name": "Message-Id", "value": f"<{mid}@mail.gmail.com>"},
                             {"name": "In-Reply-To", "value": f"<prev_{mid}@mail.gmail.com>"},
                             {"name": "References", "value": f"<root_{mid}@mail.gmail.com> <prev_{mid}@mail.gmail.com>"},
@@ -490,14 +499,18 @@ def slack_messages(query: str = "composio", count: int = 4) -> list[dict]:
     ]
     messages = []
     for i in range(count):
-        ts = f"171524160{i}.000{random.randint(100, 999)}"
+        ts = f"171524160{i}.000{_stable_int(100, 999, 'slack', i, 'ts')}"
+        reply_user_count = _stable_int(0, 3, "slack", i, "reply-users")
         messages.append({
             "type": "message",
-            "user": f"U{random.randint(10000000, 99999999)}",
+            "user": f"U{_stable_int(10000000, 99999999, 'slack', i, 'user')}",
             "text": texts[i],
             "ts": ts,
-            "team": f"T{random.randint(10000000, 99999999)}",
-            "channel": {"id": f"C{random.randint(10000000, 99999999)}", "name": "engineering"},
+            "team": f"T{_stable_int(10000000, 99999999, 'slack', i, 'team')}",
+            "channel": {
+                "id": f"C{_stable_int(10000000, 99999999, 'slack', i, 'channel')}",
+                "name": "engineering",
+            },
             "permalink": f"https://composio.slack.com/archives/engineering/p{ts.replace('.', '')}",
             "attachments": [],
             "blocks": [
@@ -513,16 +526,30 @@ def slack_messages(query: str = "composio", count: int = 4) -> list[dict]:
                 }
             ],
             "reactions": [
-                {"name": "eyes", "users": [f"U{random.randint(10000000, 99999999)}"], "count": 1},
-                {"name": "white_check_mark", "users": [f"U{random.randint(10000000, 99999999)}"], "count": 1},
+                {
+                    "name": "eyes",
+                    "users": [f"U{_stable_int(10000000, 99999999, 'slack', i, 'eyes')}"],
+                    "count": 1,
+                },
+                {
+                    "name": "white_check_mark",
+                    "users": [f"U{_stable_int(10000000, 99999999, 'slack', i, 'check')}"],
+                    "count": 1,
+                },
             ],
-            "reply_count": random.randint(0, 5),
-            "reply_users": [f"U{random.randint(10000000, 99999999)}" for _ in range(random.randint(0, 3))],
-            "reply_users_count": random.randint(0, 3),
+            "reply_count": _stable_int(0, 5, "slack", i, "replies"),
+            "reply_users": [
+                f"U{_stable_int(10000000, 99999999, 'slack', i, 'reply-user', n)}"
+                for n in range(reply_user_count)
+            ],
+            "reply_users_count": reply_user_count,
             "latest_reply": ts,
             "subscribed": False,
             "last_read": ts,
             "unread_count": 0,
-            "client_msg_id": f"{random.randint(10000000, 99999999)}-{random.randint(10000000, 99999999)}",
+            "client_msg_id": (
+                f"{_stable_int(10000000, 99999999, 'slack', i, 'client-a')}-"
+                f"{_stable_int(10000000, 99999999, 'slack', i, 'client-b')}"
+            ),
         })
     return messages

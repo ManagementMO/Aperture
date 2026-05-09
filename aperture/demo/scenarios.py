@@ -101,7 +101,7 @@ def get_mock_result(tool_slug: str, arguments: dict) -> object:
     if "GET_A_REPOSITORY" in tool_slug or "GET_REPO" in tool_slug:
         return github_repo(owner, repo)
 
-    if "LIST_ISSUES" in tool_slug:
+    if "LIST_ISSUES" in tool_slug or "LIST_REPOSITORY_ISSUES" in tool_slug:
         return github_issues(owner, repo, count=arguments.get("per_page", 5))
 
     if "LIST_PULL_REQUESTS" in tool_slug or "LIST_PRS" in tool_slug:

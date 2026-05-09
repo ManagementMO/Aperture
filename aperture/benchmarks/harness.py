@@ -18,7 +18,7 @@ from typing import Any
 from aperture.cache.interceptor import CachedExecutor
 from aperture.cache.policy import is_cacheable
 from aperture.compression.engine import compress_tool_output
-from aperture.contracts import ApertureRunConfig, CompressionResult
+from aperture.contracts import ApertureRunConfig
 from aperture.demo.scenarios import SCENARIOS, get_mock_result
 from aperture.routing.effort_modes import get_effort_config
 from aperture.routing.intelligent_effort import select_effort
@@ -116,7 +116,21 @@ def _compute_quality(
     compressed_payload: object,
     tool_slug: str,
 ) -> tuple[int, int, float]:
-    """Compute quality score: how many critical fields were retained."""
+    """Compute quality score with deterministic semantic probes when available."""
+    try:
+        from aperture.benchmarks.vanilla_vs_aperture import _QUALITY_PROBES
+
+        probe = _QUALITY_PROBES.get(tool_slug)
+        if probe is not None:
+            checks = probe(raw_payload, compressed_payload)
+            if checks:
+                retained = sum(1 for passed in checks.values() if passed)
+                total = len(checks)
+                return retained, total, retained / total
+    except Exception:
+        pass
+
+    # Fallback for tools that do not yet have a semantic quality probe.
     from aperture.schema_optimizer.auto_profile import generate_tool_profile
 
     try:
@@ -176,6 +190,24 @@ def benchmark_tool(
         effort = get_effort_config(mode)
         compression_mode = effort.compression_mode
 
+    if mode != "auto":
+        cache_bypass = not enable_cache or not effort.cache_reads
+        config = ApertureRunConfig(
+            run_id=f"bench-{tool_slug}",
+            model=model,
+            effort_mode=mode,
+            cache_bypass=cache_bypass,
+            connected_account_id="bench_account",
+        )
+    else:
+        config = ApertureRunConfig(
+            run_id=f"bench-{tool_slug}",
+            model=model,
+            effort_mode=mode,
+            cache_bypass=not enable_cache,
+            connected_account_id="bench_account",
+        )
+
     # Execute with cache
     cache = CachedExecutor()
 
@@ -189,22 +221,12 @@ def benchmark_tool(
         config=config,
     )
 
-    if cache_event.cache_status == "hit":
-        compressed = CompressionResult(
-            compressed_payload=raw_payload,
-            raw_tokens=0,
-            compressed_tokens=0,
-            tokens_saved=0,
-            compression_ratio=1.0,
-            strategy="cache_hit",
-        )
-    else:
-        compressed = compress_tool_output(
-            raw_payload=raw_payload,
-            tool_slug=tool_slug,
-            mode=compression_mode,
-            model=model,
-        )
+    compressed = compress_tool_output(
+        raw_payload=raw_payload,
+        tool_slug=tool_slug,
+        mode=compression_mode,
+        model=model,
+    )
 
     aperture_tokens = compressed.compressed_tokens
     aperture_latency = (time.perf_counter() - t0) * 1000
@@ -276,15 +298,12 @@ def benchmark_scenario(
         raw_payload = get_mock_result(step.tool_slug, step.arguments)
         vanilla_context.append({"tool": step.tool_slug, "result": raw_payload})
 
-        if result.cache_status == "hit":
-            compressed_payload = raw_payload
-        else:
-            compressed_payload = compress_tool_output(
-                raw_payload=raw_payload,
-                tool_slug=step.tool_slug,
-                mode=get_effort_config(mode).compression_mode if mode != "auto" else "balanced",
-                model=model,
-            ).compressed_payload
+        compressed_payload = compress_tool_output(
+            raw_payload=raw_payload,
+            tool_slug=step.tool_slug,
+            mode=get_effort_config(mode).compression_mode if mode != "auto" else "balanced",
+            model=model,
+        ).compressed_payload
         aperture_context.append({"tool": step.tool_slug, "result": compressed_payload})
 
     benchmark = ScenarioBenchmark(

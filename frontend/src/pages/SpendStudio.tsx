@@ -126,7 +126,7 @@ export default function SpendStudio() {
     const familyCost: Record<string, { actual: number; counterfactual: number; calls: number; saved: number }> = {};
     const whatIf: Record<string, number> = { haiku: 0, sonnet: 0, opus: 0 };
 
-    let firstTs = runs[runs.length - 1].ts;
+    const firstTs = runs[runs.length - 1].ts;
     const lastTs = runs[0].ts;
 
     for (const r of runs) {

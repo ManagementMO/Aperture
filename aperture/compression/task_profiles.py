@@ -11,7 +11,7 @@ engine only keeps what the LLM actually needs for the current goal.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 
 @dataclass(frozen=True)
@@ -369,6 +369,10 @@ _ALL_PROFILES: list[TaskProfile] = (
     + _LINEAR_PROFILES
     + _SUPABASE_PROFILES
 )
+_ALL_PROFILES += [
+    replace(p, tool_slug="GITHUB_LIST_REPOSITORY_ISSUES")
+    for p in _GITHUB_ISSUE_PROFILES
+]
 
 _PROFILE_REGISTRY: dict[tuple[str, str], TaskProfile] = {
     (p.tool_slug, p.task_name): p for p in _ALL_PROFILES

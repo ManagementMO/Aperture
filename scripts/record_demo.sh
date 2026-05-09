@@ -17,14 +17,21 @@ echo ""
 echo "Reading 10,000 rows from Google Sheets..."
 echo ""
 uv run python -c "
+import os
 from composio import Composio
 from aperture.tokenization import count_tokens
 
-c = Composio(api_key='ak_iPqoKWiMfcSRBGp77MKh')
+def required(name):
+    value = os.environ.get(name)
+    if not value:
+        raise RuntimeError(f'Set {name} before running the live demo.')
+    return value
+
+c = Composio(api_key=required('COMPOSIO_API_KEY'))
 session = c.create(
-    user_id='pg-test-77d7fa29-5fa4-4868-b9ba-39b07a17e2f6',
+    user_id=required('COMPOSIO_USER_ID'),
     toolkits=['googlesheets'],
-    connected_accounts={'googlesheets': 'ca_6UYvenCFlbHq'},
+    connected_accounts={'googlesheets': required('COMPOSIO_GOOGLESHEETS_CONNECTED_ACCOUNT_ID')},
 )
 resp = session.execute(
     tool_slug='GOOGLESHEETS_BATCH_GET',

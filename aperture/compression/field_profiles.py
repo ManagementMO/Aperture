@@ -16,7 +16,7 @@ downstream so only relevant data ever enters the context window.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field as dc_field
+from dataclasses import dataclass, field as dc_field, replace
 from typing import Any
 
 
@@ -160,6 +160,11 @@ _ALL_FIELD_PROFILES: list[FieldProfile] = (
     + _LINEAR_FIELD_PROFILES
     + _SUPABASE_FIELD_PROFILES
 )
+_ALL_FIELD_PROFILES += [
+    replace(p, tool_slug="GITHUB_LIST_REPOSITORY_ISSUES")
+    for p in _GITHUB_FIELD_PROFILES
+    if p.tool_slug == "GITHUB_LIST_ISSUES"
+]
 
 _FIELD_PROFILE_REGISTRY: dict[tuple[str, str], FieldProfile] = {
     (p.tool_slug, p.profile_name): p for p in _ALL_FIELD_PROFILES
