@@ -560,18 +560,56 @@ def _execute_tool(
         ) else str(payload)
     )
 
-    raw_serialized = json.dumps(raw_payload, default=str, ensure_ascii=False)
+    # Use compact separators end-to-end so that:
+    #   (a) raw_tokens (counted via stable_json_dumps which is also compact)
+    #       and sent_tokens (counted from the literal string) are
+    #       apples-to-apples — no phantom whitespace tokens.
+    #   (b) the model genuinely receives fewer tokens. Default json.dumps
+    #       inserts ", " and ": " which BPE tokenizes as extra tokens; for
+    #       a 1k-row table that adds ~20k tokens of pure whitespace.
+    _COMPACT = (",", ":")
+    raw_serialized = json.dumps(
+        raw_payload, default=str, ensure_ascii=False, separators=_COMPACT,
+    )
     raw_tokens = count_tokens(raw_payload, model="gpt-4o").tokens
 
+    # SHAPE ADAPTER — when the payload is a thin wrapper around a list of
+    # rows (SUPABASE_BETA_RUN_SQL_QUERY returns {command, result: [...],
+    # rows_affected, ...}), unwrap the list so the engine's tabular path
+    # actually fires. Without this, our compressor sees a dict and skips
+    # TOON / type-grouping entirely. Header is reattached after.
+    payload_for_compression = raw_payload
+    sql_wrapper_meta: dict | None = None
+    if (
+        isinstance(raw_payload, dict)
+        and isinstance(raw_payload.get("result"), list)
+        and raw_payload["result"]
+        and isinstance(raw_payload["result"][0], dict)
+    ):
+        payload_for_compression = raw_payload["result"]
+        sql_wrapper_meta = {
+            k: v for k, v in raw_payload.items()
+            if k != "result" and v is not None and v != ""
+        }
+
     compressed = compress_tool_output(
-        raw_payload, slug,
+        payload_for_compression, slug,
         mode="balanced", model="gpt-4o",
         ask=ask, field_policy_mode="model_assisted",
     )
 
     body_payload = compressed.llm_string or json.dumps(
-        compressed.compressed_payload, default=str, ensure_ascii=False
+        compressed.compressed_payload, default=str,
+        ensure_ascii=False, separators=_COMPACT,
     )
+
+    # If we unwrapped a SQL response, reattach the metadata as a one-line
+    # header (much cheaper than reserializing the entire wrapper).
+    if sql_wrapper_meta:
+        meta_str = json.dumps(
+            sql_wrapper_meta, default=str, ensure_ascii=False, separators=_COMPACT,
+        )
+        body_payload = f"{meta_str}\n{body_payload}"
 
     # RTK-inspired ultra-summary: prepend a tiny symbol-encoded headline so
     # the model can answer single-fact questions without reading the body.
@@ -581,7 +619,7 @@ def _execute_tool(
     ultra_enabled = os.getenv("APERTURE_ULTRA_SUMMARY", "1") not in ("0", "false", "False", "")
     summary = (
         render_ultra_summary(raw_payload, slug)
-        if ultra_enabled and raw_tokens >= 100
+        if ultra_enabled and raw_tokens >= 250
         else None
     )
     summary_line = summary.line if summary else None

@@ -71,7 +71,17 @@ def _find_project_ref(client, user_id: str) -> str:
     )
     if not ok:
         raise RuntimeError(f"LIST_ALL_PROJECTS failed: {err}")
-    projects = data if isinstance(data, list) else data.get("projects") or data.get("items") or []
+    if isinstance(data, list):
+        projects = data
+    elif isinstance(data, dict):
+        projects = (
+            data.get("details")
+            or data.get("projects")
+            or data.get("items")
+            or []
+        )
+    else:
+        projects = []
     if not projects:
         raise RuntimeError(
             "no Supabase projects on this account — create one in the "
