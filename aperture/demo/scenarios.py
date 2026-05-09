@@ -23,6 +23,7 @@ from aperture.demo.mock_data import (
 class Scenario:
     name: str
     description: str
+    user_query: str  # What the user actually asked the agent
     steps: list[ToolCall]
     expected_effort_mode: str = "medium"
 
@@ -40,6 +41,7 @@ def scenario_research_project() -> Scenario:
     return Scenario(
         name="research_project",
         description="Research a GitHub project: get repo details, list open issues, review active PRs, check recent commits",
+        user_query="Tell me about the composio repo — how many stars, what issues are open, and what's being worked on?",
         steps=[
             _make("GITHUB_GET_A_REPOSITORY", {"owner": "composioHQ", "repo": "composio"}, "GITHUB"),
             _make("GITHUB_LIST_ISSUES", {"owner": "composioHQ", "repo": "composio", "state": "open", "per_page": 5}, "GITHUB"),
@@ -54,6 +56,7 @@ def scenario_triage_bugs() -> Scenario:
     return Scenario(
         name="triage_bugs",
         description="Triage open bugs: list GitHub issues, search Gmail for customer reports, check Slack for team discussions",
+        user_query="Find all open bugs in composio and check if customers have emailed or slack'd about them",
         steps=[
             _make("GITHUB_LIST_ISSUES", {"owner": "composioHQ", "repo": "composio", "state": "open", "labels": "bug", "per_page": 5}, "GITHUB"),
             _make("GMAIL_SEARCH_EMAILS", {"query": "composio bug OR error OR crash", "max_results": 3}, "GMAIL"),
@@ -67,6 +70,7 @@ def scenario_onboard_user() -> Scenario:
     return Scenario(
         name="onboard_user",
         description="Onboard a new engineer: show repo overview, recent commits, and active Slack channels",
+        user_query="Show me the composio repo and recent commits",
         steps=[
             _make("GITHUB_GET_A_REPOSITORY", {"owner": "composioHQ", "repo": "composio"}, "GITHUB"),
             _make("GITHUB_LIST_COMMITS", {"owner": "composioHQ", "repo": "composio", "per_page": 5}, "GITHUB"),

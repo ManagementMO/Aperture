@@ -113,12 +113,16 @@ def run_workflow_with_aperture(
     scenario_name: str,
     mode: str = "medium",
     enable_cache: bool = True,
+    user_query: str | None = None,
 ) -> WorkflowResult:
-    """Simulate an agent workflow WITH Aperture — compressed + cached outputs."""
+    """Simulate an agent workflow WITH Aperture — compressed + cached outputs.
+
+    Supports 'auto' mode for intelligent effort allocation.
+    """
     from aperture.demo.scenarios import get_scenario
+    from aperture.routing.intelligent_effort import select_effort
 
     scenario = get_scenario(scenario_name)
-    effort = get_effort_config(mode)
     cache = CachedExecutor()
     config = ApertureRunConfig(
         run_id=f"sim-{scenario_name}-{mode}",
@@ -129,9 +133,24 @@ def run_workflow_with_aperture(
 
     steps: list[StepResult] = []
     cumulative_context: list[dict] = []
+    context_used = 0
 
     for call in scenario.steps:
         executor = _make_executor(call.tool_slug, call.arguments)
+
+        # Determine compression mode
+        if mode == "auto":
+            decision = select_effort(
+                tool_slug=call.tool_slug,
+                arguments=call.arguments,
+                user_query=user_query or scenario.description,
+                context_used=context_used,
+            )
+            compression_mode = decision.compression_mode
+        else:
+            effort = get_effort_config(mode)
+            compression_mode = effort.compression_mode
+            decision = None
 
         # Execute with cache
         raw_result, cache_event = cache.execute(
@@ -155,13 +174,14 @@ def run_workflow_with_aperture(
             compressed = compress_tool_output(
                 raw_payload=raw_result,
                 tool_slug=call.tool_slug,
-                mode=effort.compression_mode,
+                mode=compression_mode,
                 model=config.model,
             )
 
         # Build cumulative context with COMPRESSED results
         cumulative_context.append({"tool": call.tool_slug, "result": compressed.compressed_payload})
         context_tokens = count_tokens(cumulative_context).tokens
+        context_used = context_tokens
 
         steps.append(
             StepResult(
@@ -171,7 +191,7 @@ def run_workflow_with_aperture(
                 compressed_tokens=compressed.compressed_tokens,
                 tokens_saved=compressed.tokens_saved,
                 compression_ratio=compressed.compression_ratio,
-                strategy=compressed.strategy,
+                strategy=decision.reasoning if decision else compressed.strategy,
                 cache_status=cache_event.cache_status,
                 omitted_fields=compressed.omitted_fields,
                 raw_result_preview=f"{type(raw_result).__name__} ({compressed.raw_tokens:,} tokens)",

@@ -31,7 +31,7 @@ from aperture.demo.scenarios import SCENARIOS
 console = Console()
 
 
-def run_comparative_demo(scenario_name: str, enable_cache: bool = True):
+def run_comparative_demo(scenario_name: str, mode: str = "medium", enable_cache: bool = True):
     """Run the same agent workflow with and without Aperture, side by side."""
     scenario = SCENARIOS[scenario_name]
 
@@ -50,10 +50,17 @@ def run_comparative_demo(scenario_name: str, enable_cache: bool = True):
     _print_workflow(raw, color="red")
 
     # With Aperture
-    mode = scenario.expected_effort_mode
-    console.print(f"\n[bold green]✅ WITH Aperture[/bold green] — mode={mode}, cache={'on' if enable_cache else 'off'}")
-    opt = run_workflow_with_aperture(scenario_name, mode=mode, enable_cache=enable_cache)
+    mode_label = f"[auto]" if mode == "auto" else mode
+    console.print(f"\n[bold green]✅ WITH Aperture[/bold green] — mode={mode_label}, cache={'on' if enable_cache else 'off'}")
+    opt = run_workflow_with_aperture(scenario_name, mode=mode, enable_cache=enable_cache, user_query=scenario.user_query)
     _print_workflow(opt, color="green")
+
+    # Show auto reasoning
+    if mode == "auto":
+        console.print("\n[dim]🧠 Auto Effort Decisions:[/dim]")
+        for i, step in enumerate(opt.steps):
+            if len(step.strategy) > 10:  # It's a reasoning string, not just a strategy name
+                console.print(f"  Step {i+1}: {step.strategy}")
 
     # Summary comparison
     console.print("\n[bold]📊 Side-by-Side Summary[/bold]")
@@ -117,10 +124,14 @@ def _print_workflow(result, color: str = "white"):
     """Print a workflow result."""
     for i, step in enumerate(result.steps):
         icon = "🔄" if step.cache_status == "hit" else "📡"
+        strategy_text = step.strategy
+        # Truncate long reasoning strings
+        if len(strategy_text) > 60:
+            strategy_text = strategy_text[:57] + "..."
         console.print(
             f"  {icon} Step {i+1}: [bold]{step.tool_slug}[/bold] → "
             f"{step.raw_tokens:,} raw → {step.compressed_tokens:,} compressed "
-            f"([{color}]{step.strategy}[/{color}], cache={step.cache_status})"
+            f"([{color}]{strategy_text}[/{color}], cache={step.cache_status})"
         )
     console.print(f"  Total: [{color}]{result.total_raw_tokens:,}[/{color}] tokens")
 
@@ -149,12 +160,12 @@ def _print_context_bar(raw_total: int, opt_total: int, max_context: int = 128_00
 def main():
     parser = argparse.ArgumentParser(description="Aperture Agent Workflow Demo")
     parser.add_argument("--scenario", default="research_project", choices=list(SCENARIOS.keys()))
-    parser.add_argument("--mode", default="medium", choices=["off", "low", "medium", "high"])
+    parser.add_argument("--mode", default="medium", choices=["off", "low", "medium", "high", "auto"])
     parser.add_argument("--cache", action="store_true", help="Enable caching")
     parser.add_argument("--compare", action="store_true", help="Show with/without Aperture comparison")
     args = parser.parse_args()
 
-    run_comparative_demo(args.scenario, enable_cache=args.cache)
+    run_comparative_demo(args.scenario, mode=args.mode, enable_cache=args.cache)
 
 
 if __name__ == "__main__":
