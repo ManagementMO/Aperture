@@ -42,6 +42,19 @@ interface Summary {
   cost_saved_usd: number;
 }
 
+interface CostBlock {
+  model: string;
+  input_tokens: number;
+  output_tokens: number;
+  cache_read_tokens: number;
+  cache_write_tokens: number;
+  raw_input_tokens: number;
+  actual_usd: number;
+  counterfactual_usd: number;
+  saved_usd: number;
+  cache_hit_rate: number;
+}
+
 interface RunResult {
   ask: string;
   answer: string;
@@ -50,6 +63,7 @@ interface RunResult {
   stopped_reason: string;
   error: string | null;
   summary: Summary;
+  cost?: CostBlock | null;
   steps: Step[];
 }
 
@@ -265,6 +279,8 @@ function ResultPanel({
         </CardContent>
       </Card>
 
+      {result.cost && <CostPanel cost={result.cost} model={result.model} />}
+
       {result.steps.map((step, i) => (
         <StepCard
           key={i}
@@ -273,6 +289,103 @@ function ResultPanel({
           onToggle={() => toggleStep(i)}
         />
       ))}
+    </div>
+  );
+}
+
+function CostPanel({ cost, model }: { cost: CostBlock; model: string }) {
+  const fmtUsd = (v: number): string =>
+    v < 0.01 ? `$${v.toFixed(6)}` : `$${v.toFixed(4)}`;
+  const cacheTokens = cost.cache_read_tokens + cost.cache_write_tokens;
+  const totalIn = cost.input_tokens + cacheTokens;
+
+  return (
+    <Card>
+      <CardContent className="pt-4 pb-4 space-y-3">
+        <div className="flex items-baseline justify-between gap-3">
+          <div>
+            <p className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
+              Per-model cost
+            </p>
+            <p className="text-[13px] font-medium mt-0.5">
+              <span className="font-mono text-foreground">{model}</span>
+              <span className="text-muted-foreground/60"> · what you actually paid</span>
+            </p>
+          </div>
+          <Badge variant="default" className="text-[10px]">
+            {fmtUsd(cost.saved_usd)} saved
+          </Badge>
+        </div>
+
+        <div className="grid grid-cols-3 gap-2">
+          <CostTile
+            label="You spent"
+            primary
+            value={fmtUsd(cost.actual_usd)}
+            sublabel={`${cost.input_tokens.toLocaleString()} in · ${cost.output_tokens.toLocaleString()} out`}
+          />
+          <CostTile
+            label="Without Aperture"
+            value={fmtUsd(cost.counterfactual_usd)}
+            sublabel={`${cost.raw_input_tokens.toLocaleString()} in · uncached`}
+            strike
+          />
+          <CostTile
+            label="Cache hits"
+            value={`${cost.cache_hit_rate}%`}
+            sublabel={
+              cacheTokens > 0
+                ? `${cost.cache_read_tokens.toLocaleString()}/${totalIn.toLocaleString()} tok`
+                : "first run · cache warming"
+            }
+          />
+        </div>
+
+        <p className="text-[11px] text-muted-foreground leading-relaxed">
+          Anthropic billed{" "}
+          <span className="num text-foreground">{fmtUsd(cost.actual_usd)}</span> for
+          this run. Without Aperture compressing the {cost.raw_input_tokens.toLocaleString()}{" "}
+          raw tool tokens, the same {cost.output_tokens.toLocaleString()}-token answer
+          would have cost{" "}
+          <span className="num text-foreground">{fmtUsd(cost.counterfactual_usd)}</span>{" "}
+          &mdash; ~{Math.round((cost.saved_usd / Math.max(cost.counterfactual_usd, 1e-9)) * 100)}%
+          more.
+        </p>
+      </CardContent>
+    </Card>
+  );
+}
+
+function CostTile({
+  label,
+  value,
+  sublabel,
+  primary,
+  strike,
+}: {
+  label: string;
+  value: string;
+  sublabel?: string;
+  primary?: boolean;
+  strike?: boolean;
+}) {
+  return (
+    <div className="rounded-md border border-border/40 px-2.5 py-2">
+      <p className="text-[9px] uppercase tracking-[0.14em] text-muted-foreground">
+        {label}
+      </p>
+      <p
+        className={`text-[15px] font-semibold metric-value ${
+          primary ? "text-primary" : strike ? "text-muted-foreground line-through" : ""
+        }`}
+      >
+        {value}
+      </p>
+      {sublabel && (
+        <p className="text-[10px] text-muted-foreground/80 metric-value mt-0.5">
+          {sublabel}
+        </p>
+      )}
     </div>
   );
 }
@@ -325,6 +438,15 @@ function StepCard({
             </span>
             {!step.successful && (
               <Badge variant="destructive" className="text-[10px]">error</Badge>
+            )}
+            {step.classifier_used && step.classifier_keeps.length > 0 && (
+              <span
+                className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded border border-primary/30 bg-primary/5 text-[9px] font-mono text-primary"
+                title={`Small-LLM classifier rescued: ${step.classifier_keeps.join(", ")}`}
+              >
+                <span className="lime-dot" />
+                brain · +{step.classifier_keeps.length}
+              </span>
             )}
           </div>
           <div className="flex items-center gap-2 flex-none">

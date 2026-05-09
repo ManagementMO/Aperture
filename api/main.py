@@ -1080,8 +1080,24 @@ def demo_run(payload: dict) -> dict:
     raw_total = run.total_raw_tokens
     sent_total = run.total_sent_tokens
     saved_pct = round((1 - sent_total / raw_total) * 100, 1) if raw_total else 0
-    cost_before = round(raw_total * 2.50 / 1_000_000, 4)
-    cost_after = round(sent_total * 2.50 / 1_000_000, 4)
+
+    cost_block = None
+    if run.cost is not None:
+        c = run.cost
+        cost_block = {
+            "model": c.model,
+            "input_tokens": c.input_tokens,
+            "output_tokens": c.output_tokens,
+            "cache_read_tokens": c.cache_read_tokens,
+            "cache_write_tokens": c.cache_write_tokens,
+            "raw_input_tokens": c.raw_input_tokens,
+            "actual_usd": c.actual_usd,
+            "counterfactual_usd": c.counterfactual_usd,
+            "saved_usd": c.saved_usd,
+            "cache_hit_rate": (
+                round(c.cache_read_tokens / max(c.input_tokens + c.cache_read_tokens, 1) * 100, 1)
+            ),
+        }
 
     return {
         "ask": ask,
@@ -1097,10 +1113,11 @@ def demo_run(payload: dict) -> dict:
             "saved_tokens": max(0, raw_total - sent_total),
             "saved_percent": saved_pct,
             "elapsed_ms": round(run.total_elapsed_ms, 0),
-            "cost_before_usd": cost_before,
-            "cost_after_usd": cost_after,
-            "cost_saved_usd": round(cost_before - cost_after, 4),
+            "cost_before_usd": cost_block["counterfactual_usd"] if cost_block else 0,
+            "cost_after_usd": cost_block["actual_usd"] if cost_block else 0,
+            "cost_saved_usd": cost_block["saved_usd"] if cost_block else 0,
         },
+        "cost": cost_block,
         "steps": steps_out,
     }
 
