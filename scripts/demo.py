@@ -45,10 +45,27 @@ def make_composio_executor(tool_slug: str, arguments: dict):
 
         composio = Composio(api_key=api_key)
 
+        def _unwrap(resp):
+            """Unwrap Composio response wrapper {data, error, successful}."""
+            if isinstance(resp, dict) and "data" in resp:
+                return resp["data"]
+            if hasattr(resp, "model_dump"):
+                d = resp.model_dump()
+                if isinstance(d, dict) and "data" in d:
+                    return d["data"]
+                return d
+            return dict(resp)
+
         def execute():
             try:
-                resp = composio.tools.execute(slug=tool_slug, arguments=arguments)
-                return resp.model_dump() if hasattr(resp, "model_dump") else dict(resp)
+                # Live call — uses the connected account linked to this user_id
+                resp = composio.tools.execute(
+                    slug=tool_slug,
+                    arguments=arguments,
+                    user_id="pg-test-77d7fa29-5fa4-4868-b9ba-39b07a17e2f6",
+                    dangerously_skip_version_check=True,
+                )
+                return _unwrap(resp)
             except Exception as e:
                 console.print(f"[yellow]Composio API call failed ({e}), using simulated data[/yellow]")
                 return _simulate_output(tool_slug, arguments)
