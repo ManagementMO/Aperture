@@ -141,6 +141,21 @@ def compress_tool_output(
             strategy="off",
         )
 
+    # Detect tabular data (2D arrays from Google Sheets, Excel, etc.)
+    if _is_tabular(raw_payload):
+        compressed = _compress_tabular(raw_payload, mode=mode)
+        compressed_count = count_tokens(compressed, model)
+        tokens_saved = raw_count.tokens - compressed_count.tokens
+        return CompressionResult(
+            compressed_payload=compressed,
+            raw_tokens=raw_count.tokens,
+            compressed_tokens=compressed_count.tokens,
+            tokens_saved=max(0, tokens_saved),
+            compression_ratio=round(compressed_count.tokens / max(raw_count.tokens, 1), 3),
+            strategy=f"tabular_{mode}",
+            omitted_fields=[],
+        )
+
     if mode == "safe":
         compressed = _safe_compress(raw_payload)
     elif mode == "balanced":
@@ -160,6 +175,122 @@ def compress_tool_output(
         strategy=mode,
         omitted_fields=_collect_omitted_fields(raw_payload, compressed),
     )
+
+
+def _is_tabular(payload: object) -> bool:
+    """Detect if payload is tabular data (2D array from Sheets/Excel)."""
+    if not isinstance(payload, list):
+        return False
+    if not payload:
+        return False
+    # Check if it's a list of lists (rows)
+    return all(isinstance(row, list) for row in payload[:10])
+
+
+def _compress_tabular(payload: list[list], mode: str = "balanced") -> object:
+    """Compress tabular data: sample rows, drop empty cols, truncate cells.
+
+    For large datasets (10K+ rows), keeping all rows is pointless for an LLM.
+    We keep the header + representative sample + summary statistics.
+    """
+    if not payload:
+        return payload
+
+    header = payload[0] if payload else []
+    data_rows = payload[1:]
+    total_rows = len(data_rows)
+
+    if total_rows == 0:
+        return payload
+
+    # Determine sample size based on mode and dataset size
+    if mode == "safe":
+        sample_size = min(500, total_rows)
+    elif mode == "balanced":
+        sample_size = min(200, total_rows)
+    else:  # aggressive / low
+        sample_size = min(50, total_rows)
+
+    # For very large datasets, use even smaller samples
+    if total_rows > 5000:
+        if mode == "safe":
+            sample_size = min(200, total_rows)
+        elif mode == "balanced":
+            sample_size = min(100, total_rows)
+        else:
+            sample_size = min(20, total_rows)
+
+    # Build sample: first N rows + evenly distributed samples
+    if total_rows <= sample_size:
+        sample = data_rows
+    else:
+        step = total_rows // sample_size
+        indices = [0] + [i * step for i in range(1, sample_size)]
+        # Ensure we don't go out of bounds
+        indices = [min(i, total_rows - 1) for i in indices]
+        sample = [data_rows[i] for i in sorted(set(indices))]
+
+    # Drop empty columns
+    col_count = len(header)
+    empty_cols = set()
+    for col_idx in range(col_count):
+        if all(not str(row[col_idx]).strip() for row in sample if col_idx < len(row)):
+            empty_cols.add(col_idx)
+
+    def filter_row(row: list) -> list:
+        return [cell for i, cell in enumerate(row) if i not in empty_cols and i < col_count]
+
+    filtered_header = filter_row(header)
+    filtered_sample = [filter_row(row) for row in sample]
+
+    # Truncate long cells
+    max_cell_len = 200 if mode == "safe" else 100
+    truncated_sample = []
+    for row in filtered_sample:
+        truncated = []
+        for cell in row:
+            s = str(cell)
+            if len(s) > max_cell_len:
+                s = s[:max_cell_len - 3] + "..."
+            truncated.append(s)
+        truncated_sample.append(truncated)
+
+    # Build result with summary
+    result = {
+        "_aperture_summary": {
+            "total_rows": total_rows,
+            "sampled_rows": len(truncated_sample),
+            "columns_shown": len(filtered_header),
+            "columns_dropped": len(empty_cols),
+            "sampling_method": f"{mode}_tabular",
+        },
+        "headers": filtered_header,
+        "sample": truncated_sample,
+    }
+
+    # Add simple stats for numeric columns
+    stats = {}
+    for col_idx, col_name in enumerate(filtered_header):
+        # Try to detect numeric column
+        numeric_values = []
+        for row in truncated_sample:
+            if col_idx < len(row):
+                try:
+                    v = float(str(row[col_idx]).replace(",", ""))
+                    numeric_values.append(v)
+                except (ValueError, TypeError):
+                    pass
+        if numeric_values and len(numeric_values) > len(truncated_sample) * 0.5:
+            stats[col_name] = {
+                "min": min(numeric_values),
+                "max": max(numeric_values),
+                "avg": round(sum(numeric_values) / len(numeric_values), 1),
+            }
+
+    if stats:
+        result["stats"] = stats
+
+    return result
 
 
 def _safe_compress(payload: object) -> object:
