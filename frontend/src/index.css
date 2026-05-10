@@ -10,6 +10,10 @@
 @layer base {
   html {
     font-family: "Geist Variable", -apple-system, BlinkMacSystemFont, sans-serif;
+    /* color-scheme is set by the inline bootstrap in index.html + the
+     * ThemeProvider at runtime. The .light / .dark classes drive both. */
+  }
+  html.dark {
     color-scheme: dark;
   }
   html.light {

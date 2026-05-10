@@ -91,7 +91,7 @@ export function CommandPalette() {
       <button
         type="button"
         onClick={openPalette}
-        className="hidden md:inline-flex items-center gap-2.5 h-8 pl-2.5 pr-1.5 rounded-md border border-border bg-card hover:border-primary/40 hover:bg-sidebar-accent/40 text-[12px] text-muted-foreground transition-colors"
+        className="accent-hover hidden md:inline-flex items-center gap-2.5 h-8 pl-2.5 pr-1.5 rounded-md border border-border bg-card text-[12px] text-muted-foreground"
       >
         <Search className="w-3.5 h-3.5" />
         <span>Search</span>

@@ -40,6 +40,14 @@
     --composio-lime-soft:   rgba(166, 245, 116, 0.15);
     --composio-lime-faint:  rgba(166, 245, 116, 0.06);
 
+    /* Sky-blue accent — reserved for a very small number of CTAs.
+     * Same hex in both modes; the legibility holds against both
+     * black and white surfaces. */
+    --aperture-accent:        #31A8FC;
+    --aperture-accent-hover:  #1F92E5;
+    --aperture-accent-soft:   rgba(49, 168, 252, 0.15);
+    --aperture-accent-faint:  rgba(49, 168, 252, 0.06);
+
     /* ----- shadcn semantic bindings ----- */
     --background: var(--aperture-bg);
     --foreground: var(--aperture-fg);
@@ -107,6 +115,12 @@
     --composio-lime-soft:   rgba(79, 169, 40, 0.15);
     --composio-lime-faint:  rgba(79, 169, 40, 0.06);
 
+    /* Sky-blue accent — same hex in light mode for visual consistency. */
+    --aperture-accent:        #31A8FC;
+    --aperture-accent-hover:  #0E7DC9;
+    --aperture-accent-soft:   rgba(49, 168, 252, 0.15);
+    --aperture-accent-faint:  rgba(49, 168, 252, 0.06);
+
     --background: var(--aperture-bg);
     --foreground: var(--aperture-fg);
     --card: var(--aperture-surface);
@@ -158,6 +172,29 @@
 /* ============================================================================
  * Aperture-specific utilities
  * ========================================================================== */
+/* ============================================================================
+ * Accent utilities — sky-blue accent reserved for very few CTAs.
+ * Use sparingly: the primary lime should remain the dominant brand color.
+ * ========================================================================== */
+.btn-accent {
+  background-color: var(--aperture-accent);
+  color: #FFFFFF;
+}
+.btn-accent:hover:not(:disabled) {
+  background-color: var(--aperture-accent-hover);
+}
+.btn-accent:disabled {
+  opacity: 0.5;
+}
+
+.accent-hover {
+  transition: border-color 120ms ease-in-out, color 120ms ease-in-out;
+}
+.accent-hover:hover {
+  border-color: var(--aperture-accent) !important;
+  color: var(--foreground);
+}
+
 .metric-value {
   font-family: "Geist Mono", "SF Mono", monospace;
   font-variant-numeric: tabular-nums;

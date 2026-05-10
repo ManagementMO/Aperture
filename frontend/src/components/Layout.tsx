@@ -11,6 +11,8 @@ import {
 import { CommandPalette } from "@/components/CommandPalette";
 import { WorkspaceChip } from "@/components/WorkspaceChip";
 import { Background } from "@/components/Background";
+import { ThemeSwitcher } from "@/components/ThemeSwitcher";
+import { useTheme } from "@/lib/theme";
 
 interface NavItem {
   path: string;
@@ -29,24 +31,18 @@ const navItems: NavItem[] = [
 ];
 
 function ApertureMark() {
+  const { resolved } = useTheme();
+  // Black logo on light surfaces, white logo on dark surfaces.
+  const src = resolved === "light" ? "/logo-black.svg" : "/logo-white.svg";
   return (
-    <svg
-      width="22"
-      height="22"
-      viewBox="0 0 24 24"
-      fill="none"
-      xmlns="http://www.w3.org/2000/svg"
-      aria-hidden="true"
-    >
-      <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="1.5" />
-      <path
-        d="M12 2 L12 22 M2 12 L22 12 M5 5 L19 19 M19 5 L5 19"
-        stroke="currentColor"
-        strokeOpacity="0.4"
-        strokeWidth="1"
-      />
-      <circle cx="12" cy="12" r="3" fill="currentColor" />
-    </svg>
+    <img
+      src={src}
+      alt="Aperture"
+      width={22}
+      height={22}
+      className="block select-none"
+      draggable={false}
+    />
   );
 }
 
@@ -138,7 +134,10 @@ export default function Layout({ children }: { children: ReactNode }) {
                 <span className="text-muted-foreground/40">/</span>
                 <span className="text-foreground">{titleFor(location.pathname)}</span>
               </div>
-              <CommandPalette />
+              <div className="flex items-center gap-2">
+                <ThemeSwitcher />
+                <CommandPalette />
+              </div>
             </div>
           </header>
           <div className="max-w-6xl mx-auto px-8 py-7">{children}</div>

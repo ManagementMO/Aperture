@@ -1,31 +1,32 @@
 /**
  * Linear/Vercel-style ambient background.
  *
- * Two layers:
- *   1. Subtle radial glow anchored top-left (mimics Linear's product surfaces).
- *   2. Faint dot grid that fades to nothing at the edges.
- *
- * Both are pointer-events:none and z-0 so all UI sits above without snagging.
+ * Theme-aware: glows + dot grid use the foreground color via CSS vars so
+ * they remain visible in both light and dark mode. The lime accent glow
+ * pulls from --composio-lime which is already mode-mapped (bright lime on
+ * dark, darker green on light).
  */
+
+const GLOW_FG = "color-mix(in oklab, var(--foreground) 60%, transparent)";
+
 export function Background() {
   return (
     <div className="pointer-events-none fixed inset-0 z-0 overflow-hidden">
-      {/* Lime radial glow */}
+      {/* Brand glow — lime token adapts per mode */}
       <div
         aria-hidden
         className="absolute -top-32 -left-32 h-[640px] w-[640px] rounded-full opacity-[0.18] blur-3xl"
         style={{
           background:
-            "radial-gradient(circle at center, rgba(166,245,116,0.55) 0%, rgba(166,245,116,0) 70%)",
+            "radial-gradient(circle at center, var(--composio-lime) 0%, transparent 70%)",
         }}
       />
-      {/* Cool secondary glow bottom-right */}
+      {/* Cool secondary glow bottom-right — uses foreground so it inverts */}
       <div
         aria-hidden
-        className="absolute -bottom-40 -right-40 h-[520px] w-[520px] rounded-full opacity-[0.07] blur-3xl"
+        className="absolute -bottom-40 -right-40 h-[520px] w-[520px] rounded-full opacity-[0.06] blur-3xl"
         style={{
-          background:
-            "radial-gradient(circle at center, rgba(255,255,255,0.6) 0%, rgba(255,255,255,0) 70%)",
+          background: `radial-gradient(circle at center, ${GLOW_FG} 0%, transparent 70%)`,
         }}
       />
       {/* Dot grid */}
@@ -34,7 +35,7 @@ export function Background() {
         className="absolute inset-0"
         style={{
           backgroundImage:
-            "radial-gradient(rgba(255,255,255,0.06) 1px, transparent 1px)",
+            "radial-gradient(color-mix(in oklab, var(--foreground) 8%, transparent) 1px, transparent 1px)",
           backgroundSize: "24px 24px",
           maskImage:
             "radial-gradient(ellipse 60% 70% at 50% 40%, #000 30%, transparent 100%)",
@@ -47,8 +48,8 @@ export function Background() {
         aria-hidden
         className="absolute inset-x-0 top-0 h-px"
         style={{
-          background:
-            "linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.08) 25%, rgba(255,255,255,0.08) 75%, transparent 100%)",
+          background: `linear-gradient(90deg, transparent 0%, ${GLOW_FG} 25%, ${GLOW_FG} 75%, transparent 100%)`,
+          opacity: 0.12,
         }}
       />
     </div>

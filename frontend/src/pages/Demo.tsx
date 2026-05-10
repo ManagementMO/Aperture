@@ -232,7 +232,7 @@ export default function Run() {
           <Button
             onClick={() => void submit()}
             disabled={!ask.trim() || running}
-            className="bg-primary text-primary-foreground hover:bg-primary/90"
+            className="btn-accent"
           >
             {running ? <ComposingSpinner label="Running" /> : (
               <>Run <ArrowUpRight className="w-4 h-4 ml-1" /></>
