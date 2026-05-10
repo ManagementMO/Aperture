@@ -1,5 +1,4 @@
 version: 1
-
 default:
   cacheable: false
   operation_type: unknown
@@ -7,57 +6,379 @@ default:
   ttl_seconds: null
   matching: none
   reason: deny_by_default
-
 tools:
+  COMPOSIO_INITIATE_CONNECTION:
+    cacheable: false
+    operation_type: auth
+    privacy_scope: account
+    ttl_seconds: null
+    matching: none
+    reason: auth_operation
+  COMPOSIO_MANAGE_CONNECTIONS:
+    cacheable: false
+    operation_type: auth
+    privacy_scope: account
+    ttl_seconds: null
+    matching: none
+    reason: auth_operation
+  GITHUB_ADD_LABELS:
+    cacheable: false
+    operation_type: unknown
+    privacy_scope: none
+    ttl_seconds: null
+    matching: none
+    reason: auto_classifier_default_deny
+  GITHUB_ASSIGN_ISSUE:
+    cacheable: false
+    operation_type: write
+    privacy_scope: account
+    ttl_seconds: null
+    matching: none
+    reason: write_operation
+  GITHUB_CLOSE_ISSUE:
+    cacheable: false
+    operation_type: write
+    privacy_scope: account
+    ttl_seconds: null
+    matching: none
+    reason: write_operation
+  GITHUB_CREATE_COMMENT:
+    cacheable: false
+    operation_type: write
+    privacy_scope: account
+    ttl_seconds: null
+    matching: none
+    reason: write_operation
+  GITHUB_CREATE_ISSUE:
+    cacheable: false
+    operation_type: write
+    privacy_scope: account
+    ttl_seconds: null
+    matching: none
+    reason: write_operation
+  GITHUB_CREATE_PULL_REQUEST:
+    cacheable: false
+    operation_type: write
+    privacy_scope: account
+    ttl_seconds: null
+    matching: none
+    reason: write_operation
+  GITHUB_DELETE_COMMENT:
+    cacheable: false
+    operation_type: write
+    privacy_scope: account
+    ttl_seconds: null
+    matching: none
+    reason: write_operation
+  GITHUB_FIND_PULL_REQUESTS:
+    cacheable: true
+    operation_type: read
+    privacy_scope: account
+    ttl_seconds: 900
+    matching: exact
+  GITHUB_FIND_REPOSITORIES:
+    cacheable: true
+    operation_type: read
+    privacy_scope: public
+    ttl_seconds: 7200
+    matching: exact
+  GITHUB_GET_AN_ISSUE:
+    cacheable: true
+    operation_type: read
+    privacy_scope: account
+    ttl_seconds: 300
+    matching: exact
+  GITHUB_GET_A_REPOSITORY:
+    cacheable: true
+    operation_type: read
+    privacy_scope: public
+    ttl_seconds: 7200
+    matching: exact
+  GITHUB_GET_BRANCH:
+    cacheable: true
+    operation_type: read
+    privacy_scope: account
+    ttl_seconds: 300
+    matching: exact
+  GITHUB_GET_COMMIT:
+    cacheable: true
+    operation_type: read
+    privacy_scope: account
+    ttl_seconds: 300
+    matching: exact
+  GITHUB_GET_ISSUE:
+    cacheable: true
+    operation_type: read
+    privacy_scope: account
+    ttl_seconds: 300
+    matching: exact
+  GITHUB_GET_PULL_REQUEST:
+    cacheable: true
+    operation_type: read
+    privacy_scope: account
+    ttl_seconds: 300
+    matching: exact
+  GITHUB_GET_RELEASE:
+    cacheable: true
+    operation_type: read
+    privacy_scope: account
+    ttl_seconds: 300
+    matching: exact
   GITHUB_GET_REPO:
     cacheable: true
     operation_type: read
     privacy_scope: public
     ttl_seconds: 7200
     matching: exact
-
+  GITHUB_GET_THE_AUTHENTICATED_USER:
+    cacheable: true
+    operation_type: read
+    privacy_scope: account
+    ttl_seconds: 300
+    matching: exact
+  GITHUB_GET_USER:
+    cacheable: true
+    operation_type: read
+    privacy_scope: account
+    ttl_seconds: 300
+    matching: exact
+  GITHUB_LIST_BRANCHES:
+    cacheable: true
+    operation_type: read
+    privacy_scope: account
+    ttl_seconds: 900
+    matching: exact
+  GITHUB_LIST_COLLABORATORS:
+    cacheable: true
+    operation_type: read
+    privacy_scope: account
+    ttl_seconds: 900
+    matching: exact
+  GITHUB_LIST_COMMITS:
+    cacheable: true
+    operation_type: read
+    privacy_scope: account
+    ttl_seconds: 900
+    matching: exact
   GITHUB_LIST_ISSUES:
     cacheable: true
     operation_type: read
     privacy_scope: account
     ttl_seconds: 900
     matching: exact
-
-  GITHUB_LIST_REPOSITORY_ISSUES:
+  GITHUB_LIST_ISSUE_COMMENTS:
     cacheable: true
     operation_type: read
     privacy_scope: account
     ttl_seconds: 900
     matching: exact
-
   GITHUB_LIST_PULL_REQUESTS:
     cacheable: true
     operation_type: read
     privacy_scope: account
     ttl_seconds: 900
     matching: exact
-
+  GITHUB_LIST_RELEASES:
+    cacheable: true
+    operation_type: read
+    privacy_scope: account
+    ttl_seconds: 900
+    matching: exact
+  GITHUB_LIST_REPOS:
+    cacheable: true
+    operation_type: read
+    privacy_scope: account
+    ttl_seconds: 900
+    matching: exact
+  GITHUB_LIST_REPOSITORY_ISSUES:
+    cacheable: true
+    operation_type: read
+    privacy_scope: account
+    ttl_seconds: 900
+    matching: exact
+  GITHUB_LIST_REPOSITORY_LANGUAGES:
+    cacheable: true
+    operation_type: read
+    privacy_scope: account
+    ttl_seconds: 900
+    matching: exact
+  GITHUB_LIST_REVIEW_COMMENTS:
+    cacheable: true
+    operation_type: read
+    privacy_scope: account
+    ttl_seconds: 900
+    matching: exact
+  GITHUB_LIST_TAGS:
+    cacheable: true
+    operation_type: read
+    privacy_scope: account
+    ttl_seconds: 900
+    matching: exact
+  GITHUB_MERGE_PULL_REQUEST:
+    cacheable: false
+    operation_type: write
+    privacy_scope: account
+    ttl_seconds: null
+    matching: none
+    reason: write_operation
+  GITHUB_REMOVE_LABEL:
+    cacheable: false
+    operation_type: write
+    privacy_scope: account
+    ttl_seconds: null
+    matching: none
+    reason: write_operation
+  GITHUB_REOPEN_ISSUE:
+    cacheable: false
+    operation_type: write
+    privacy_scope: account
+    ttl_seconds: null
+    matching: none
+    reason: write_operation
+  GITHUB_SEARCH_REPOS:
+    cacheable: true
+    operation_type: read
+    privacy_scope: public
+    ttl_seconds: 7200
+    matching: exact
+  GITHUB_STAR_REPOSITORY:
+    cacheable: false
+    operation_type: write
+    privacy_scope: account
+    ttl_seconds: null
+    matching: none
+    reason: write_operation
+  GITHUB_UNASSIGN_ISSUE:
+    cacheable: false
+    operation_type: write
+    privacy_scope: account
+    ttl_seconds: null
+    matching: none
+    reason: write_operation
+  GITHUB_UNSTAR_REPOSITORY:
+    cacheable: false
+    operation_type: write
+    privacy_scope: account
+    ttl_seconds: null
+    matching: none
+    reason: write_operation
+  GITHUB_UPDATE_COMMENT:
+    cacheable: false
+    operation_type: write
+    privacy_scope: account
+    ttl_seconds: null
+    matching: none
+    reason: write_operation
+  GITHUB_UPDATE_ISSUE:
+    cacheable: false
+    operation_type: write
+    privacy_scope: account
+    ttl_seconds: null
+    matching: none
+    reason: write_operation
+  GITHUB_UPDATE_PULL_REQUEST:
+    cacheable: false
+    operation_type: write
+    privacy_scope: account
+    ttl_seconds: null
+    matching: none
+    reason: write_operation
+  GMAIL_BATCH_MODIFY_MESSAGES:
+    cacheable: false
+    operation_type: unknown
+    privacy_scope: none
+    ttl_seconds: null
+    matching: none
+    reason: auto_classifier_default_deny
+  GMAIL_CREATE_DRAFT:
+    cacheable: false
+    operation_type: write
+    privacy_scope: account
+    ttl_seconds: null
+    matching: none
+    reason: write_operation
+  GMAIL_CREATE_LABEL:
+    cacheable: false
+    operation_type: write
+    privacy_scope: account
+    ttl_seconds: null
+    matching: none
+    reason: write_operation
+  GMAIL_DELETE_MESSAGE:
+    cacheable: false
+    operation_type: write
+    privacy_scope: account
+    ttl_seconds: null
+    matching: none
+    reason: write_operation
+  GMAIL_FETCH_EMAILS:
+    cacheable: true
+    operation_type: read
+    privacy_scope: account
+    ttl_seconds: 300
+    matching: exact
+  GMAIL_FETCH_MESSAGE_BY_MESSAGE_ID:
+    cacheable: true
+    operation_type: read
+    privacy_scope: account
+    ttl_seconds: 300
+    matching: exact
+  GMAIL_FETCH_MESSAGE_BY_THREAD_ID:
+    cacheable: true
+    operation_type: read
+    privacy_scope: account
+    ttl_seconds: 300
+    matching: exact
+  GMAIL_GET_DRAFT:
+    cacheable: true
+    operation_type: read
+    privacy_scope: account
+    ttl_seconds: 300
+    matching: exact
+  GMAIL_GET_LABEL:
+    cacheable: true
+    operation_type: read
+    privacy_scope: account
+    ttl_seconds: 300
+    matching: exact
+  GMAIL_LIST_DRAFTS:
+    cacheable: true
+    operation_type: read
+    privacy_scope: account
+    ttl_seconds: 300
+    matching: exact
+  GMAIL_LIST_LABELS:
+    cacheable: true
+    operation_type: read
+    privacy_scope: account
+    ttl_seconds: 300
+    matching: exact
+  GMAIL_LIST_THREADS:
+    cacheable: true
+    operation_type: read
+    privacy_scope: account
+    ttl_seconds: 300
+    matching: exact
+  GMAIL_MOVE_TO_TRASH:
+    cacheable: false
+    operation_type: write
+    privacy_scope: account
+    ttl_seconds: null
+    matching: none
+    reason: write_operation
+  GMAIL_REMOVE_LABEL:
+    cacheable: false
+    operation_type: write
+    privacy_scope: account
+    ttl_seconds: null
+    matching: none
+    reason: write_operation
   GMAIL_SEARCH_EMAILS:
     cacheable: true
     operation_type: read
     privacy_scope: account
     ttl_seconds: 300
     matching: exact
-
-  SLACK_SEARCH_MESSAGES:
-    cacheable: true
-    operation_type: read
-    privacy_scope: account
-    ttl_seconds: 300
-    matching: exact
-
-  NOTION_QUERY_DATABASE:
-    cacheable: true
-    operation_type: read
-    privacy_scope: account
-    ttl_seconds: 600
-    matching: exact
-
   GMAIL_SEND_EMAIL:
     cacheable: false
     operation_type: write
@@ -65,7 +386,236 @@ tools:
     ttl_seconds: null
     matching: none
     reason: write_operation
-
+  GMAIL_UPDATE_DRAFT:
+    cacheable: false
+    operation_type: write
+    privacy_scope: account
+    ttl_seconds: null
+    matching: none
+    reason: write_operation
+  GOOGLESHEETS_APPEND_VALUES:
+    cacheable: false
+    operation_type: write
+    privacy_scope: account
+    ttl_seconds: null
+    matching: none
+    reason: write_operation
+  GOOGLESHEETS_BATCH_GET:
+    cacheable: true
+    operation_type: read
+    privacy_scope: account
+    ttl_seconds: 600
+    matching: exact
+  GOOGLESHEETS_CREATE_SPREADSHEET:
+    cacheable: false
+    operation_type: write
+    privacy_scope: account
+    ttl_seconds: null
+    matching: none
+    reason: write_operation
+  GOOGLESHEETS_DELETE_ROW:
+    cacheable: false
+    operation_type: write
+    privacy_scope: account
+    ttl_seconds: null
+    matching: none
+    reason: write_operation
+  GOOGLESHEETS_GET_BATCH_VALUES:
+    cacheable: true
+    operation_type: read
+    privacy_scope: account
+    ttl_seconds: 600
+    matching: exact
+  GOOGLESHEETS_GET_SHEET_NAMES:
+    cacheable: true
+    operation_type: read
+    privacy_scope: account
+    ttl_seconds: 600
+    matching: exact
+  GOOGLESHEETS_GET_SPREADSHEET:
+    cacheable: true
+    operation_type: read
+    privacy_scope: account
+    ttl_seconds: 600
+    matching: exact
+  GOOGLESHEETS_GET_VALUE:
+    cacheable: true
+    operation_type: read
+    privacy_scope: account
+    ttl_seconds: 600
+    matching: exact
+  GOOGLESHEETS_GET_VALUES:
+    cacheable: true
+    operation_type: read
+    privacy_scope: account
+    ttl_seconds: 600
+    matching: exact
+  GOOGLESHEETS_INSERT_VALUES:
+    cacheable: false
+    operation_type: write
+    privacy_scope: account
+    ttl_seconds: null
+    matching: none
+    reason: write_operation
+  GOOGLESHEETS_UPDATE_VALUES:
+    cacheable: false
+    operation_type: write
+    privacy_scope: account
+    ttl_seconds: null
+    matching: none
+    reason: write_operation
+  LINEAR_ASSIGN_ISSUE:
+    cacheable: false
+    operation_type: write
+    privacy_scope: account
+    ttl_seconds: null
+    matching: none
+    reason: write_operation
+  LINEAR_CREATE_ISSUE:
+    cacheable: false
+    operation_type: write
+    privacy_scope: account
+    ttl_seconds: null
+    matching: none
+    reason: write_operation
+  LINEAR_DELETE_ISSUE:
+    cacheable: false
+    operation_type: write
+    privacy_scope: account
+    ttl_seconds: null
+    matching: none
+    reason: write_operation
+  LINEAR_GET_ALL_LINEAR_TEAMS:
+    cacheable: true
+    operation_type: read
+    privacy_scope: account
+    ttl_seconds: 300
+    matching: exact
+  LINEAR_GET_CURRENT_USER:
+    cacheable: true
+    operation_type: read
+    privacy_scope: account
+    ttl_seconds: 300
+    matching: exact
+  LINEAR_GET_LINEAR_ISSUE:
+    cacheable: true
+    operation_type: read
+    privacy_scope: account
+    ttl_seconds: 300
+    matching: exact
+  LINEAR_GET_LINEAR_USER_ISSUES:
+    cacheable: true
+    operation_type: read
+    privacy_scope: account
+    ttl_seconds: 300
+    matching: exact
+  LINEAR_GET_PROJECT:
+    cacheable: true
+    operation_type: read
+    privacy_scope: account
+    ttl_seconds: 300
+    matching: exact
+  LINEAR_GET_USERS_BY_EMAIL:
+    cacheable: true
+    operation_type: read
+    privacy_scope: account
+    ttl_seconds: 300
+    matching: exact
+  LINEAR_LIST_PROJECTS:
+    cacheable: true
+    operation_type: read
+    privacy_scope: account
+    ttl_seconds: 300
+    matching: exact
+  LINEAR_LIST_TEAM_ISSUES:
+    cacheable: true
+    operation_type: read
+    privacy_scope: account
+    ttl_seconds: 300
+    matching: exact
+  LINEAR_UPDATE_ISSUE:
+    cacheable: false
+    operation_type: write
+    privacy_scope: account
+    ttl_seconds: null
+    matching: none
+    reason: write_operation
+  NOTION_APPEND_BLOCK_CHILDREN:
+    cacheable: false
+    operation_type: write
+    privacy_scope: account
+    ttl_seconds: null
+    matching: none
+    reason: write_operation
+  NOTION_CREATE_PAGE:
+    cacheable: false
+    operation_type: write
+    privacy_scope: account
+    ttl_seconds: null
+    matching: none
+    reason: write_operation
+  NOTION_DELETE_BLOCK:
+    cacheable: false
+    operation_type: write
+    privacy_scope: account
+    ttl_seconds: null
+    matching: none
+    reason: write_operation
+  NOTION_FETCH_BLOCK_CONTENTS:
+    cacheable: true
+    operation_type: read
+    privacy_scope: account
+    ttl_seconds: 300
+    matching: exact
+  NOTION_FETCH_COMMENTS:
+    cacheable: true
+    operation_type: read
+    privacy_scope: account
+    ttl_seconds: 300
+    matching: exact
+  NOTION_FETCH_DATA:
+    cacheable: true
+    operation_type: read
+    privacy_scope: account
+    ttl_seconds: 300
+    matching: exact
+  NOTION_FETCH_DATABASE:
+    cacheable: true
+    operation_type: read
+    privacy_scope: account
+    ttl_seconds: 300
+    matching: exact
+  NOTION_GET_PAGE:
+    cacheable: true
+    operation_type: read
+    privacy_scope: account
+    ttl_seconds: 300
+    matching: exact
+  NOTION_LIST_DATABASES:
+    cacheable: true
+    operation_type: read
+    privacy_scope: account
+    ttl_seconds: 300
+    matching: exact
+  NOTION_QUERY_DATABASE:
+    cacheable: true
+    operation_type: read
+    privacy_scope: account
+    ttl_seconds: 300
+    matching: exact
+  NOTION_SEARCH_NOTION_PAGE:
+    cacheable: true
+    operation_type: read
+    privacy_scope: account
+    ttl_seconds: 300
+    matching: exact
+  NOTION_UPDATE_PAGE:
+    cacheable: false
+    operation_type: write
+    privacy_scope: account
+    ttl_seconds: null
+    matching: none
+    reason: write_operation
   OAUTH_REFRESH_TOKEN:
     cacheable: false
     operation_type: auth
@@ -73,3 +623,196 @@ tools:
     ttl_seconds: null
     matching: none
     reason: auth_operation
+  SLACK_ARCHIVE_CHANNEL:
+    cacheable: false
+    operation_type: write
+    privacy_scope: account
+    ttl_seconds: null
+    matching: none
+    reason: write_operation
+  SLACK_DELETE_MESSAGE:
+    cacheable: false
+    operation_type: write
+    privacy_scope: account
+    ttl_seconds: null
+    matching: none
+    reason: write_operation
+  SLACK_FETCH_CONVERSATION_HISTORY:
+    cacheable: true
+    operation_type: read
+    privacy_scope: account
+    ttl_seconds: 300
+    matching: exact
+  SLACK_GET_CHANNEL:
+    cacheable: true
+    operation_type: read
+    privacy_scope: account
+    ttl_seconds: 300
+    matching: exact
+  SLACK_GET_FILE_INFO:
+    cacheable: true
+    operation_type: read
+    privacy_scope: account
+    ttl_seconds: 300
+    matching: exact
+  SLACK_GET_USER:
+    cacheable: true
+    operation_type: read
+    privacy_scope: account
+    ttl_seconds: 300
+    matching: exact
+  SLACK_INVITE_USER_TO_CHANNEL:
+    cacheable: false
+    operation_type: write
+    privacy_scope: account
+    ttl_seconds: null
+    matching: none
+    reason: write_operation
+  SLACK_LIST_ALL_SLACK_TEAM_CHANNELS_WITH_VARIOUS_FILTERS:
+    cacheable: true
+    operation_type: read
+    privacy_scope: account
+    ttl_seconds: 300
+    matching: exact
+  SLACK_LIST_ALL_USERS:
+    cacheable: true
+    operation_type: read
+    privacy_scope: account
+    ttl_seconds: 300
+    matching: exact
+  SLACK_LIST_CHANNELS:
+    cacheable: true
+    operation_type: read
+    privacy_scope: account
+    ttl_seconds: 300
+    matching: exact
+  SLACK_LIST_FILES:
+    cacheable: true
+    operation_type: read
+    privacy_scope: account
+    ttl_seconds: 300
+    matching: exact
+  SLACK_LIST_USERS:
+    cacheable: true
+    operation_type: read
+    privacy_scope: account
+    ttl_seconds: 300
+    matching: exact
+  SLACK_POST_MESSAGE:
+    cacheable: false
+    operation_type: write
+    privacy_scope: account
+    ttl_seconds: null
+    matching: none
+    reason: write_operation
+  SLACK_SEARCH_MESSAGES:
+    cacheable: true
+    operation_type: read
+    privacy_scope: account
+    ttl_seconds: 300
+    matching: exact
+  SLACK_UPDATE_MESSAGE:
+    cacheable: false
+    operation_type: write
+    privacy_scope: account
+    ttl_seconds: null
+    matching: none
+    reason: write_operation
+  SUPABASE_CREATE_TABLE:
+    cacheable: false
+    operation_type: write
+    privacy_scope: account
+    ttl_seconds: null
+    matching: none
+    reason: write_operation
+  SUPABASE_DELETE_ROW:
+    cacheable: false
+    operation_type: write
+    privacy_scope: account
+    ttl_seconds: null
+    matching: none
+    reason: write_operation
+  SUPABASE_EXECUTE_QUERY:
+    cacheable: false
+    operation_type: unknown
+    privacy_scope: none
+    ttl_seconds: null
+    matching: none
+    reason: auto_classifier_default_deny
+  SUPABASE_FETCH_TABLE_ROWS:
+    cacheable: true
+    operation_type: read
+    privacy_scope: account
+    ttl_seconds: 600
+    matching: exact
+  SUPABASE_GET_TABLE_SCHEMA:
+    cacheable: true
+    operation_type: read
+    privacy_scope: account
+    ttl_seconds: 600
+    matching: exact
+  SUPABASE_INSERT_ROW:
+    cacheable: false
+    operation_type: write
+    privacy_scope: account
+    ttl_seconds: null
+    matching: none
+    reason: write_operation
+  SUPABASE_UPDATE_ROW:
+    cacheable: false
+    operation_type: write
+    privacy_scope: account
+    ttl_seconds: null
+    matching: none
+    reason: write_operation
+  YOUTUBE_DELETE_VIDEO:
+    cacheable: false
+    operation_type: write
+    privacy_scope: account
+    ttl_seconds: null
+    matching: none
+    reason: write_operation
+  YOUTUBE_GET_CHANNEL:
+    cacheable: true
+    operation_type: read
+    privacy_scope: public
+    ttl_seconds: 3600
+    matching: exact
+  YOUTUBE_GET_VIDEO:
+    cacheable: true
+    operation_type: read
+    privacy_scope: public
+    ttl_seconds: 3600
+    matching: exact
+  YOUTUBE_INSERT_VIDEO:
+    cacheable: false
+    operation_type: write
+    privacy_scope: account
+    ttl_seconds: null
+    matching: none
+    reason: write_operation
+  YOUTUBE_LIST_PLAYLISTS:
+    cacheable: true
+    operation_type: read
+    privacy_scope: public
+    ttl_seconds: 3600
+    matching: exact
+  YOUTUBE_LIST_VIDEOS:
+    cacheable: true
+    operation_type: read
+    privacy_scope: public
+    ttl_seconds: 3600
+    matching: exact
+  YOUTUBE_SEARCH_VIDEOS:
+    cacheable: true
+    operation_type: read
+    privacy_scope: public
+    ttl_seconds: 3600
+    matching: exact
+  YOUTUBE_UPDATE_VIDEO:
+    cacheable: false
+    operation_type: write
+    privacy_scope: account
+    ttl_seconds: null
+    matching: none
+    reason: write_operation
