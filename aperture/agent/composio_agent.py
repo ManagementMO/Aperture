@@ -83,6 +83,11 @@ _CURATED_TOOL_SLUGS: dict[str, list[str]] = {
         "NOTION_QUERY_DATABASE",
     ],
     "googlesheets": [
+        # Discovery — without this the agent can't find the user's sheets.
+        "GOOGLESHEETS_SEARCH_SPREADSHEETS",
+        "GOOGLESHEETS_LIST_TABLES",
+        "GOOGLESHEETS_FIND_WORKSHEET_BY_TITLE",
+        # Read.
         "GOOGLESHEETS_GET_BATCH_VALUES",
         "GOOGLESHEETS_GET_SHEET_NAMES",
         "GOOGLESHEETS_BATCH_GET",
@@ -667,6 +672,10 @@ class AgentRunResult:
     # have to trim so the conversation stayed under Anthropic's 200k cap?
     context_triaged_blocks: int = 0
     context_overflowed: bool = False
+    # Prompt rewriter — if Groq normalized the ask before sending to Claude,
+    # we surface both so the UI can show the cleanup.
+    original_ask: str | None = None
+    ask_was_rewritten: bool = False
 
 
 # ---------------------------------------------------------------------------
@@ -1056,6 +1065,83 @@ def _execute_tool(
 # Main entry
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# Prompt rewriter — small, cheap pre-stage that runs the user's raw ask
+# through Groq's Llama-3.1-8B and normalizes failure-prone phrasings:
+#
+#   • "main branch" → drops the branch reference (most repos default to
+#     master / develop / next, agent will auto-pick correct one)
+#   • "my emails" → "my last 3 Gmail emails" (agent loop without a count
+#     tends to over-fetch)
+#   • "supabase rows" → adds "discover project, then list tables, then
+#     query a populated one" so the agent stops asking for project IDs
+#
+# The rewriter NEVER changes the user's intent — it only tightens phrasing
+# the downstream Claude agent struggled with in past runs. Failures are
+# silent (returns the original ask).
+# ---------------------------------------------------------------------------
+
+_REWRITER_SYSTEM = (
+    "You normalize an end-user's natural-language ask into a clean, "
+    "unambiguous task for a tool-using AI agent. Output ONLY the rewritten "
+    "ask, nothing else — no preamble, no quotes, no explanation. RULES:\n"
+    "1. If the ask names a specific GitHub branch ('main', 'master'), "
+    "remove that constraint — let the agent use the repo's default branch.\n"
+    "2. If the ask says 'last N' for emails/messages/commits without a "
+    "specific number, default to 3.\n"
+    "3. If the ask references the user's Supabase/database without a "
+    "project or table, add: '(discover the active project and any "
+    "non-empty table first)'.\n"
+    "4. If the ask is already clean, return it unchanged.\n"
+    "5. Keep it under 30 words."
+)
+
+
+def _rewrite_ask(ask: str) -> tuple[str, bool]:
+    """Returns (rewritten_ask, was_rewritten). Falls back to original on
+    any failure — never blocks the request."""
+    if not ask or len(ask) > 500:
+        return ask, False
+    if not os.getenv("GROQ_API_KEY"):
+        return ask, False
+    if os.getenv("APERTURE_DISABLE_REWRITER", "0") in ("1", "true"):
+        return ask, False
+    try:
+        import httpx
+        token = os.getenv("GROQ_API_KEY")
+        payload = {
+            "model": "llama-3.1-8b-instant",
+            "messages": [
+                {"role": "system", "content": _REWRITER_SYSTEM},
+                {"role": "user", "content": ask},
+            ],
+            "max_tokens": 80,
+            "temperature": 0.1,
+        }
+        with httpx.Client(timeout=httpx.Timeout(1.5, connect=1.0)) as c:
+            resp = c.post(
+                "https://api.groq.com/openai/v1/chat/completions",
+                json=payload,
+                headers={
+                    "Authorization": f"Bearer {token}",
+                    "Content-Type": "application/json",
+                },
+            )
+        if resp.status_code != 200:
+            return ask, False
+        text = resp.json()["choices"][0]["message"]["content"].strip()
+        # Strip surrounding quotes the model sometimes adds
+        text = text.strip().strip('"').strip("'").strip()
+        if not text or len(text) > 400:
+            return ask, False
+        # If the rewriter only modified casing/whitespace, treat as no-op.
+        if text.lower().strip() == ask.lower().strip():
+            return ask, False
+        return text, True
+    except Exception:
+        return ask, False
+
+
 _SYSTEM_PROMPT = (
     "You are an assistant with access to the user's connected tools. "
     "Use the smallest set of tool calls possible. When you have enough "
@@ -1073,6 +1159,9 @@ _SYSTEM_PROMPT = (
     "  • 'my notion docs' → NOTION_FETCH_DATA / NOTION_QUERY_DATABASE.\n"
     "  • 'my linear issues' → LINEAR_GET_LINEAR_USER_ISSUES.\n"
     "  • 'my repos' → GITHUB_FIND_REPOSITORIES with no owner filter.\n"
+    "  • 'my google sheet / first N rows of my sheet' → "
+    "GOOGLESHEETS_SEARCH_SPREADSHEETS first to discover the sheet ID, "
+    "then GOOGLESHEETS_BATCH_GET with that ID and a range like 'A1:Z50'.\n"
     "Asking the user for project IDs they obviously don't have memorized "
     "is a failure mode — discover them.\n\n"
     "Repository disambiguation: when the user names a project without "
@@ -1083,7 +1172,20 @@ _SYSTEM_PROMPT = (
     "  langchain → langchain-ai/langchain\n"
     "Use GITHUB_GET_A_REPOSITORY directly with the canonical "
     "owner/repo pair. ONLY use GITHUB_FIND_REPOSITORIES if you have "
-    "no plausible canonical owner."
+    "no plausible canonical owner.\n\n"
+    "GitHub branch handling: a user saying 'main branch' might be wrong — "
+    "many repos use 'master', 'develop', or a custom default like 'next'. "
+    "RULES:\n"
+    "  1. For GITHUB_LIST_COMMITS, OMIT the `sha` parameter on the first "
+    "attempt — GitHub uses the default branch automatically.\n"
+    "  2. If the user explicitly asked for a specific branch and you got "
+    "a 404, call GITHUB_GET_A_REPOSITORY first, read `default_branch`, "
+    "then retry with `sha=<default_branch>`.\n"
+    "  3. NEVER retry the same call with the same args after a 404 — that "
+    "wastes tool budget. Change the strategy.\n\n"
+    "Error recovery: if a tool returns an error or 404, do NOT call the "
+    "same tool with the same arguments again. Either drop a parameter, "
+    "discover a missing piece, or stop and answer with what you have."
 )
 
 
@@ -1107,6 +1209,20 @@ def run_agent(
         return AgentRunResult(ask=ask, answer="", model=model or _DEFAULT_MODEL,
                               effort_mode=effort_mode,
                               error="empty ask")
+
+    # PROMPT REWRITER — sub-2s Groq pass that normalizes failure-prone
+    # phrasings before the expensive Claude loop sees the ask.
+    original_ask = ask
+    rewritten, did_rewrite = _rewrite_ask(ask)
+    if did_rewrite:
+        ask = rewritten
+        if on_event:
+            try:
+                on_event("rewritten", {
+                    "original": original_ask, "rewritten": rewritten,
+                })
+            except Exception:
+                pass
 
     try:
         import anthropic  # type: ignore
@@ -1191,6 +1307,9 @@ def run_agent(
         user_content = f"{ask}\n\n{_tool_prompt_for_ask(ask, toolkits)}"
     messages: list[dict] = [{"role": "user", "content": user_content}]
     result = AgentRunResult(ask=ask, answer="", model=selected_model, effort_mode=effort_mode)
+    if did_rewrite:
+        result.original_ask = original_ask
+        result.ask_was_rewritten = True
     cost = CostBreakdown(model=selected_model)
     started = time.perf_counter()
     no_tool_retry_used = False
@@ -1399,6 +1518,8 @@ def _result_for_event(r: "AgentRunResult") -> dict:
         "composio_calls_avoided": r.composio_calls_avoided,
         "composio_cost_avoided_usd": r.composio_cost_avoided_usd,
         "context_triaged_blocks": getattr(r, "context_triaged_blocks", 0),
+        "original_ask": getattr(r, "original_ask", None),
+        "ask_was_rewritten": getattr(r, "ask_was_rewritten", False),
         "cost": (
             {
                 "model": r.cost.model,
