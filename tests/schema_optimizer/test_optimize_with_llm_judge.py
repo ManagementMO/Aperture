@@ -167,3 +167,28 @@ def test_optimize_schemas_with_llm_judge_respects_budget_tracker() -> None:
         max_candidates=5,
     )
     assert results == [], f"expected empty results when budget is 0, got {results}"
+
+
+def test_optimize_schemas_with_llm_judge_filters_to_read_only() -> None:
+    """The optimizer must drop write/auth/unknown candidates BEFORE running
+    the judge — wasting Anthropic budget on tools that ``_overlay_safe`` would
+    block anyway is the symptom that motivated the live-judge audit
+    (522 calls, 2 accepted, both write-class, both blocked by the safety
+    filter). After this filter, every candidate the judge sees is a tool
+    that COULD land in the overlay.
+    """
+
+    from aperture.cache.policy import load_cache_policy
+
+    results = optimize_schemas_with_llm_judge(
+        live=False,
+        prompts_by_toolkit={},  # empty — every candidate gets `no_prompts_for_toolkit`
+        max_candidates=20,
+    )
+    assert results, "expected at least one result"
+    for r in results:
+        op = load_cache_policy(r.tool_slug).operation_type
+        assert op == "read", (
+            f"non-read tool {r.tool_slug!r} (operation_type={op!r}) leaked "
+            f"into the candidate set — read-only filter regressed"
+        )

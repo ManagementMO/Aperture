@@ -36,6 +36,22 @@ handoff §6.4 plan-spec target). The prompt fixtures in
 `aperture/schema_optimizer/prompts/*.jsonl` ship at least 50 per toolkit:
 github=50, gmail=50, linear=60, notion=50, slack=50.
 
+`write_overlay()` exposes a `quality_level` flag with two values:
+
+- `"llm_judged"` (default): requires `cases_run >= 50` from a real LLM
+  judge run. Production-grade. Run via `optimize_schemas_with_llm_judge(live=True)`.
+- `"structural_only"`: relaxes `cases_run >= 1` so structurally-validated
+  rewrites can ship without LLM cost. The overlay file is stamped with
+  `"quality_level": "structural_only"` and a top-level `"warning"` so
+  operators (and the dashboard, which surfaces the warning) know these
+  entries weren't behaviorally validated. The read-only operation_type
+  filter is non-negotiable in either mode — write/auth/unknown tools
+  never ship.
+
+The proxy's `SchemaOverlay` loader applies the same read-only filter at
+startup, so even a hand-edited or stale overlay can't apply rewrites to
+mutating tools.
+
 The proxy SchemaOverlay loader (`aperture/proxy/overlay.py`) applies the
 same `read`-only filter at startup. So even if a hand-edit puts a write
 tool in `_overlay.json`, the proxy refuses to substitute it.

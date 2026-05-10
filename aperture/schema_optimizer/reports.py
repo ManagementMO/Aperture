@@ -97,7 +97,13 @@ def optimize_schemas(live: bool = False) -> list[SchemaOptimizationResult]:
         fields.extend(extract_description_fields(schema))
 
     results: list[SchemaOptimizationResult] = []
-    for counted in rank_schema_candidates(tokenize_schema_fields(fields)):
+    ranked = rank_schema_candidates(tokenize_schema_fields(fields))
+    # Drop write/auth/unknown candidates BEFORE running the rewriter — the
+    # overlay safety filter would block them anyway, and live judge runs
+    # showed the top-N was dominated by GitHub *_ADD_*/*_OR_UPDATE_* slugs
+    # that wasted Anthropic budget producing always-rejected results.
+    ranked = [r for r in ranked if _is_read_only(r.field.tool_slug)]
+    for counted in ranked:
         field = counted.field
         original_schema = schema_by_tool[field.tool_slug]
         candidates = generate_schema_rewrite_candidates(field)
@@ -146,6 +152,22 @@ def _empty_result(field, original_tokens: int, reason: str) -> SchemaOptimizatio
         accepted=False,
         rejection_reason=reason,
     )
+
+
+def _is_read_only(tool_slug: str) -> bool:
+    """``True`` when ``policy.yaml`` classifies this tool as ``operation_type=read``.
+
+    The optimizer should never spend judge budget on tools whose rewrites
+    will be filtered out of the overlay anyway. ``write``/``auth``/``unknown``
+    are all gated out of ``_overlay.json`` by ``_overlay_safe`` and the
+    proxy's load-time positive list, so feeding them into the LLM judge is
+    pure waste — and on a 522-call live run that waste compounds fast.
+    """
+
+    try:
+        return load_cache_policy(tool_slug).operation_type == "read"
+    except Exception:  # noqa: BLE001
+        return False
 
 
 def _pick_best_structural_candidate(original_schema, field, candidates):
@@ -214,6 +236,10 @@ def optimize_schemas_with_llm_judge(
 
     results: list[SchemaOptimizationResult] = []
     ranked = rank_schema_candidates(tokenize_schema_fields(fields))
+    # Read-only filter — see ``_is_read_only`` for why. Applied BEFORE the
+    # ``max_candidates`` cap so callers get the top-N read tools, not the
+    # top-N tools where most are write-class and discarded later.
+    ranked = [r for r in ranked if _is_read_only(r.field.tool_slug)]
     if max_candidates is not None:
         ranked = ranked[:max_candidates]
 
@@ -356,12 +382,14 @@ def write_schema_optimization_report(
     return results
 
 
-def _overlay_safe(result: SchemaOptimizationResult) -> bool:
+def _overlay_safe(result: SchemaOptimizationResult, min_cases: int = MIN_OVERLAY_VALIDATION_CASES) -> bool:
     """Defense-in-depth: only ship overlays for tools we know are safe to rewrite.
 
     Three gates:
       1. ``result.accepted`` (judge or structural agreed)
-      2. judge ran ``MIN_OVERLAY_VALIDATION_CASES`` or more cases
+      2. ``result.validation_cases_run >= min_cases`` (default
+         ``MIN_OVERLAY_VALIDATION_CASES = 50``). ``write_overlay`` accepts a
+         ``min_cases_override`` for the explicit structural-only path.
       3. ``policy.operation_type == "read"`` — positive list, not just
          ``not in {write, auth}``. ``unknown`` operation types are blocked
          until they're explicitly classified in policy.yaml. This prevents
@@ -371,13 +399,19 @@ def _overlay_safe(result: SchemaOptimizationResult) -> bool:
 
     if not result.accepted:
         return False
-    if result.validation_cases_run < MIN_OVERLAY_VALIDATION_CASES:
+    if result.validation_cases_run < min_cases:
         return False
     policy = load_cache_policy(result.tool_slug)
     return policy.operation_type == "read"
 
 
-def write_overlay(path: Path, results: list[SchemaOptimizationResult]) -> dict:
+def write_overlay(
+    path: Path,
+    results: list[SchemaOptimizationResult],
+    *,
+    quality_level: str = "llm_judged",
+    min_cases_override: int | None = None,
+) -> dict:
     """Persist accepted rewrites to `_overlay.json` for the proxy to consume.
 
     Per handoff §6.7: the optimizer can't write into Composio's registry
@@ -400,7 +434,17 @@ def write_overlay(path: Path, results: list[SchemaOptimizationResult]) -> dict:
           }
         }
     """
-    accepted = [r for r in results if _overlay_safe(r)]
+    if quality_level not in {"llm_judged", "structural_only"}:
+        raise ValueError(
+            f"quality_level must be 'llm_judged' or 'structural_only', got {quality_level!r}"
+        )
+    effective_min_cases = (
+        min_cases_override
+        if min_cases_override is not None
+        else (1 if quality_level == "structural_only" else MIN_OVERLAY_VALIDATION_CASES)
+    )
+
+    accepted = [r for r in results if _overlay_safe(r, min_cases=effective_min_cases)]
     by_tool: dict[str, dict] = {}
     for r in accepted:
         # Multiple fields per tool — top-level field name is the path's last segment.
@@ -417,6 +461,7 @@ def write_overlay(path: Path, results: list[SchemaOptimizationResult]) -> dict:
             "validation": {
                 "cases_run": r.validation_cases_run,
                 "passed": r.validation_passed,
+                "quality_level": quality_level,
             },
             "aperture_optimized": True,
             "aperture_optimizer_version": __version__,
@@ -426,14 +471,25 @@ def write_overlay(path: Path, results: list[SchemaOptimizationResult]) -> dict:
         "version": 1,
         "aperture_optimizer_version": __version__,
         "generated_at": datetime.now(timezone.utc).isoformat(),
+        "quality_level": quality_level,
         "tools": by_tool,
         "stats": {
             "total_results": len(results),
             "accepted": len(accepted),
             "rejected": len(results) - len(accepted),
             "total_tokens_saved": sum(r.reduction_tokens for r in accepted),
+            "min_cases_required": effective_min_cases,
         },
     }
+    if quality_level == "structural_only":
+        document["warning"] = (
+            "STRUCTURAL_ONLY: rewrites passed structural validation (parameters, "
+            "required fields, types, safety keywords preserved) but were NOT "
+            "behaviorally validated by an LLM judge. Treat as preview quality. "
+            "For the production-grade overlay, run "
+            "optimize_schemas_with_llm_judge(live=True) and write with "
+            "quality_level='llm_judged'."
+        )
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(document, indent=2, sort_keys=True))
     return document
