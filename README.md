@@ -1,112 +1,110 @@
-# Aperture
+# Aperture v1
 
-Aperture is a token-efficiency layer for Composio-powered agents. It measures
-tool-output token cost, compresses verbose tool results before they enter model
-context, caches safe repeated reads, optimizes schema descriptions, and proves
-the result with deterministic benchmarks.
+Token-efficiency layer for Composio-powered agents. Sits between the LLM
+and Composio's Tool Router as an MCP proxy, intercepts the six meta tools,
+and ships three compounding optimizations:
 
-This repository intentionally excludes Signal Studio. It implements the core
-Aperture package described in `APERTURE_PROJECT_PLAN.md` and
-`APERTURE_CODING_AGENT_EXECUTION_PLAN.md`.
+1. **Safe execution cache** (Component A) — deny-by-default per-tool YAML
+   policy, exact-match keys with policy-version coupling, partial-batch
+   caching for `MULTI_EXECUTE_TOOL`, public/account/user/project/session
+   scope isolation. 126 tools classified.
+2. **Token attribution observability** (Component B) — every meta-tool
+   response tokenized in the proxy's hot path, events flow to SQLite,
+   queryable through `/api/v3.1/project/usage/...` FastAPI endpoints.
+3. **Schema description optimizer** (Component C) — offline pipeline
+   that rewrites verbose tool descriptions, validates with a Haiku
+   judge + Sonnet spot-check, produces a JSON overlay the proxy applies
+   to outbound schema responses.
 
-## Setup
+Branch: `v1-realignment`. Parallel to `demo` (which stays as the salvaged
+shippable demo); the two never share files.
 
-```sh
+## Run
+
+### Backend (proxy + v3.1 API)
+
+```bash
 uv sync --extra dev
-cp .env.example .env
+
+# 1. Token-attribution backend (reads SQLite event log, serves /api/v3.1/...)
+APERTURE_SQLITE_EVENT_LOG=./events.db \
+uvicorn aperture.observability.api_endpoints:create_api_app \
+  --factory --host 0.0.0.0 --port 8002
+
+# 2. MCP proxy (forwards to Composio's MCP URL)
+APERTURE_COMPOSIO_MCP_URL_TEMPLATE="https://backend.composio.dev/v3/mcp/SERVER_ID?user_id=USER_ID" \
+APERTURE_SQLITE_EVENT_LOG=./events.db \
+python -m aperture.proxy
 ```
 
-Live Composio execution is optional. Set `COMPOSIO_API_KEY` and
-`COMPOSIO_USER_ID` to use the Composio adapter or live smoke tests.
+The LLM client points its MCP URL at `http://127.0.0.1:8001/mcp` instead
+of Composio's URL.
+
+### Dashboard
+
+```bash
+cd aperture-v1-dashboard
+npm install
+npm run dev   # http://localhost:5180
+```
+
+Three pages: Overview (live token + cache stats), Reports (filterable
+aggregations), Schema Overlay (accepted rewrites with side-by-side diff).
 
 ## Test
 
-```sh
-uv run pytest
+```bash
+uv run pytest                  # 191 passed, 1 skipped
+uv run ruff check aperture/    # 0 findings
 ```
 
-## Benchmark
+CI runs no live LLM and no live Composio. Live integration tests are
+gated on env-var markers (`live_composio`, `live_anthropic`, `live_redis`).
 
-```sh
-uv run aperture-benchmark --tasks aperture/benchmarks/tasks --out reports
+## Generate v1 reports
+
+```bash
+# 6 v1-required reports
+uv run python -c "
+import asyncio
+from pathlib import Path
+from aperture.benchmarks.runner import run_benchmark
+from aperture.benchmarks.task_set import load_tasks
+from aperture.benchmarks.report import write_benchmark_outputs
+async def main():
+    tasks = load_tasks(Path('aperture/benchmarks/tasks'))
+    runs = [await run_benchmark(tasks, m) for m in
+            ('raw', 'aperture_compressed', 'aperture_cached', 'aperture_full')]
+    write_benchmark_outputs(runs, Path('reports'))
+asyncio.run(main())
+"
+
+# Schema overlay JSON (consumed by proxy + dashboard)
+uv run python -c "
+from pathlib import Path
+from aperture.schema_optimizer.reports import optimize_schemas, write_overlay
+write_overlay(Path('aperture/schema_optimizer/_overlay.json'), optimize_schemas())
+"
 ```
 
-The benchmark uses deterministic fixture tasks by default and writes:
+## Documentation
 
-- `reports/benchmark_metrics.json`
-- `reports/benchmark_report.md`
+- `docs/architecture.md` — system overview, data flow, file layout
+- `docs/caching.md` — Component A details
+- `docs/token_attribution.md` — Component B details
+- `docs/schema_optimization.md` — Component C details
+- `docs/security_privacy.md` — opt-in tokenizer rationale, scope safety
+- `docs/benchmark_methodology.md` — how the 4 v1 modes are measured
+- `docs/HANDOFF_V1_REALIGNMENT.md` — the original gap analysis (on `demo`)
+- `/Users/mo/.claude/plans/lets-make-a-complete-temporal-sedgewick.md` — execution plan
 
-## Live Composio Validation
+## Components D and E
 
-Aperture supports a live Composio validation command. It always fetches real
-tool schemas and can optionally execute one approved read tool through the full
-Aperture cache/compression pipeline.
+Out of scope for v1 per user direction. The plan reserves space but
+ships nothing for:
+- Session State Compressor (Component D)
+- Plan Quality Scorer (Component E)
 
-Required for schema fetch:
+## License
 
-```sh
-export COMPOSIO_API_KEY="..."
-export COMPOSIO_USER_ID="your-user-id"
-export COMPOSIO_TOOLKIT="GITHUB"
-uv run aperture-live-check --out reports/live_composio_check.json
-```
-
-Required for live execution:
-
-```sh
-export COMPOSIO_TOOL_SLUG="GITHUB_LIST_REPOSITORY_ISSUES"
-export COMPOSIO_TOOL_ARGS='{"owner":"composiohq","repo":"composio","state":"open","per_page":1}'
-# Optional. Omit to let Composio auto-resolve the user's active GitHub account.
-export COMPOSIO_CONNECTED_ACCOUNT_ID="ca_..."
-uv run aperture-live-check --execute --out reports/live_composio_check.json
-```
-
-The live execution path refuses tools that are not marked cacheable read
-operations in `aperture/cache/policy.yaml`. That is intentional: writes/auth
-flows are not valid live smoke tests for Aperture caching.
-
-For GitHub, Aperture discovers the current Composio toolkit version
-automatically. You can override it with `COMPOSIO_TOOL_VERSION` if needed.
-
-To validate the SDK Tool Router path used by Claude Agents SDK-style
-integrations:
-
-```sh
-export COMPOSIO_USE_TOOL_ROUTER=true
-export COMPOSIO_SEARCH_QUERY="list repository issues"
-uv run aperture-live-check --tool-router --out reports/live_composio_check.json
-```
-
-If live execution reports `ActionExecute_ConnectedAccountNotFound`, initiate a
-Composio SDK connection request:
-
-```sh
-export COMPOSIO_API_KEY="..."
-export COMPOSIO_USER_ID="your-user-id"
-uv run aperture-connect github
-```
-
-Open the returned redirect URL, finish OAuth, then rerun
-`uv run aperture-live-check --execute ...`.
-
-## Core Pipeline
-
-```text
-tool request
-  -> safe exact-match cache lookup
-  -> Composio execution on miss/not-cacheable
-  -> raw token attribution
-  -> schema-aware compression
-  -> raw reference preservation
-  -> compressed token attribution
-  -> model-facing compressed payload
-```
-
-## Safety Rules
-
-- Writes, auth flows, and failed responses are not cached by default.
-- Private data must never use public cache scope.
-- Compression must be visible in the returned payload.
-- Preserved fields in profiles are never removed.
-- Raw sensitive payloads are not stored in observability events by default.
-- Schema optimization only rewrites descriptions and must preserve behavior.
+See `LICENSE`.
