@@ -268,6 +268,11 @@ def _normalize_gmail(payload: object) -> object:
         "messageTimestamp",
         "messageId",
         "attachmentList",
+        "subject",
+        "to",
+        "cc",
+        "replyTo",
+        "reply_to",
     }
     if "payload" in payload and isinstance(payload.get("payload"), dict):
         return _normalize_gmail_message(payload)
@@ -298,6 +303,16 @@ def _normalize_gmail_message(msg: dict) -> dict:
     sender = _first_present(msg, "sender", "from")
     if sender is not None:
         out["from"] = sender
+
+    for target, keys in {
+        "to": ("to", "recipient", "recipients"),
+        "cc": ("cc",),
+        "subject": ("subject",),
+        "reply_to": ("reply_to", "replyTo"),
+    }.items():
+        value = _first_present(msg, *keys)
+        if value is not None:
+            out[target] = value
 
     timestamp = _first_present(msg, "messageTimestamp", "date")
     if timestamp is not None:

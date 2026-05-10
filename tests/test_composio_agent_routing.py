@@ -68,6 +68,26 @@ def test_github_commit_main_branch_ask_adds_master_sha():
     }
 
 
+def test_gmail_summary_disables_raw_payload_arg():
+    args = composio_agent._normalize_tool_args(
+        "GMAIL_FETCH_EMAILS",
+        {"max_results": 3, "include_payload": True},
+        "Pull my last 3 Gmail emails and summarize them",
+    )
+
+    assert args == {"max_results": 3, "include_payload": False}
+
+
+def test_gmail_raw_payload_request_keeps_payload_arg():
+    args = composio_agent._normalize_tool_args(
+        "GMAIL_FETCH_EMAILS",
+        {"max_results": 1, "include_payload": True},
+        "Show me the raw MIME payload for my latest Gmail email",
+    )
+
+    assert args == {"max_results": 1, "include_payload": True}
+
+
 def test_github_commit_retry_ignores_non_404():
     retry = composio_agent._github_list_commits_retry_args(
         "GITHUB_LIST_COMMITS",

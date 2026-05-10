@@ -59,6 +59,8 @@ COMPOSIO_FLAT_GMAIL = {
         {
             "messageId": "flat_msg_1",
             "sender": "Charlie <charlie@example.com>",
+            "to": "launch@composio.dev",
+            "subject": "Launch review moved",
             "messageTimestamp": "2026-05-09T10:00:00Z",
             "preview": "The launch review moved to Monday.",
             "messageText": (
@@ -165,6 +167,8 @@ class TestGmailNormalization:
 
         assert msg["id"] == "flat_msg_1"
         assert msg["from"] == "Charlie <charlie@example.com>"
+        assert msg["to"] == "launch@composio.dev"
+        assert msg["subject"] == "Launch review moved"
         assert msg["date"] == "2026-05-09T10:00:00Z"
         assert msg["snippet"] == "The launch review moved to Monday."
         assert "billing and OAuth" in msg["body_text"]
@@ -190,7 +194,11 @@ class TestGmailNormalization:
 
         assert "body_text" in body
         assert "billing and OAuth" in body
+        assert "Launch review moved" in body
+        assert "launch@composio.dev" in body
         assert "messages[].messageText" not in result.omitted_fields
+        assert "messages[].subject" not in result.omitted_fields
+        assert "messages[].to" not in result.omitted_fields
         assert "messages[].display_url" in result.omitted_fields
         assert result.compressed_tokens < result.raw_tokens
 

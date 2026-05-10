@@ -128,14 +128,28 @@ _TOOL_PARALLELISM = int(os.getenv("APERTURE_AGENT_PARALLEL", "5"))
 # ---------------------------------------------------------------------------
 
 _PRICING: dict[str, dict[str, float]] = {
-    "claude-haiku-4-5":   {"input": 1.00,  "output": 5.00,  "cache_read": 0.10, "cache_write": 1.25},
-    "claude-haiku-3-5":   {"input": 0.80,  "output": 4.00,  "cache_read": 0.08, "cache_write": 1.00},
-    "claude-sonnet-4-6":  {"input": 3.00,  "output": 15.00, "cache_read": 0.30, "cache_write": 3.75},
-    "claude-sonnet-4-5":  {"input": 3.00,  "output": 15.00, "cache_read": 0.30, "cache_write": 3.75},
-    "claude-opus-4-7":    {"input": 15.00, "output": 75.00, "cache_read": 1.50, "cache_write": 18.75},
-    "claude-opus-4-6":    {"input": 15.00, "output": 75.00, "cache_read": 1.50, "cache_write": 18.75},
+    "claude-haiku-4-5": {
+        "input": 1.00, "output": 5.00, "cache_read": 0.10, "cache_write": 1.25,
+    },
+    "claude-haiku-3-5": {
+        "input": 0.80, "output": 4.00, "cache_read": 0.08, "cache_write": 1.00,
+    },
+    "claude-sonnet-4-6": {
+        "input": 3.00, "output": 15.00, "cache_read": 0.30, "cache_write": 3.75,
+    },
+    "claude-sonnet-4-5": {
+        "input": 3.00, "output": 15.00, "cache_read": 0.30, "cache_write": 3.75,
+    },
+    "claude-opus-4-7": {
+        "input": 15.00, "output": 75.00, "cache_read": 1.50, "cache_write": 18.75,
+    },
+    "claude-opus-4-6": {
+        "input": 15.00, "output": 75.00, "cache_read": 1.50, "cache_write": 18.75,
+    },
     # Generic fallback when the model name doesn't match.
-    "default":            {"input": 3.00,  "output": 15.00, "cache_read": 0.30, "cache_write": 3.75},
+    "default": {
+        "input": 3.00, "output": 15.00, "cache_read": 0.30, "cache_write": 3.75,
+    },
 }
 
 
@@ -402,7 +416,13 @@ def _toolkits_for_ask(ask: str, connected_toolkits: list[str]) -> list[str]:
     signals: tuple[tuple[str, tuple[str, ...]], ...] = (
         ("gmail", ("gmail", "email", "emails", "mail", "inbox", "thread", "threads")),
         ("slack", ("slack", "channel", "channels", "dm ", "dms", "message", "messages")),
-        ("github", ("github", "repo", "repos", "repository", "repositories", "commit", "pr ", "pull request", "issue")),
+        (
+            "github",
+            (
+                "github", "repo", "repos", "repository", "repositories", "commit",
+                "pr ", "pull request", "issue",
+            ),
+        ),
         ("googlesheets", ("google sheet", "googlesheet", "spreadsheet", "sheet ", "sheets")),
         ("notion", ("notion", "page", "pages", "database", "workspace doc", "docs")),
         ("linear", ("linear", "ticket", "tickets", "linear issue")),
@@ -612,6 +632,49 @@ def _normalize_github_list_commits_args(
     return args
 
 
+def _normalize_tool_args(tool_slug: str, args: dict, ask: str = "") -> dict:
+    normalized = _normalize_gmail_payload_args(tool_slug, args, ask)
+    normalized = _normalize_github_list_commits_args(tool_slug, normalized, ask)
+    return normalized
+
+
+def _normalize_gmail_payload_args(tool_slug: str, args: dict, ask: str = "") -> dict:
+    """Avoid asking Composio/Gmail for raw MIME payloads unless needed.
+
+    Gmail summary/read asks need readable message text, not Gmail's full MIME
+    tree. Some models choose `include_payload: true`; that makes Composio
+    return a huge raw `payload` alongside the already flattened message text.
+    """
+    if tool_slug not in {
+        "GMAIL_FETCH_EMAILS",
+        "GMAIL_FETCH_MESSAGE_BY_THREAD_ID",
+        "GMAIL_FETCH_MESSAGE_BY_MESSAGE_ID",
+        "GMAIL_SEARCH_EMAILS",
+    }:
+        return args
+
+    lowered = (ask or "").lower()
+    wants_raw_payload = any(
+        term in lowered
+        for term in (
+            "raw",
+            "mime",
+            "payload",
+            "source",
+            "base64",
+            "attachment",
+            "attachments",
+            "headers",
+        )
+    )
+    if wants_raw_payload or args.get("include_payload") is False:
+        return args
+
+    normalized = dict(args)
+    normalized["include_payload"] = False
+    return normalized
+
+
 def _looks_like_main_ref(value: str) -> bool:
     lowered = value.strip().lower()
     return lowered in {"main", "main branch", "refs/heads/main", "origin/main"}
@@ -649,7 +712,7 @@ def _execute_tool(
     thread pool — never raises."""
     client = _composio_client()
     slug = block.name
-    args = dict(block.input or {})
+    args = _normalize_tool_args(slug, dict(block.input or {}), ask)
     started = time.perf_counter()
     connected_account_id = _connected_account_id_for_tool(user_id, slug)
 
@@ -683,7 +746,7 @@ def _execute_tool(
         }
 
     def execute_live():
-        live_args = _normalize_github_list_commits_args(slug, args, ask)
+        live_args = args
         result = client.tools.execute(
             slug,
             live_args,
