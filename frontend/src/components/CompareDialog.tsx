@@ -93,7 +93,7 @@ export function CompareDialog({ open, step, onClose }: CompareDialogProps) {
         <div className="grid grid-cols-4 gap-3 px-5 py-3 border-b border-border/60 text-[11px]">
           <Metric label="raw tokens" value={fmtN(step.raw_tokens)} sub={`${fmtN(step.raw_bytes)} bytes`} />
           <Metric
-            label="aperture sent"
+            label="quava sent"
             primary
             value={fmtN(step.sent_tokens)}
             sub={`${fmtN(step.sent_bytes)} bytes`}
@@ -162,7 +162,7 @@ export function CompareDialog({ open, step, onClose }: CompareDialogProps) {
             tone="muted"
           />
           <PaneTerminal
-            title="aperture · sent to claude"
+            title="quava · sent to claude"
             sub={`${fmtN(step.sent_tokens)} tok`}
             content={step.compressed_preview || ""}
             tone="primary"

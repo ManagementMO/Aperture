@@ -82,7 +82,7 @@ export function RunTerminal({
         <span className="w-2.5 h-2.5 rounded-full bg-[#27C93F]" />
         <span className="ml-3 text-[11px] text-muted-foreground font-mono flex items-center gap-1.5">
           <TerminalIcon className="w-3 h-3" />
-          aperture · live tool calls
+          quava · live tool calls
         </span>
         {running && (
           <span className="ml-auto inline-flex items-center gap-1 text-[10px] text-primary font-mono">
@@ -95,7 +95,7 @@ export function RunTerminal({
         {/* Empty state */}
         {steps.length === 0 && !running && (
           <pre className="text-muted-foreground/70">
-            <span className="text-primary select-none">$</span> aperture run --watch{"\n"}
+            <span className="text-primary select-none">$</span> quava run --watch{"\n"}
             <span className="text-muted-foreground/50">
               ↳ idle. send an ask to see tool calls land here.
             </span>
@@ -204,7 +204,7 @@ function StepBlock({
       <Attr branch={branchInner} label="raw" value={`${fmtNum(step.raw_tokens)} tok`} />
       <Attr
         branch={branchInner}
-        label="aperture"
+        label="quava"
         value={`${fmtNum(step.sent_tokens)} tok`}
         trailing={
           step.saved_percent !== undefined ? (
@@ -267,7 +267,7 @@ function StepBlock({
           ⊞ compare
         </button>
         <span className="text-muted-foreground/50 text-[10px]">
-          composio raw ↔ aperture sent
+          composio raw ↔ quava sent
         </span>
       </div>
     </div>

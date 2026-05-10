@@ -49,7 +49,13 @@ _DEFAULT_TOOLKITS = (
     "notion",
     "linear",
     "googlesheets",
+    "googlecalendar",
+    "googledrive",
     "supabase",
+    "linkedin",
+    "reddit",
+    "composio_search",   # Composio's web-search bundle (no auth)
+    "codeinterpreter",   # Python sandbox (no auth)
 )
 
 # Curated read-only tool slugs per toolkit.
@@ -92,6 +98,45 @@ _CURATED_TOOL_SLUGS: dict[str, list[str]] = {
         "GOOGLESHEETS_GET_SHEET_NAMES",
         "GOOGLESHEETS_BATCH_GET",
     ],
+    "googlecalendar": [
+        # Read-only browse + lookup. The CURRENT_DATE_TIME tool is critical
+        # for "today / this week / next month" asks — agent shouldn't guess.
+        "GOOGLECALENDAR_GET_CURRENT_DATE_TIME",
+        "GOOGLECALENDAR_LIST_CALENDARS",
+        "GOOGLECALENDAR_EVENTS_LIST",
+        "GOOGLECALENDAR_EVENTS_LIST_ALL_CALENDARS",
+        "GOOGLECALENDAR_EVENTS_GET",
+        "GOOGLECALENDAR_FIND_EVENT",
+        "GOOGLECALENDAR_FIND_FREE_SLOTS",
+    ],
+    "googledrive": [
+        # Discovery + read. FIND_FILE is the comprehensive search; the
+        # downloader is what gets actual contents for "summarize this doc".
+        "GOOGLEDRIVE_FIND_FILE",
+        "GOOGLEDRIVE_FIND_FOLDER",
+        "GOOGLEDRIVE_GET_FILE_METADATA",
+        "GOOGLEDRIVE_DOWNLOAD_FILE",
+        "GOOGLEDRIVE_LIST_CHILDREN_V2",
+        "GOOGLEDRIVE_GET_ABOUT",
+    ],
+    "linkedin": [
+        # Read-only profile + network. Useful for "what's on my LinkedIn"
+        # and "look up Person X" type asks.
+        "LINKEDIN_GET_MY_INFO",
+        "LINKEDIN_GET_PERSON",
+        "LINKEDIN_GET_COMPANY_INFO",
+        "LINKEDIN_GET_NETWORK_SIZE",
+        "LINKEDIN_GET_ORG_PAGE_STATS",
+    ],
+    "reddit": [
+        # Public Reddit browse + search.
+        "REDDIT_SEARCH_ACROSS_SUBREDDITS",
+        "REDDIT_GET_SUBREDDITS_SEARCH",
+        "REDDIT_GET_R_TOP",
+        "REDDIT_GET",                        # listing of posts
+        "REDDIT_GET_REDDIT_USER_ABOUT",
+        "REDDIT_RETRIEVE_SPECIFIC_COMMENT",
+    ],
     "slack": [
         "SLACK_LIST_ALL_USERS",
         "SLACK_LIST_ALL_SLACK_TEAM_CHANNELS_WITH_VARIOUS_FILTERS",
@@ -117,6 +162,33 @@ _CURATED_TOOL_SLUGS: dict[str, list[str]] = {
         "YOUTUBE_SEARCH",
         "YOUTUBE_VIDEO_DETAILS",
         "YOUTUBE_LIST_USER_PLAYLISTS",
+    ],
+    "composio_search": [
+        # General-purpose web search. The agent picks one of these when
+        # the user asks something Composio's connected SaaS tools can't
+        # answer (e.g. "top 10 richest people", "current weather in Tokyo",
+        # "latest AAPL price"). NO_AUTH — works out of the box.
+        "COMPOSIO_SEARCH_TAVILY",      # general LLM-friendly search
+        "COMPOSIO_SEARCH_DUCK_DUCK_GO",  # general web fallback
+        "COMPOSIO_SEARCH_NEWS",        # news / current events
+        "COMPOSIO_SEARCH_FINANCE",     # stocks / market data
+        "COMPOSIO_SEARCH_FETCH_URL_CONTENT",  # extract clean page text
+        "COMPOSIO_SEARCH_GOOGLE_MAPS", # places / location queries
+        "COMPOSIO_SEARCH_FLIGHTS",     # travel queries
+        "COMPOSIO_SEARCH_HOTELS",      # travel queries
+        "COMPOSIO_SEARCH_SHOPPING",    # product / price comparison
+        "COMPOSIO_SEARCH_SCHOLAR",     # academic papers
+        "COMPOSIO_SEARCH_IMAGE",       # images on the open web
+        "COMPOSIO_SEARCH_TRENDS",      # search-volume / trending topics
+    ],
+    "codeinterpreter": [
+        # Python sandbox — NO_AUTH. Lets the agent actually compute things
+        # ("average X grouped by Y", "what's the median value in this CSV"),
+        # convert formats, run regex, etc. Massive unlock for analytical
+        # asks where the answer requires real computation, not just lookup.
+        "CODEINTERPRETER_CREATE_SANDBOX",
+        "CODEINTERPRETER_EXECUTE_CODE",
+        "CODEINTERPRETER_RUN_TERMINAL_CMD",
     ],
 }
 
@@ -481,6 +553,12 @@ def _resolved_user_id() -> str:
     raise RuntimeError("No active Composio connected accounts found.")
 
 
+# Toolkits that don't require a connection — composio's search bundle and
+# the python sandbox both work out of the box, so they should ALWAYS be
+# in the resolved list regardless of what the user has hooked up.
+_NO_AUTH_TOOLKITS: frozenset[str] = frozenset({"composio_search", "codeinterpreter"})
+
+
 def _resolved_toolkits(user_id: str) -> list[str]:
     global _TOOLKITS_CACHE
     if _TOOLKITS_CACHE is not None:
@@ -491,6 +569,8 @@ def _resolved_toolkits(user_id: str) -> list[str]:
         for a in accounts.items
         if a.status == "ACTIVE"
     }
+    # Always include no-auth toolkits — they have no connection to look up.
+    connected = connected | _NO_AUTH_TOOLKITS
     _TOOLKITS_CACHE = [t for t in _DEFAULT_TOOLKITS if t in connected]
     return _TOOLKITS_CACHE
 
@@ -1151,6 +1231,18 @@ _SYSTEM_PROMPT = (
     "Respect source boundaries: if the user explicitly asks for Gmail/email, "
     "use Gmail tools only; if they ask for Slack, use Slack tools only. "
     "Do not broaden a single-source ask into another app.\n\n"
+    "Web search: COMPOSIO_SEARCH_TAVILY / DUCK_DUCK_GO / NEWS / FINANCE / "
+    "FETCH_URL_CONTENT / GOOGLE_MAPS / FLIGHTS / HOTELS / SHOPPING / SCHOLAR "
+    "/ IMAGE / TRENDS are general web tools — use them when the question "
+    "is about the *world* (top-10 lists, current events, stock prices, "
+    "places, prices, papers, trending) rather than the user's connected "
+    "SaaS data. Do NOT say you 'don't have access' — try a search tool first.\n\n"
+    "Computation: CODEINTERPRETER_CREATE_SANDBOX + CODEINTERPRETER_EXECUTE_CODE "
+    "let you run real Python. Use them when the user's ask requires actual "
+    "computation that pushes beyond what a single SQL query or API call "
+    "would give (multi-step transforms, statistical work, regex over text, "
+    "format conversion). Don't reach for code if a single tool call answers "
+    "the question.\n\n"
     "DISCOVERY: when the user references their data without naming a "
     "project, table, repo, etc., USE THE TOOLS to discover it — don't "
     "ask the user for IDs they expect you to look up. Examples:\n"
@@ -1162,6 +1254,16 @@ _SYSTEM_PROMPT = (
     "  • 'my google sheet / first N rows of my sheet' → "
     "GOOGLESHEETS_SEARCH_SPREADSHEETS first to discover the sheet ID, "
     "then GOOGLESHEETS_BATCH_GET with that ID and a range like 'A1:Z50'.\n"
+    "  • 'my calendar today / next week / free slots' → call "
+    "GOOGLECALENDAR_GET_CURRENT_DATE_TIME first to get the user's actual "
+    "current time, THEN GOOGLECALENDAR_EVENTS_LIST_ALL_CALENDARS or "
+    "FIND_FREE_SLOTS with explicit timeMin/timeMax based on it.\n"
+    "  • 'find / summarize my Drive doc' → GOOGLEDRIVE_FIND_FILE with a "
+    "name query, then GOOGLEDRIVE_DOWNLOAD_FILE for content.\n"
+    "  • 'my LinkedIn profile / connections' → LINKEDIN_GET_MY_INFO; "
+    "for someone else, LINKEDIN_GET_PERSON with their public id.\n"
+    "  • 'what's hot on Reddit / search r/X' → REDDIT_GET_R_TOP for a "
+    "specific subreddit, REDDIT_SEARCH_ACROSS_SUBREDDITS for queries.\n"
     "Asking the user for project IDs they obviously don't have memorized "
     "is a failure mode — discover them.\n\n"
     "Repository disambiguation: when the user names a project without "

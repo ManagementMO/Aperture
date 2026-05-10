@@ -544,7 +544,7 @@ function ResultPanel({
 
       {result.answer && (
         <TerminalBlock
-          title="aperture · agent"
+          title="quava · agent"
           lines={agentReplyTerminalLines(result.answer)}
           animate={false}
         />

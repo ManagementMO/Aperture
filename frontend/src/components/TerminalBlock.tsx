@@ -26,7 +26,7 @@ interface TerminalBlockProps {
  * We use it on the Overview to render a real Quava CLI invocation
  * (vanilla_vs_aperture script).
  */
-export function TerminalBlock({ title = "aperture · zsh", lines, animate = true, className = "" }: TerminalBlockProps) {
+export function TerminalBlock({ title = "quava · zsh", lines, animate = true, className = "" }: TerminalBlockProps) {
   const [visible, setVisible] = useState(animate ? 0 : lines.length);
 
   useEffect(() => {

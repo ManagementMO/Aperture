@@ -28,7 +28,7 @@ const SOURCE_DETAIL: Record<string, {
 };
 
 const TERMINAL_LINES: TerminalLine[] = [
-  { kind: "command", text: "aperture run \"summarize the dataset chatter\"" },
+  { kind: "command", text: "quava run \"summarize the dataset chatter\"" },
   { kind: "output", text: "research_repo  raw=22,146  sent=6,563    saved 70%" },
   { kind: "output", text: "triage_bugs    raw=11,351  sent=3,195    saved 72%" },
   { kind: "output", text: "datasets       raw=453,896 sent=117,180  saved 74%" },
