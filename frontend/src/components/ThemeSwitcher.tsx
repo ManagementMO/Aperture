@@ -17,7 +17,7 @@ export function ThemeSwitcher() {
   const { pref, setPref } = useTheme();
   return (
     <div
-      className="inline-flex items-center gap-0 h-8 p-0.5 rounded-md border border-border bg-card/60"
+      className="inline-flex items-center gap-0 h-8 p-0.5 rounded-full bg-foreground/[0.04]"
       role="radiogroup"
       aria-label="Theme"
     >

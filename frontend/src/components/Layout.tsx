@@ -4,10 +4,10 @@ import {
   ArrowDownWideNarrow,
   BarChart3,
   Banknote,
-  ChevronsLeft,
-  ChevronsRight,
   FlaskConical,
   LayoutTemplate,
+  PanelLeftClose,
+  PanelLeftOpen,
   Sparkles,
 } from "lucide-react";
 import { CommandPalette } from "@/components/CommandPalette";
@@ -21,21 +21,17 @@ interface NavItem {
 }
 
 const navItems: NavItem[] = [
-  { path: "/",           label: "Run",               icon: Sparkles },
-  { path: "/spend",      label: "Spend",             icon: Banknote },
-  { path: "/overview",   label: "Overview",          icon: BarChart3 },
-  { path: "/waterfall",  label: "Waterfall",         icon: ArrowDownWideNarrow },
-  { path: "/schema",     label: "Schema",            icon: LayoutTemplate },
-  { path: "/benchmarks", label: "Benchmarks",        icon: FlaskConical },
+  { path: "/",           label: "Run",         icon: Sparkles },
+  { path: "/spend",      label: "Spend",       icon: Banknote },
+  { path: "/overview",   label: "Overview",    icon: BarChart3 },
+  { path: "/waterfall",  label: "Waterfall",   icon: ArrowDownWideNarrow },
+  { path: "/schema",     label: "Schema",      icon: LayoutTemplate },
+  { path: "/benchmarks", label: "Benchmarks",  icon: FlaskConical },
 ];
 
 const SIDEBAR_KEY = "quava.sidebar.collapsed";
 
-function QuavaMark({ size = 20 }: { size?: number }) {
-  // Single icon glyph from quava-logo.svg (just the diamond mark).
-  // The full logo includes the wordmark, so we render a clipped <svg>
-  // with just the mark — color comes from currentColor in dark mode and
-  // stays brand-blue in light. Using the asset directly avoids a re-export.
+function QuavaMark({ size = 22 }: { size?: number }) {
   return (
     <svg
       width={size}
@@ -59,10 +55,6 @@ function QuavaMark({ size = 20 }: { size?: number }) {
   );
 }
 
-function titleFor(pathname: string): string {
-  return navItems.find((item) => item.path === pathname)?.label ?? "Run";
-}
-
 export default function Layout({ children }: { children: ReactNode }) {
   const location = useLocation();
   const [collapsed, setCollapsed] = useState<boolean>(() => {
@@ -83,21 +75,21 @@ export default function Layout({ children }: { children: ReactNode }) {
       <Background />
 
       <div className="relative z-10 flex min-h-screen">
-        {/* Sidebar — Cursor-style: subtle, mostly icons when collapsed. */}
+        {/* Claude-style sidebar — soft, calm, generous breathing room. */}
         <aside
-          className={`flex flex-col border-r border-border/40 bg-sidebar/40 backdrop-blur-sm transition-[width] duration-150 ${
-            collapsed ? "w-12" : "w-52"
+          className={`flex flex-col border-r border-border/40 bg-sidebar/30 backdrop-blur-sm transition-[width] duration-200 ease-out ${
+            collapsed ? "w-[58px]" : "w-[232px]"
           }`}
         >
           <div
-            className={`flex items-center border-b border-border/40 ${
-              collapsed ? "h-12 justify-center" : "h-12 px-3 justify-between"
+            className={`flex items-center h-14 ${
+              collapsed ? "justify-center" : "px-3 justify-between"
             }`}
           >
-            <Link to="/" className="flex items-center gap-2 min-w-0">
-              <QuavaMark size={18} />
+            <Link to="/" className="flex items-center gap-2.5 min-w-0">
+              <QuavaMark size={22} />
               {!collapsed && (
-                <span className="text-[13px] font-semibold tracking-tight truncate">
+                <span className="text-[15px] font-semibold tracking-tight">
                   Quava
                 </span>
               )}
@@ -106,17 +98,31 @@ export default function Layout({ children }: { children: ReactNode }) {
               <button
                 type="button"
                 onClick={() => setCollapsed(true)}
-                className="text-muted-foreground/60 hover:text-foreground transition-colors"
-                title="Collapse sidebar"
+                className="inline-flex items-center justify-center w-7 h-7 rounded-md text-muted-foreground hover:bg-foreground/[0.06] hover:text-foreground transition-colors"
+                title="Hide sidebar (⌘\\)"
                 aria-label="Collapse sidebar"
               >
-                <ChevronsLeft className="w-3.5 h-3.5" />
+                <PanelLeftClose className="w-4 h-4" />
               </button>
             )}
           </div>
 
-          <nav className="flex-1 py-2 overflow-y-auto overflow-x-hidden">
-            <ul className="space-y-px px-1.5">
+          {/* Always-visible expand button when collapsed — sits right under
+              the logo where you naturally look. No more "where's the button". */}
+          {collapsed && (
+            <button
+              type="button"
+              onClick={() => setCollapsed(false)}
+              className="mx-auto mt-1 mb-2 inline-flex items-center justify-center w-7 h-7 rounded-md text-muted-foreground hover:bg-foreground/[0.06] hover:text-foreground transition-colors"
+              title="Show sidebar (⌘\\)"
+              aria-label="Expand sidebar"
+            >
+              <PanelLeftOpen className="w-4 h-4" />
+            </button>
+          )}
+
+          <nav className={`flex-1 overflow-y-auto overflow-x-hidden ${collapsed ? "px-1.5" : "px-2"}`}>
+            <ul className="space-y-0.5">
               {navItems.map((item) => {
                 const active = location.pathname === item.path;
                 const Icon = item.icon;
@@ -125,19 +131,17 @@ export default function Layout({ children }: { children: ReactNode }) {
                     <Link
                       to={item.path}
                       title={collapsed ? item.label : undefined}
-                      className={`group flex items-center rounded-md transition-colors ${
-                        collapsed
-                          ? "h-8 justify-center"
-                          : "h-8 gap-2 px-2"
+                      className={`group flex items-center rounded-lg transition-colors duration-100 ${
+                        collapsed ? "h-9 justify-center" : "h-9 gap-2.5 px-2.5"
                       } ${
                         active
-                          ? "bg-foreground/[0.06] text-foreground"
-                          : "text-muted-foreground/80 hover:bg-foreground/[0.04] hover:text-foreground"
+                          ? "bg-foreground/[0.07] text-foreground"
+                          : "text-muted-foreground hover:bg-foreground/[0.04] hover:text-foreground"
                       }`}
                     >
-                      <Icon className="w-3.5 h-3.5 flex-none" />
+                      <Icon className="w-4 h-4 flex-none" />
                       {!collapsed && (
-                        <span className="text-[12.5px] truncate">{item.label}</span>
+                        <span className="text-[13.5px] font-medium truncate">{item.label}</span>
                       )}
                     </Link>
                   </li>
@@ -146,35 +150,27 @@ export default function Layout({ children }: { children: ReactNode }) {
             </ul>
           </nav>
 
-          {/* Footer — collapse toggle when expanded; expand handle when collapsed. */}
-          <div className="border-t border-border/40 flex items-center justify-center">
-            {collapsed ? (
-              <button
-                type="button"
-                onClick={() => setCollapsed(false)}
-                className="w-full h-9 flex items-center justify-center text-muted-foreground/60 hover:text-foreground transition-colors"
-                title="Expand sidebar"
-                aria-label="Expand sidebar"
-              >
-                <ChevronsRight className="w-3.5 h-3.5" />
-              </button>
-            ) : (
-              <div className="w-full px-3 py-2 flex items-center gap-1.5 text-[10px] text-muted-foreground/60">
-                <span className="num">v0.2</span>
-                <span className="text-muted-foreground/30">·</span>
-                <span className="truncate">measured by Quava</span>
-              </div>
-            )}
-          </div>
+          {!collapsed && (
+            <div className="px-4 py-3 border-t border-border/30">
+              <p className="text-[10.5px] text-muted-foreground/60 leading-tight">
+                Every number on screen is measured by Quava.
+              </p>
+              <p className="text-[10px] text-muted-foreground/40 mt-1 num">
+                v0.2 · local
+              </p>
+            </div>
+          )}
         </aside>
 
-        <main className="flex-1 overflow-auto">
-          <header className="sticky top-0 z-20 backdrop-blur bg-background/70 border-b border-border/30">
-            <div className="max-w-7xl mx-auto pl-5 pr-4 h-11 flex items-center justify-between">
-              <div className="flex items-center gap-2 text-[12px] text-muted-foreground/80">
-                <span>Quava</span>
+        <main className="flex-1 overflow-auto flex flex-col min-w-0">
+          <header className="sticky top-0 z-20 backdrop-blur-md bg-background/80 border-b border-border/30">
+            <div className="max-w-[1080px] mx-auto px-6 h-14 flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2 text-[13px] text-muted-foreground min-w-0">
+                <span className="truncate">Quava</span>
                 <span className="text-muted-foreground/30">/</span>
-                <span className="text-foreground">{titleFor(location.pathname)}</span>
+                <span className="text-foreground truncate">
+                  {navItems.find((n) => n.path === location.pathname)?.label ?? "Run"}
+                </span>
               </div>
               <div className="flex items-center gap-2">
                 <ThemeSwitcher />
@@ -182,7 +178,9 @@ export default function Layout({ children }: { children: ReactNode }) {
               </div>
             </div>
           </header>
-          <div className="max-w-7xl mx-auto px-5 py-6">{children}</div>
+          <div className="flex-1 max-w-[1080px] mx-auto w-full px-6 py-8">
+            {children}
+          </div>
         </main>
       </div>
     </div>

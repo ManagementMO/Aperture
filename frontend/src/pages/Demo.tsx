@@ -1,9 +1,8 @@
 import { useEffect, useState } from "react";
-import { apiGet, apiPostStream, describeApiError } from "@/lib/api";
+import { apiPostStream, describeApiError } from "@/lib/api";
 import { Card, CardContent } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { ArrowUpRight, Check, ChevronDown, ChevronUp } from "lucide-react";
+import { ArrowUp, Check, ChevronDown, ChevronUp, Sparkles, Terminal as TerminalIcon, X } from "lucide-react";
 import { ComposingSpinner } from "@/components/ComposingSpinner";
 import { TerminalBlock, type TerminalLine } from "@/components/TerminalBlock";
 import { RunTerminal } from "@/components/RunTerminal";
@@ -187,28 +186,12 @@ export default function Run() {
   const [openSteps, setOpenSteps] = useState<Set<number>>(new Set());
   const [liveSteps, setLiveSteps] = useState<Step[]>([]);
   const [compareIndex, setCompareIndex] = useState<number | null>(null);
-  const [toolCache, setToolCache] = useState<ToolCacheStats | null>(null);
-  const [toolCacheSnapshotMs, setToolCacheSnapshotMs] = useState(Date.now());
-  const [nowMs, setNowMs] = useState(Date.now());
-  const [cacheError, setCacheError] = useState<string | null>(null);
-  const selectedMode =
-    MODES.find((mode) => mode.value === effortMode) ??
-    MODES.find((mode) => mode.value === "medium")!;
+  const [terminalOpen, setTerminalOpen] = useState<boolean>(false);
 
-  const applyToolCache = (stats: ToolCacheStats): void => {
-    setToolCache(stats);
-    setToolCacheSnapshotMs(Date.now());
-  };
-
-  const refreshToolCache = async (): Promise<void> => {
-    try {
-      const stats = await apiGet<ToolCacheStats>("/api/cache/tools");
-      applyToolCache(stats);
-      setCacheError(null);
-    } catch (err) {
-      setCacheError(describeApiError(err));
-    }
-  };
+  // The cache panel was dropped from the redesign — cache info now shows
+  // inline on each tool chip. We keep a no-op refresh for the post-submit
+  // hook so we can wire a future affordance back in without a refactor.
+  const refreshToolCache = async (): Promise<void> => {};
 
   useEffect(() => {
     const initializeDemoCache = async (): Promise<void> => {
@@ -218,10 +201,6 @@ export default function Run() {
     void initializeDemoCache();
   }, []);
 
-  useEffect(() => {
-    const timer = window.setInterval(() => setNowMs(Date.now()), 1000);
-    return () => window.clearInterval(timer);
-  }, []);
 
   const submit = async (): Promise<void> => {
     const trimmed = ask.trim();
@@ -322,8 +301,63 @@ export default function Run() {
     });
   };
 
+  const hasConversation = running || liveSteps.length > 0 || result || error;
+  const stepsForTerminal = (running ? liveSteps : (result?.steps ?? liveSteps)) as RunTerminalStepData[];
+
+  // ChatGPT-style pill input: single auto-growing textarea, mode chip on
+  // the right, round white send button, no chunky toolbar.
+  const InputCard = (
+    <div className="relative rounded-[28px] bg-foreground/[0.04] hover:bg-foreground/[0.05] focus-within:bg-foreground/[0.055] transition-colors px-2 pt-2.5 pb-2">
+      <div className="flex items-end gap-2">
+        <textarea
+          value={ask}
+          onChange={(e) => setAsk(e.target.value)}
+          onKeyDown={onKey}
+          placeholder="Ask anything"
+          rows={1}
+          className="flex-1 resize-none bg-transparent px-3 pt-1.5 pb-1.5 text-[15px] leading-[1.5] outline-none placeholder:text-muted-foreground/60 max-h-[200px] overflow-y-auto"
+          autoFocus
+          style={{ minHeight: "28px" }}
+          onInput={(e) => {
+            const ta = e.currentTarget;
+            ta.style.height = "auto";
+            ta.style.height = Math.min(200, ta.scrollHeight) + "px";
+          }}
+        />
+        <div className="flex items-center gap-1.5 flex-none pb-0.5">
+          <ModePill
+            modes={MODES}
+            value={effortMode}
+            onChange={setEffortMode}
+            disabled={running}
+          />
+          <button
+            type="button"
+            onClick={() => setTerminalOpen((v) => !v)}
+            title={terminalOpen ? "Hide tool calls" : "Show tool calls"}
+            className={`inline-flex items-center justify-center h-8 w-8 rounded-full transition-colors ${
+              terminalOpen
+                ? "bg-foreground/15 text-foreground"
+                : "text-muted-foreground hover:text-foreground hover:bg-foreground/[0.06]"
+            }`}
+          >
+            <TerminalIcon className="w-4 h-4" />
+          </button>
+          <button
+            type="button"
+            onClick={() => void submit()}
+            disabled={!ask.trim() || running}
+            className="inline-flex items-center justify-center h-8 w-8 rounded-full bg-foreground text-background hover:bg-foreground/90 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+          >
+            {running ? <ComposingSpinner size="sm" /> : <ArrowUp className="w-4 h-4" />}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+
   return (
-    <div className="mx-auto grid w-full max-w-7xl gap-6 py-8 lg:grid-cols-[minmax(0,1fr)_minmax(360px,440px)]">
+    <div className="relative">
       <CompareDialog
         open={compareIndex !== null}
         step={
@@ -334,137 +368,304 @@ export default function Run() {
         onClose={() => setCompareIndex(null)}
       />
 
-      <div className="flex flex-col space-y-4">
-      {/* Quiet status row — replaces the centered marketing hero. */}
-      <div className="flex items-baseline justify-between border-b border-border/40 pb-2.5">
-        <div className="flex items-baseline gap-3">
-          <span className="text-[13px] font-medium">Run</span>
-          <span className="text-[11px] text-muted-foreground/70">
-            ask · stream · compress · respond
-          </span>
-        </div>
-        <span className="text-[10px] font-mono text-muted-foreground/50 uppercase tracking-wider">
-          mode <span className="text-foreground/80">{selectedMode.label.toLowerCase()}</span>
-        </span>
-      </div>
+      {/* Slide-out terminal — Claude-style: hidden until requested */}
+      {terminalOpen && (
+        <aside className="fixed top-14 right-0 bottom-0 w-[420px] z-30 border-l border-border/40 bg-background/95 backdrop-blur-md flex flex-col">
+          <div className="flex items-center justify-between h-11 px-4 border-b border-border/30 flex-none">
+            <div className="flex items-center gap-2 text-[12px]">
+              <TerminalIcon className="w-3.5 h-3.5 text-muted-foreground" />
+              <span className="font-medium">Tool calls</span>
+              {liveSteps.length > 0 && (
+                <span className="text-muted-foreground/60 num">
+                  · {liveSteps.length}
+                </span>
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={() => setTerminalOpen(false)}
+              className="inline-flex items-center justify-center w-7 h-7 rounded-md text-muted-foreground hover:bg-foreground/[0.06] hover:text-foreground transition-colors"
+              aria-label="Close terminal"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+          <div className="flex-1 overflow-hidden">
+            <RunTerminal
+              running={running}
+              steps={stepsForTerminal}
+              totalRawTokens={result?.summary.raw_tokens}
+              totalSentTokens={result?.summary.sent_tokens}
+              totalElapsedMs={result?.summary.elapsed_ms}
+              costSavedUsd={result?.summary.cost_saved_usd}
+              servedFromCache={result?.served_from_cache}
+              onCompareStep={(i) => setCompareIndex(i)}
+            />
+          </div>
+        </aside>
+      )}
 
-      <div className="rounded-md border border-border/60 bg-card/40 overflow-hidden">
-        <textarea
-          value={ask}
-          onChange={(e) => setAsk(e.target.value)}
-          onKeyDown={onKey}
-          placeholder="Ask anything that needs a real tool. ⌘+Enter to run."
-          rows={3}
-          className="w-full resize-none bg-transparent px-3 pt-3 pb-2 text-[13px] outline-none placeholder:text-muted-foreground/50"
-          autoFocus
-        />
-        <div className="flex items-center justify-between gap-3 border-t border-border/40 px-2 py-1.5">
-          <div className="flex flex-wrap gap-1">
-            {PROMPTS.map((p) => (
-              <button
-                key={p.label}
-                type="button"
-                onClick={() => setAsk(p.ask)}
-                className="text-[10.5px] px-1.5 py-0.5 rounded text-muted-foreground/70 hover:text-foreground hover:bg-foreground/[0.04] transition-colors"
-              >
-                {p.label}
-              </button>
-            ))}
+      <div
+        className={`transition-[padding] duration-200 ${
+          terminalOpen ? "pr-[440px]" : ""
+        }`}
+      >
+      <div className="mx-auto w-full max-w-[760px]">
+        {/* EMPTY STATE — centered greeting + pill input + suggestion pills */}
+        {!hasConversation && (
+          <div className="flex flex-col items-stretch justify-center min-h-[calc(100vh-12rem)] pb-8 space-y-5">
+            <div className="text-center select-none mb-1">
+              <h1 className="text-[30px] font-medium tracking-tight text-foreground/90">
+                Where should we begin?
+              </h1>
+            </div>
+
+            {InputCard}
+
+            {/* ChatGPT-style suggestion pills — small, centered row */}
+            <div className="flex flex-wrap justify-center gap-2 pt-1">
+              {PROMPTS.map((p) => (
+                <button
+                  key={p.label}
+                  type="button"
+                  onClick={() => setAsk(p.ask)}
+                  title={p.ask}
+                  className="inline-flex items-center h-9 px-4 rounded-full bg-foreground/[0.04] hover:bg-foreground/[0.07] text-[13px] text-foreground/75 hover:text-foreground transition-colors"
+                >
+                  {p.label}
+                </button>
+              ))}
+            </div>
           </div>
-          <Button
-            onClick={() => void submit()}
-            disabled={!ask.trim() || running}
-            className="btn-accent h-7 text-[12px] rounded"
-            size="sm"
-          >
-            {running ? <ComposingSpinner label="Running" /> : (
-              <>Run <ArrowUpRight className="w-3 h-3 ml-1" /></>
+        )}
+
+        {/* CONVERSATION — input on top, then user msg, tool calls, answer */}
+        {hasConversation && (
+          <div className="pt-2 space-y-5">
+            {InputCard}
+
+            {/* User message bubble */}
+            <div className="flex justify-end pt-2">
+              <div className="max-w-[85%] rounded-2xl rounded-tr-md bg-foreground/[0.06] px-4 py-2.5 text-[14px] leading-relaxed">
+                {result?.ask || ask || (running ? "…" : "")}
+              </div>
+            </div>
+
+            {/* Live tool calls inline */}
+            {liveSteps.length > 0 && (
+              <div className="space-y-2">
+                {liveSteps.map((step, i) => (
+                  <ToolCallChip
+                    key={i}
+                    step={step}
+                    onCompare={() => setCompareIndex(i)}
+                  />
+                ))}
+              </div>
             )}
-          </Button>
-        </div>
-        <div className="border-t border-border/40 px-2 py-1.5">
-          <div className="flex items-center gap-1 text-[9.5px] uppercase tracking-[0.14em] text-muted-foreground/60 mb-1">
-            <span>compression mode</span>
+
+            {/* Composing spinner while running */}
+            {running && !result && (
+              <div className="flex items-center gap-2.5 text-muted-foreground text-[13px] py-2">
+                <ComposingSpinner size="sm" />
+                <span>Composing…</span>
+              </div>
+            )}
+
+            {/* Final answer + metric strip */}
+            {!running && result?.answer && (
+              <ConversationAnswer result={result} onOpenTerminal={() => setTerminalOpen(true)} />
+            )}
+
+            {/* Error state */}
+            {!running && error && (
+              <div className="rounded-xl border border-rose-500/30 bg-rose-500/[0.04] px-4 py-3">
+                <p className="text-[13px] font-medium text-rose-300/90 mb-1">Couldn&apos;t run that</p>
+                <p className="text-[12.5px] text-muted-foreground whitespace-pre-wrap">{error}</p>
+              </div>
+            )}
+
+            {/* Per-tool full breakdown — collapsed by default */}
+            {!running && result && result.steps.length > 0 && (
+              <details className="group">
+                <summary className="flex items-center gap-2 text-[12px] text-muted-foreground/70 hover:text-foreground cursor-pointer select-none py-1">
+                  <ChevronDown className="w-3.5 h-3.5 group-open:rotate-180 transition-transform" />
+                  <span>Per-tool breakdown ({result.steps.length})</span>
+                </summary>
+                <div className="mt-3">
+                  <ResultPanel
+                    result={result}
+                    openSteps={openSteps}
+                    toggleStep={toggleStep}
+                  />
+                </div>
+              </details>
+            )}
           </div>
-          <div className="inline-flex items-center gap-px rounded-md bg-foreground/[0.03] p-0.5">
-            {MODES.map((mode) => {
-              const selected = effortMode === mode.value;
+        )}
+      </div>
+      </div>
+    </div>
+  );
+}
+
+/** Single tool-call chip rendered inline in the conversation flow.
+ *  Click to open the compare dialog. */
+function ToolCallChip({
+  step,
+  onCompare,
+}: {
+  step: Step;
+  onCompare: () => void;
+}) {
+  const saved = step.saved_percent ?? 0;
+  const cacheHit = step.cache_status === "hit";
+  return (
+    <button
+      type="button"
+      onClick={onCompare}
+      className="w-full flex items-center gap-3 rounded-xl border border-border/50 bg-card/60 hover:bg-card hover:border-border transition-colors px-3.5 py-2.5 text-left"
+    >
+      <Sparkles className={`w-3.5 h-3.5 flex-none ${step.successful === false ? "text-rose-400" : "text-muted-foreground"}`} />
+      <div className="min-w-0 flex-1">
+        <div className="flex items-baseline gap-2">
+          <span className="font-mono text-[12px] truncate">{step.tool}</span>
+          {cacheHit && (
+            <span className="text-[10px] uppercase tracking-wider text-accent" style={{ color: "var(--quava-accent)" }}>
+              cache hit
+            </span>
+          )}
+          {step.tier === "degraded" && (
+            <span className="text-[10px] uppercase tracking-wider text-amber-400/80">
+              degraded
+            </span>
+          )}
+        </div>
+        <p className="text-[11px] text-muted-foreground/70 mt-0.5 num">
+          {(step.raw_tokens ?? 0).toLocaleString()} → {(step.sent_tokens ?? 0).toLocaleString()} tokens · {Math.round(step.elapsed_ms ?? 0).toLocaleString()} ms
+        </p>
+      </div>
+      <span className={`text-[11px] num flex-none ${saved > 0 ? "text-foreground" : "text-muted-foreground/60"}`}>
+        {saved > 0 ? `−${saved.toFixed(0)}%` : "—"}
+      </span>
+    </button>
+  );
+}
+
+function ConversationAnswer({
+  result,
+  onOpenTerminal,
+}: {
+  result: RunResult;
+  onOpenTerminal: () => void;
+}) {
+  const s = result.summary;
+  return (
+    <div className="space-y-3">
+      <div className="text-[14.5px] leading-[1.65] whitespace-pre-wrap">
+        {result.answer}
+      </div>
+      <div className="flex items-center gap-3 text-[11px] text-muted-foreground/70 pt-1 border-t border-border/30">
+        <span className="num">{s.tool_calls} {s.tool_calls === 1 ? "tool" : "tools"}</span>
+        <span className="text-muted-foreground/30">·</span>
+        <span className="num">{s.elapsed_ms.toLocaleString()} ms</span>
+        {s.saved_percent > 0 && (
+          <>
+            <span className="text-muted-foreground/30">·</span>
+            <span className="num text-foreground/80">−{s.saved_percent.toFixed(1)}% smaller</span>
+          </>
+        )}
+        {(s.cost_saved_usd ?? 0) > 0 && (
+          <>
+            <span className="text-muted-foreground/30">·</span>
+            <span className="num text-foreground/80">${(s.cost_saved_usd).toFixed(4)} saved</span>
+          </>
+        )}
+        {result.served_from_cache && (
+          <>
+            <span className="text-muted-foreground/30">·</span>
+            <span className="text-foreground/80">cached · $0</span>
+          </>
+        )}
+        <button
+          type="button"
+          onClick={onOpenTerminal}
+          className="ml-auto text-muted-foreground hover:text-foreground transition-colors"
+        >
+          view tool calls →
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/** Compact mode selector — opens a popover instead of a 6-button bar. */
+// ChatGPT-style mode chip: subtle text "{label} ⌄" that opens a small
+// popover anchored to the button.
+function ModePill({
+  modes,
+  value,
+  onChange,
+  disabled,
+}: {
+  modes: { value: EffortMode; label: string; detail: string }[];
+  value: EffortMode;
+  onChange: (v: EffortMode) => void;
+  disabled?: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const selected = modes.find((m) => m.value === value) ?? modes[3];
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        disabled={disabled}
+        onClick={() => setOpen((v) => !v)}
+        className="inline-flex items-center gap-1 h-8 px-3 rounded-full text-[13px] font-medium text-foreground/85 hover:bg-foreground/[0.05] hover:text-foreground transition-colors disabled:opacity-50"
+        title="Compression mode"
+      >
+        {selected.label}
+        <ChevronDown className="w-3.5 h-3.5 text-foreground/60" />
+      </button>
+      {open && (
+        <>
+          <div
+            className="fixed inset-0 z-40"
+            onClick={() => setOpen(false)}
+            aria-hidden
+          />
+          <div
+            className="absolute bottom-full mb-2 right-0 z-50 w-[220px] rounded-xl shadow-2xl overflow-hidden py-1.5 border border-border/70"
+            style={{ backgroundColor: "var(--quava-surface-container-high, #161616)" }}
+          >
+            <p className="px-3 pt-1 pb-1.5 text-[10.5px] uppercase tracking-wider text-muted-foreground/70">
+              Compression mode
+            </p>
+            {modes.map((m) => {
+              const sel = m.value === value;
               return (
                 <button
-                  key={mode.value}
+                  key={m.value}
                   type="button"
-                  onClick={() => setEffortMode(mode.value)}
-                  disabled={running}
-                  title={mode.detail}
-                  className={`px-2 h-6 rounded text-[10.5px] font-mono uppercase tracking-wider transition-colors disabled:opacity-50 ${
-                    selected
-                      ? "bg-foreground/10 text-foreground"
-                      : "text-muted-foreground/60 hover:text-foreground"
+                  onClick={() => {
+                    onChange(m.value);
+                    setOpen(false);
+                  }}
+                  className={`w-full text-left px-3 py-1.5 transition-colors ${
+                    sel ? "bg-foreground/[0.06]" : "hover:bg-foreground/[0.04]"
                   }`}
-                  aria-pressed={selected}
                 >
-                  {mode.label}
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[13px]">{m.label}</span>
+                    {sel && <Check className="w-3.5 h-3.5 text-foreground" />}
+                  </div>
+                  <p className="text-[11px] text-muted-foreground mt-0.5">{m.detail}</p>
                 </button>
               );
             })}
           </div>
-          {selectedMode.detail && (
-            <p className="text-[9.5px] text-muted-foreground/60 mt-1 font-mono">
-              {selectedMode.detail}
-            </p>
-          )}
-        </div>
-      </div>
-
-      {running && (
-        <Card>
-          <CardContent className="pt-5 pb-5">
-            <ComposingSpinner size="md" label="Agent is composing" />
-          </CardContent>
-        </Card>
+        </>
       )}
-
-      {!running && error && (
-        <Card className="border-rose-500/40">
-          <CardContent className="pt-5 pb-5 space-y-1">
-            <p className="text-sm font-medium text-rose-400">Couldn&apos;t run that.</p>
-            <p className="text-[12px] text-muted-foreground whitespace-pre-wrap">{error}</p>
-          </CardContent>
-        </Card>
-      )}
-
-      {!running && result && result.summary && (
-        <ResultPanel
-          result={result}
-          openSteps={openSteps}
-          toggleStep={toggleStep}
-        />
-      )}
-
-      <ToolCachePanel
-        result={result}
-        stats={toolCache}
-        snapshotMs={toolCacheSnapshotMs}
-        nowMs={nowMs}
-        error={cacheError}
-      />
-      </div>
-
-      {/* Right column — live terminal of tool calls (Composio-tree style)
-       * with per-call Compare button. Sticky so it stays in view as the
-       * left column scrolls. */}
-      <aside className="lg:sticky lg:top-16 self-start h-[calc(100vh-7rem)] overflow-hidden">
-        <RunTerminal
-          running={running}
-          steps={(running ? liveSteps : (result?.steps ?? liveSteps)) as RunTerminalStepData[]}
-          totalRawTokens={result?.summary.raw_tokens}
-          totalSentTokens={result?.summary.sent_tokens}
-          totalElapsedMs={result?.summary.elapsed_ms}
-          costSavedUsd={result?.summary.cost_saved_usd}
-          servedFromCache={result?.served_from_cache}
-          onCompareStep={(i) => setCompareIndex(i)}
-        />
-      </aside>
     </div>
   );
 }
@@ -567,160 +768,6 @@ function agentReplyTerminalLines(answer: string): TerminalLine[] {
       text: line,
     } satisfies TerminalLine)),
   ];
-}
-
-function ToolCachePanel({
-  result,
-  stats,
-  snapshotMs,
-  nowMs,
-  error,
-}: {
-  result: RunResult | null;
-  stats: ToolCacheStats | null;
-  snapshotMs: number;
-  nowMs: number;
-  error: string | null;
-}) {
-  const toolItems = stats?.items ?? [];
-  const resultItems: {
-    ask: string;
-    model: string;
-    effort_mode?: EffortMode;
-    tool_calls?: number;
-    ttl_remaining_seconds?: number | null;
-  }[] = [];
-  const activeToolItems = toolItems.filter(
-    (item) => cacheSecondsRemaining(item.ttl_remaining_seconds, snapshotMs, nowMs) > 0
-  );
-  const empty = activeToolItems.length === 0;
-  const visibleCount = stats ? activeToolItems.length : null;
-
-  return (
-    <div className="space-y-3">
-      {result?.served_from_cache && (
-        <div className="flex items-center justify-center gap-2 rounded-md border border-primary/40 bg-primary/10 px-3 py-2 text-[12px] font-mono text-primary">
-          <span className="lime-dot" />
-          <span>this run was served from cache · 0 ms · $0.000000 spent</span>
-        </div>
-      )}
-
-      <Card>
-        <CardContent className="pt-4 pb-4 space-y-3">
-          <div className="flex items-baseline justify-between gap-3">
-            <div>
-              <p className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
-                Tool result cache
-              </p>
-              <p className="text-[12px] text-muted-foreground mt-0.5">
-                Read-only tool results available for repeat calls.
-              </p>
-            </div>
-            <Badge variant="outline" className="text-[10px]">
-              {visibleCount !== null ? `${visibleCount} cached` : "loading"}
-            </Badge>
-          </div>
-
-          {error && (
-            <p className="text-[11px] text-rose-300">{error}</p>
-          )}
-
-          {!error && empty && (
-            <p className="text-[11px] text-muted-foreground">
-              No cached tool results yet.
-            </p>
-          )}
-
-          {resultItems.length > 0 && (
-            <div className="space-y-1.5">
-              <p className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
-                Run result cache
-              </p>
-              {resultItems.map((item) => (
-                <div
-                  key={`${item.model}-${item.effort_mode ?? "mode"}-${item.ask}`}
-                  className="flex items-center justify-between gap-3 rounded-md border border-primary/30 bg-primary/5 px-2.5 py-2"
-                >
-                  <div className="min-w-0">
-                    <p className="truncate font-mono text-[11px] text-foreground">
-                      {item.ask}
-                    </p>
-                    <p className="truncate text-[10px] text-muted-foreground">
-                      {item.model} · {item.effort_mode ?? "medium"} · {item.tool_calls ?? 0} tool calls skipped on replay
-                    </p>
-                  </div>
-                  <div className="flex-none text-right">
-                    <p className="text-[10px] font-mono text-primary">
-                      {formatSeconds(item.ttl_remaining_seconds)} left
-                    </p>
-                    <p className="text-[9px] uppercase tracking-[0.12em] text-muted-foreground/70">
-                      full run
-                    </p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {activeToolItems.length > 0 && (
-            <div className="space-y-1.5">
-              {activeToolItems.map((item) => (
-                <div
-                  key={`${item.cache_key_hash ?? item.tool}-${item.age_seconds ?? 0}`}
-                  className="flex items-center justify-between gap-3 rounded-md border border-border/50 px-2.5 py-2"
-                >
-                  <div className="min-w-0">
-                    <p className="truncate font-mono text-[11px] text-foreground">
-                      {item.tool}
-                    </p>
-                    <p className="truncate text-[10px] text-muted-foreground">
-                      {formatCacheArguments(item.arguments)}
-                    </p>
-                  </div>
-                  <div className="flex-none text-right">
-                    <p className="text-[10px] font-mono text-muted-foreground">
-                      {formatSeconds(item.ttl_remaining_seconds, snapshotMs, nowMs)} left
-                    </p>
-                    <p className="text-[9px] uppercase tracking-[0.12em] text-muted-foreground/70">
-                      {item.cache_scope ?? "cache"}
-                    </p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </CardContent>
-      </Card>
-    </div>
-  );
-}
-
-function formatCacheArguments(args?: Record<string, unknown>): string {
-  if (!args || Object.keys(args).length === 0) return "no arguments";
-  return Object.entries(args)
-    .slice(0, 4)
-    .map(([key, value]) => `${key}: ${String(value)}`)
-    .join(" · ");
-}
-
-function cacheSecondsRemaining(
-  value?: number | null,
-  snapshotMs?: number,
-  nowMs?: number
-): number {
-  if (typeof value !== "number") return Number.POSITIVE_INFINITY;
-  const elapsedSeconds =
-    typeof snapshotMs === "number" && typeof nowMs === "number"
-      ? Math.max(0, (nowMs - snapshotMs) / 1000)
-      : 0;
-  return Math.max(0, value - elapsedSeconds);
-}
-
-function formatSeconds(value?: number | null, snapshotMs?: number, nowMs?: number): string {
-  if (typeof value !== "number") return "unknown";
-  const remaining = cacheSecondsRemaining(value, snapshotMs, nowMs);
-  if (remaining < 60) return `${Math.ceil(remaining)}s`;
-  return `${Math.floor(remaining / 60)}m ${Math.ceil(remaining % 60)}s`;
 }
 
 function CostPanel({ cost, model }: { cost: CostBlock; model: string }) {

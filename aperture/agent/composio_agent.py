@@ -56,6 +56,8 @@ _DEFAULT_TOOLKITS = (
     "reddit",
     "composio_search",   # Composio's web-search bundle (no auth)
     "codeinterpreter",   # Python sandbox (no auth)
+    "hackernews",        # HN aggregator (no auth)
+    "weathermap",        # OpenWeatherMap (no auth)
 )
 
 # Curated read-only tool slugs per toolkit.
@@ -189,6 +191,24 @@ _CURATED_TOOL_SLUGS: dict[str, list[str]] = {
         "CODEINTERPRETER_CREATE_SANDBOX",
         "CODEINTERPRETER_EXECUTE_CODE",
         "CODEINTERPRETER_RUN_TERMINAL_CMD",
+    ],
+    "hackernews": [
+        # NO_AUTH. The HN firehose for "what's hot in tech" asks. Story
+        # lookups go through GET_ITEM_WITH_ID — IDs come from the list
+        # endpoints first.
+        "HACKERNEWS_GET_TOP_STORIES",
+        "HACKERNEWS_GET_BEST_STORIES",
+        "HACKERNEWS_GET_NEW_STORIES",
+        "HACKERNEWS_GET_ASK_STORIES",
+        "HACKERNEWS_GET_SHOW_STORIES",
+        "HACKERNEWS_SEARCH_POSTS",
+        "HACKERNEWS_GET_ITEM_WITH_ID",
+        "HACKERNEWS_GET_USER_BY_USERNAME",
+    ],
+    "weathermap": [
+        # NO_AUTH. Two-step: geocode the city, then pull current weather.
+        "WEATHERMAP_GEOCODE_LOCATION",
+        "WEATHERMAP_WEATHER",
     ],
 }
 
@@ -556,7 +576,12 @@ def _resolved_user_id() -> str:
 # Toolkits that don't require a connection — composio's search bundle and
 # the python sandbox both work out of the box, so they should ALWAYS be
 # in the resolved list regardless of what the user has hooked up.
-_NO_AUTH_TOOLKITS: frozenset[str] = frozenset({"composio_search", "codeinterpreter"})
+_NO_AUTH_TOOLKITS: frozenset[str] = frozenset({
+    "composio_search",
+    "codeinterpreter",
+    "hackernews",
+    "weathermap",
+})
 
 
 def _resolved_toolkits(user_id: str) -> list[str]:
@@ -1264,6 +1289,10 @@ _SYSTEM_PROMPT = (
     "for someone else, LINKEDIN_GET_PERSON with their public id.\n"
     "  • 'what's hot on Reddit / search r/X' → REDDIT_GET_R_TOP for a "
     "specific subreddit, REDDIT_SEARCH_ACROSS_SUBREDDITS for queries.\n"
+    "  • 'top stories on Hacker News' → HACKERNEWS_GET_TOP_STORIES "
+    "returns IDs; then HACKERNEWS_GET_ITEM_WITH_ID for each (3-5 max).\n"
+    "  • 'weather in <city>' → WEATHERMAP_GEOCODE_LOCATION for the "
+    "lat/lon, then WEATHERMAP_WEATHER with those coordinates.\n"
     "Asking the user for project IDs they obviously don't have memorized "
     "is a failure mode — discover them.\n\n"
     "Repository disambiguation: when the user names a project without "

@@ -19,14 +19,14 @@
     --quava-surface-container-highest:#1A1A1A;
     --quava-raised-hover:             #1F1F1F;
 
-    --quava-fg:        #EDEDED;
-    --quava-fg-87:     rgba(237, 237, 237, 0.87);
-    --quava-fg-60:     rgba(237, 237, 237, 0.55);
-    --quava-fg-38:     rgba(237, 237, 237, 0.38);
-    --quava-fg-30:     rgba(237, 237, 237, 0.28);
+    --quava-fg:        #D9D9D9;          /* softer than pure white */
+    --quava-fg-87:     rgba(217, 217, 217, 0.82);
+    --quava-fg-60:     rgba(217, 217, 217, 0.50);
+    --quava-fg-38:     rgba(217, 217, 217, 0.32);
+    --quava-fg-30:     rgba(217, 217, 217, 0.22);
 
-    --quava-outline:         rgba(255, 255, 255, 0.08);
-    --quava-outline-variant: rgba(255, 255, 255, 0.045);
+    --quava-outline:         rgba(255, 255, 255, 0.05);
+    --quava-outline-variant: rgba(255, 255, 255, 0.03);
 
     --quava-state-hover:    rgba(255, 255, 255, 0.035);
     --quava-state-focus:    rgba(255, 255, 255, 0.055);

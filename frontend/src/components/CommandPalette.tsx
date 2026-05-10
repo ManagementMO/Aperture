@@ -91,11 +91,11 @@ export function CommandPalette() {
       <button
         type="button"
         onClick={openPalette}
-        className="accent-hover hidden md:inline-flex items-center gap-2.5 h-8 pl-2.5 pr-1.5 rounded-md border border-border bg-card text-[12px] text-muted-foreground"
+        className="hidden md:inline-flex items-center gap-2.5 h-8 pl-2.5 pr-1.5 rounded-full bg-foreground/[0.04] hover:bg-foreground/[0.07] text-[12px] text-muted-foreground hover:text-foreground transition-colors"
       >
         <Search className="w-3.5 h-3.5" />
         <span>Search</span>
-        <kbd className="ml-1 px-1.5 py-0.5 rounded border border-border bg-muted text-[10px] text-foreground/70 font-mono">
+        <kbd className="ml-1 px-1.5 py-0.5 rounded-md bg-foreground/[0.06] text-[10px] text-foreground/60 font-mono">
           ⌘K
         </kbd>
       </button>
