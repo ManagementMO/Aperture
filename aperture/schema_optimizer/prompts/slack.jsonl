@@ -1,0 +1,30 @@
+{"prompt": "Post 'Deployment finished' to the #release channel on Slack.", "expects_tool": "SLACK_POST_MESSAGE", "expects_args": {"channel": "#release", "text": "Deployment finished"}}
+{"prompt": "Send a Slack message to #general saying 'Lunch at noon'.", "expects_tool": "SLACK_POST_MESSAGE", "expects_args": {"channel": "#general", "text": "Lunch at noon"}}
+{"prompt": "Message @nikos on Slack with 'Can you review PR 42?'", "expects_tool": "SLACK_POST_MESSAGE", "expects_args": {"channel": "@nikos", "text": "Can you review PR 42?"}}
+{"prompt": "List all Slack channels.", "expects_tool": "SLACK_LIST_CHANNELS", "expects_args": {}}
+{"prompt": "List Slack channels filtered by public-only.", "expects_tool": "SLACK_LIST_ALL_SLACK_TEAM_CHANNELS_WITH_VARIOUS_FILTERS", "expects_args": {"types": "public_channel"}}
+{"prompt": "Get info about the #engineering Slack channel.", "expects_tool": "SLACK_GET_CHANNEL", "expects_args": {"channel": "#engineering"}}
+{"prompt": "List all Slack users.", "expects_tool": "SLACK_LIST_USERS", "expects_args": {}}
+{"prompt": "Show me all users in the workspace.", "expects_tool": "SLACK_LIST_ALL_USERS", "expects_args": {}}
+{"prompt": "Get the Slack user nikos.", "expects_tool": "SLACK_GET_USER", "expects_args": {"user": "nikos"}}
+{"prompt": "Search Slack messages for 'OAuth bug'.", "expects_tool": "SLACK_SEARCH_MESSAGES", "expects_args": {"query": "OAuth bug"}}
+{"prompt": "Find Slack messages mentioning 'release v2'.", "expects_tool": "SLACK_SEARCH_MESSAGES", "expects_args": {"query": "release v2"}}
+{"prompt": "Get the last 50 messages in the #incidents channel.", "expects_tool": "SLACK_FETCH_CONVERSATION_HISTORY", "expects_args": {"channel": "#incidents", "limit": 50}}
+{"prompt": "Show conversation history for #engineering for today.", "expects_tool": "SLACK_FETCH_CONVERSATION_HISTORY", "expects_args": {"channel": "#engineering"}}
+{"prompt": "List files shared in the workspace.", "expects_tool": "SLACK_LIST_FILES", "expects_args": {}}
+{"prompt": "Get info about Slack file F12345.", "expects_tool": "SLACK_GET_FILE_INFO", "expects_args": {"file": "F12345"}}
+{"prompt": "Update Slack message ts 1234.5678 in #engineering with text 'fixed'.", "expects_tool": "SLACK_UPDATE_MESSAGE", "expects_args": {"channel": "#engineering", "ts": "1234.5678", "text": "fixed"}}
+{"prompt": "Delete the Slack message ts 1234.5678 in #engineering.", "expects_tool": "SLACK_DELETE_MESSAGE", "expects_args": {"channel": "#engineering", "ts": "1234.5678"}}
+{"prompt": "Invite @newhire to #onboarding on Slack.", "expects_tool": "SLACK_INVITE_USER_TO_CHANNEL", "expects_args": {"channel": "#onboarding", "user": "@newhire"}}
+{"prompt": "Archive the #old-project channel.", "expects_tool": "SLACK_ARCHIVE_CHANNEL", "expects_args": {"channel": "#old-project"}}
+{"prompt": "Search Slack for 'deploy failed'.", "expects_tool": "SLACK_SEARCH_MESSAGES", "expects_args": {"query": "deploy failed"}}
+{"prompt": "Show the recent messages in #standup.", "expects_tool": "SLACK_FETCH_CONVERSATION_HISTORY", "expects_args": {"channel": "#standup"}}
+{"prompt": "Post a thread reply ts 555.123 in #engineering: 'will check'.", "expects_tool": "SLACK_POST_MESSAGE", "expects_args": {"channel": "#engineering", "thread_ts": "555.123", "text": "will check"}}
+{"prompt": "Get all engineering team channels.", "expects_tool": "SLACK_LIST_ALL_SLACK_TEAM_CHANNELS_WITH_VARIOUS_FILTERS", "expects_args": {"name_filter": "engineering"}}
+{"prompt": "Search Slack for messages from yesterday.", "expects_tool": "SLACK_SEARCH_MESSAGES", "expects_args": {"query": "after:yesterday"}}
+{"prompt": "List all channels including private.", "expects_tool": "SLACK_LIST_ALL_SLACK_TEAM_CHANNELS_WITH_VARIOUS_FILTERS", "expects_args": {"types": "public_channel,private_channel"}}
+{"prompt": "Send 'standup at 10am' to #standup channel.", "expects_tool": "SLACK_POST_MESSAGE", "expects_args": {"channel": "#standup", "text": "standup at 10am"}}
+{"prompt": "Find Slack messages about 'authentication'.", "expects_tool": "SLACK_SEARCH_MESSAGES", "expects_args": {"query": "authentication"}}
+{"prompt": "Get the user with email alice@x.com on Slack.", "expects_tool": "SLACK_GET_USER", "expects_args": {"email": "alice@x.com"}}
+{"prompt": "List Slack files uploaded last week.", "expects_tool": "SLACK_LIST_FILES", "expects_args": {"ts_from": "7d"}}
+{"prompt": "Post 'reviewing now' to channel C12345 thread 8888.123.", "expects_tool": "SLACK_POST_MESSAGE", "expects_args": {"channel": "C12345", "thread_ts": "8888.123", "text": "reviewing now"}}

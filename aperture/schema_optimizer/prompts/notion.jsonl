@@ -1,0 +1,30 @@
+{"prompt": "Create a Notion page titled 'Q3 Plan' under parent page abc123.", "expects_tool": "NOTION_CREATE_PAGE", "expects_args": {"parent": {"page_id": "abc123"}, "title": "Q3 Plan"}}
+{"prompt": "Create a new page in Notion database db_42 with title 'Bug triage'.", "expects_tool": "NOTION_CREATE_PAGE", "expects_args": {"parent": {"database_id": "db_42"}, "title": "Bug triage"}}
+{"prompt": "Update Notion page page_99 setting status to 'Done'.", "expects_tool": "NOTION_UPDATE_PAGE", "expects_args": {"page_id": "page_99", "properties": {"status": "Done"}}}
+{"prompt": "Search Notion for pages mentioning 'OAuth'.", "expects_tool": "NOTION_SEARCH_NOTION_PAGE", "expects_args": {"query": "OAuth"}}
+{"prompt": "Find Notion pages titled 'Roadmap'.", "expects_tool": "NOTION_SEARCH_NOTION_PAGE", "expects_args": {"query": "Roadmap"}}
+{"prompt": "Get Notion page page_99.", "expects_tool": "NOTION_GET_PAGE", "expects_args": {"page_id": "page_99"}}
+{"prompt": "Query the Notion database db_42.", "expects_tool": "NOTION_QUERY_DATABASE", "expects_args": {"database_id": "db_42"}}
+{"prompt": "Query db_42 filtered by status='In Progress'.", "expects_tool": "NOTION_QUERY_DATABASE", "expects_args": {"database_id": "db_42", "filter": {"property": "status", "value": "In Progress"}}}
+{"prompt": "List all Notion databases.", "expects_tool": "NOTION_LIST_DATABASES", "expects_args": {}}
+{"prompt": "Get the Notion database db_42 schema.", "expects_tool": "NOTION_FETCH_DATABASE", "expects_args": {"database_id": "db_42"}}
+{"prompt": "Fetch the contents of Notion block block_77.", "expects_tool": "NOTION_FETCH_BLOCK_CONTENTS", "expects_args": {"block_id": "block_77"}}
+{"prompt": "Fetch comments on Notion page page_99.", "expects_tool": "NOTION_FETCH_COMMENTS", "expects_args": {"page_id": "page_99"}}
+{"prompt": "Fetch raw Notion data for entity entity_55.", "expects_tool": "NOTION_FETCH_DATA", "expects_args": {"entity_id": "entity_55"}}
+{"prompt": "Append a new heading block to page_99 with text 'Decisions'.", "expects_tool": "NOTION_APPEND_BLOCK_CHILDREN", "expects_args": {"block_id": "page_99", "children": [{"type": "heading_2", "text": "Decisions"}]}}
+{"prompt": "Delete Notion block block_77.", "expects_tool": "NOTION_DELETE_BLOCK", "expects_args": {"block_id": "block_77"}}
+{"prompt": "Search Notion for 'V1 realignment'.", "expects_tool": "NOTION_SEARCH_NOTION_PAGE", "expects_args": {"query": "V1 realignment"}}
+{"prompt": "Update page page_99 with property 'priority' set to 'High'.", "expects_tool": "NOTION_UPDATE_PAGE", "expects_args": {"page_id": "page_99", "properties": {"priority": "High"}}}
+{"prompt": "Create page in db_42 titled 'Eval - week 35'.", "expects_tool": "NOTION_CREATE_PAGE", "expects_args": {"parent": {"database_id": "db_42"}, "title": "Eval - week 35"}}
+{"prompt": "Get the page with id 'aaa-bbb-ccc'.", "expects_tool": "NOTION_GET_PAGE", "expects_args": {"page_id": "aaa-bbb-ccc"}}
+{"prompt": "Query db_42 sorted by Last edited time descending.", "expects_tool": "NOTION_QUERY_DATABASE", "expects_args": {"database_id": "db_42", "sorts": [{"property": "Last edited time", "direction": "descending"}]}}
+{"prompt": "List databases I have access to.", "expects_tool": "NOTION_LIST_DATABASES", "expects_args": {}}
+{"prompt": "Search Notion pages last edited this week.", "expects_tool": "NOTION_SEARCH_NOTION_PAGE", "expects_args": {"query": ""}}
+{"prompt": "Append a paragraph 'Done!' to page page_99.", "expects_tool": "NOTION_APPEND_BLOCK_CHILDREN", "expects_args": {"block_id": "page_99", "children": [{"type": "paragraph", "text": "Done!"}]}}
+{"prompt": "Fetch the schema and rows of Notion database 'Tasks'.", "expects_tool": "NOTION_FETCH_DATABASE", "expects_args": {"database_id": "Tasks"}}
+{"prompt": "Get a Notion page by id 'page_aperture'.", "expects_tool": "NOTION_GET_PAGE", "expects_args": {"page_id": "page_aperture"}}
+{"prompt": "Search Notion for 'engineering review'.", "expects_tool": "NOTION_SEARCH_NOTION_PAGE", "expects_args": {"query": "engineering review"}}
+{"prompt": "Fetch data for the entity 'Project_aperture'.", "expects_tool": "NOTION_FETCH_DATA", "expects_args": {"entity_id": "Project_aperture"}}
+{"prompt": "Update Notion page 'page_99' status to 'Blocked'.", "expects_tool": "NOTION_UPDATE_PAGE", "expects_args": {"page_id": "page_99", "properties": {"status": "Blocked"}}}
+{"prompt": "Get all the comments left on page_99.", "expects_tool": "NOTION_FETCH_COMMENTS", "expects_args": {"page_id": "page_99"}}
+{"prompt": "Create a top-level Notion page titled 'Welcome'.", "expects_tool": "NOTION_CREATE_PAGE", "expects_args": {"parent": {"workspace": true}, "title": "Welcome"}}

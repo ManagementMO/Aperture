@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import json
+from datetime import datetime, timezone
 from pathlib import Path
 
+from aperture import __version__
 from aperture.observability.reports import schema_savings_report
 from aperture.schema_optimizer.extract_fields import extract_description_fields
 from aperture.schema_optimizer.fetch_schemas import fetch_tool_schemas
@@ -73,4 +76,66 @@ def write_schema_optimization_report(path: Path, live: bool = False) -> list[Sch
     )
     path.write_text(schema_savings_report(results) + "\n\n## Details\n\n" + details + "\n", encoding="utf-8")
     return results
+
+
+def write_overlay(path: Path, results: list[SchemaOptimizationResult]) -> dict:
+    """Persist accepted rewrites to `_overlay.json` for the proxy to consume.
+
+    Per handoff §6.7: the optimizer can't write into Composio's registry
+    (no internal access), so accepted rewrites land in this overlay file.
+    The proxy's overlay layer (PR 4) loads this file and substitutes the
+    optimized description into outbound `tools/list` and `GET_TOOL_SCHEMAS`
+    responses.
+
+    Schema:
+        {
+          "version": 1,
+          "aperture_optimizer_version": "0.3.0",
+          "generated_at": "2026-05-09T16:00:00Z",
+          "tools": {
+            "GITHUB_CREATE_ISSUE": {
+              "description": {"path": "...", "original": "...", "optimized": "...",
+                              "original_tokens": 68, "optimized_tokens": 28,
+                              "reduction_pct": 0.59, "validation": {...}}
+            }
+          }
+        }
+    """
+    accepted = [r for r in results if r.accepted]
+    by_tool: dict[str, dict] = {}
+    for r in accepted:
+        # Multiple fields per tool — top-level field name is the path's last segment.
+        # Currently the pipeline only optimizes the top-level "description" field, so
+        # tool entries have one entry keyed by "description".
+        tool_entry = by_tool.setdefault(r.tool_slug, {})
+        tool_entry[r.field_path] = {
+            "original": r.original_text,
+            "optimized": r.optimized_text,
+            "original_tokens": r.original_tokens,
+            "optimized_tokens": r.optimized_tokens,
+            "reduction_tokens": r.reduction_tokens,
+            "reduction_pct": round(r.reduction_pct, 4),
+            "validation": {
+                "cases_run": r.validation_cases_run,
+                "passed": r.validation_passed,
+            },
+            "aperture_optimized": True,
+            "aperture_optimizer_version": __version__,
+        }
+
+    document = {
+        "version": 1,
+        "aperture_optimizer_version": __version__,
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "tools": by_tool,
+        "stats": {
+            "total_results": len(results),
+            "accepted": len(accepted),
+            "rejected": len(results) - len(accepted),
+            "total_tokens_saved": sum(r.reduction_tokens for r in accepted),
+        },
+    }
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(document, indent=2, sort_keys=True))
+    return document
 

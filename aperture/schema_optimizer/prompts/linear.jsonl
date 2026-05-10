@@ -1,0 +1,30 @@
+{"prompt": "Create a Linear issue titled 'Login broken' on the Backend team.", "expects_tool": "LINEAR_CREATE_ISSUE", "expects_args": {"title": "Login broken", "team": "Backend"}}
+{"prompt": "Open a Linear issue in team Mobile titled 'Crash on iOS 18'.", "expects_tool": "LINEAR_CREATE_ISSUE", "expects_args": {"title": "Crash on iOS 18", "team": "Mobile"}}
+{"prompt": "Update Linear issue ENG-42 to set status 'In Progress'.", "expects_tool": "LINEAR_UPDATE_ISSUE", "expects_args": {"issue_id": "ENG-42", "status": "In Progress"}}
+{"prompt": "Mark Linear issue ENG-99 as Done.", "expects_tool": "LINEAR_UPDATE_ISSUE", "expects_args": {"issue_id": "ENG-99", "status": "Done"}}
+{"prompt": "Delete Linear issue PROD-7.", "expects_tool": "LINEAR_DELETE_ISSUE", "expects_args": {"issue_id": "PROD-7"}}
+{"prompt": "Assign Linear issue ENG-42 to nikos@x.com.", "expects_tool": "LINEAR_ASSIGN_ISSUE", "expects_args": {"issue_id": "ENG-42", "assignee_email": "nikos@x.com"}}
+{"prompt": "Get Linear issue ENG-42.", "expects_tool": "LINEAR_GET_LINEAR_ISSUE", "expects_args": {"issue_id": "ENG-42"}}
+{"prompt": "Show me my Linear issues.", "expects_tool": "LINEAR_GET_LINEAR_USER_ISSUES", "expects_args": {}}
+{"prompt": "List issues for the Backend team.", "expects_tool": "LINEAR_LIST_TEAM_ISSUES", "expects_args": {"team": "Backend"}}
+{"prompt": "Get all Linear teams.", "expects_tool": "LINEAR_GET_ALL_LINEAR_TEAMS", "expects_args": {}}
+{"prompt": "Get my Linear user info.", "expects_tool": "LINEAR_GET_CURRENT_USER", "expects_args": {}}
+{"prompt": "Find Linear users by email alice@x.com.", "expects_tool": "LINEAR_GET_USERS_BY_EMAIL", "expects_args": {"email": "alice@x.com"}}
+{"prompt": "Get Linear project Q3-Realignment.", "expects_tool": "LINEAR_GET_PROJECT", "expects_args": {"project": "Q3-Realignment"}}
+{"prompt": "List active Linear projects.", "expects_tool": "LINEAR_LIST_PROJECTS", "expects_args": {"state": "active"}}
+{"prompt": "Show issues assigned to me on Linear.", "expects_tool": "LINEAR_GET_LINEAR_USER_ISSUES", "expects_args": {}}
+{"prompt": "Create issue 'Set up CI' in team Devops.", "expects_tool": "LINEAR_CREATE_ISSUE", "expects_args": {"title": "Set up CI", "team": "Devops"}}
+{"prompt": "Update issue PROD-1 to priority high.", "expects_tool": "LINEAR_UPDATE_ISSUE", "expects_args": {"issue_id": "PROD-1", "priority": 2}}
+{"prompt": "Get issue PROD-1.", "expects_tool": "LINEAR_GET_LINEAR_ISSUE", "expects_args": {"issue_id": "PROD-1"}}
+{"prompt": "Get issue from URL https://linear.app/aperture/issue/ENG-100.", "expects_tool": "LINEAR_GET_LINEAR_ISSUE", "expects_args": {"issue_id": "ENG-100"}}
+{"prompt": "List the issues on the Mobile team.", "expects_tool": "LINEAR_LIST_TEAM_ISSUES", "expects_args": {"team": "Mobile"}}
+{"prompt": "List Linear projects.", "expects_tool": "LINEAR_LIST_PROJECTS", "expects_args": {}}
+{"prompt": "Get Linear project ID 'aperture-launch'.", "expects_tool": "LINEAR_GET_PROJECT", "expects_args": {"project": "aperture-launch"}}
+{"prompt": "Find user with email 'bob@x.com' on Linear.", "expects_tool": "LINEAR_GET_USERS_BY_EMAIL", "expects_args": {"email": "bob@x.com"}}
+{"prompt": "Show all teams.", "expects_tool": "LINEAR_GET_ALL_LINEAR_TEAMS", "expects_args": {}}
+{"prompt": "Reassign ENG-42 to bob@x.com.", "expects_tool": "LINEAR_ASSIGN_ISSUE", "expects_args": {"issue_id": "ENG-42", "assignee_email": "bob@x.com"}}
+{"prompt": "Update ENG-42 description to 'OAuth flow drops on first redirect.'", "expects_tool": "LINEAR_UPDATE_ISSUE", "expects_args": {"issue_id": "ENG-42", "description": "OAuth flow drops on first redirect."}}
+{"prompt": "What are my open Linear tickets?", "expects_tool": "LINEAR_GET_LINEAR_USER_ISSUES", "expects_args": {"state": "open"}}
+{"prompt": "List all issues for team 'Aperture' on Linear.", "expects_tool": "LINEAR_LIST_TEAM_ISSUES", "expects_args": {"team": "Aperture"}}
+{"prompt": "Delete Linear issue 'BUG-42'.", "expects_tool": "LINEAR_DELETE_ISSUE", "expects_args": {"issue_id": "BUG-42"}}
+{"prompt": "Get Linear current user.", "expects_tool": "LINEAR_GET_CURRENT_USER", "expects_args": {}}

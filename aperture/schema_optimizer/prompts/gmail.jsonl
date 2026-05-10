@@ -1,0 +1,30 @@
+{"prompt": "Send an email to alice@example.com with subject 'Status update' and body 'Shipping today.'", "expects_tool": "GMAIL_SEND_EMAIL", "expects_args": {"to": "alice@example.com", "subject": "Status update", "body": "Shipping today."}}
+{"prompt": "Email bob@x.com saying 'See you at 3pm'.", "expects_tool": "GMAIL_SEND_EMAIL", "expects_args": {"to": "bob@x.com", "body": "See you at 3pm"}}
+{"prompt": "Send a message to the team list at team@x.com with subject 'release v2'.", "expects_tool": "GMAIL_SEND_EMAIL", "expects_args": {"to": "team@x.com", "subject": "release v2"}}
+{"prompt": "Search Gmail for emails from alice@example.com.", "expects_tool": "GMAIL_SEARCH_EMAILS", "expects_args": {"query": "from:alice@example.com"}}
+{"prompt": "Find emails from last week containing 'invoice'.", "expects_tool": "GMAIL_SEARCH_EMAILS", "expects_args": {"query": "invoice newer_than:7d"}}
+{"prompt": "Search for emails labeled 'urgent'.", "expects_tool": "GMAIL_SEARCH_EMAILS", "expects_args": {"query": "label:urgent"}}
+{"prompt": "Fetch the latest 10 emails in my inbox.", "expects_tool": "GMAIL_FETCH_EMAILS", "expects_args": {"max_results": 10}}
+{"prompt": "Get email message id 18bcd0a23.", "expects_tool": "GMAIL_FETCH_MESSAGE_BY_MESSAGE_ID", "expects_args": {"message_id": "18bcd0a23"}}
+{"prompt": "Get the thread with id 18bcd0a23 from Gmail.", "expects_tool": "GMAIL_FETCH_MESSAGE_BY_THREAD_ID", "expects_args": {"thread_id": "18bcd0a23"}}
+{"prompt": "List my Gmail threads.", "expects_tool": "GMAIL_LIST_THREADS", "expects_args": {}}
+{"prompt": "List my draft emails.", "expects_tool": "GMAIL_LIST_DRAFTS", "expects_args": {}}
+{"prompt": "Show all my Gmail labels.", "expects_tool": "GMAIL_LIST_LABELS", "expects_args": {}}
+{"prompt": "Create a draft email to alice@example.com about 'review'.", "expects_tool": "GMAIL_CREATE_DRAFT", "expects_args": {"to": "alice@example.com", "subject": "review"}}
+{"prompt": "Move message 18bcd0a23 to trash.", "expects_tool": "GMAIL_MOVE_TO_TRASH", "expects_args": {"message_id": "18bcd0a23"}}
+{"prompt": "Delete message 18bcd0a23 from Gmail.", "expects_tool": "GMAIL_DELETE_MESSAGE", "expects_args": {"message_id": "18bcd0a23"}}
+{"prompt": "Create a Gmail label called 'project-aperture'.", "expects_tool": "GMAIL_CREATE_LABEL", "expects_args": {"name": "project-aperture"}}
+{"prompt": "Find emails about 'invoice 2026' from billing@x.com.", "expects_tool": "GMAIL_SEARCH_EMAILS", "expects_args": {"query": "from:billing@x.com invoice 2026"}}
+{"prompt": "Search Gmail for messages with attachments.", "expects_tool": "GMAIL_SEARCH_EMAILS", "expects_args": {"query": "has:attachment"}}
+{"prompt": "Search Gmail for unread emails.", "expects_tool": "GMAIL_SEARCH_EMAILS", "expects_args": {"query": "is:unread"}}
+{"prompt": "Forward draft email id 'd_42' (no — actually create a draft to forward it).", "expects_tool": "GMAIL_CREATE_DRAFT", "expects_args": {}}
+{"prompt": "Get the contents of email message ID 18cdf001234.", "expects_tool": "GMAIL_FETCH_MESSAGE_BY_MESSAGE_ID", "expects_args": {"message_id": "18cdf001234"}}
+{"prompt": "Send a Gmail to alice@example.com cc bob@example.com with body 'fyi'.", "expects_tool": "GMAIL_SEND_EMAIL", "expects_args": {"to": "alice@example.com", "cc": "bob@example.com", "body": "fyi"}}
+{"prompt": "Send an email at 9am tomorrow to ceo@x.com about 'Q3 report'.", "expects_tool": "GMAIL_SEND_EMAIL", "expects_args": {"to": "ceo@x.com", "subject": "Q3 report"}}
+{"prompt": "List the threads in my Gmail.", "expects_tool": "GMAIL_LIST_THREADS", "expects_args": {}}
+{"prompt": "Update draft id 'd_42' with new subject 'updated'.", "expects_tool": "GMAIL_UPDATE_DRAFT", "expects_args": {"draft_id": "d_42", "subject": "updated"}}
+{"prompt": "Delete draft id 'd_42'.", "expects_tool": "GMAIL_DELETE_MESSAGE", "expects_args": {"message_id": "d_42"}}
+{"prompt": "Get the Gmail label 'urgent'.", "expects_tool": "GMAIL_GET_LABEL", "expects_args": {"name": "urgent"}}
+{"prompt": "Find recent emails from bob@example.com.", "expects_tool": "GMAIL_SEARCH_EMAILS", "expects_args": {"query": "from:bob@example.com"}}
+{"prompt": "Search Gmail for 'Q3 results'.", "expects_tool": "GMAIL_SEARCH_EMAILS", "expects_args": {"query": "Q3 results"}}
+{"prompt": "Send an email to legal@x.com about 'Renewal' body 'Please review attached.'", "expects_tool": "GMAIL_SEND_EMAIL", "expects_args": {"to": "legal@x.com", "subject": "Renewal", "body": "Please review attached."}}

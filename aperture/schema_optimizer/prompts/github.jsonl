@@ -1,0 +1,30 @@
+{"prompt": "Create an issue titled 'Login broken' in composioHQ/composio.", "expects_tool": "GITHUB_CREATE_ISSUE", "expects_args": {"owner": "composioHQ", "repo": "composio", "title": "Login broken"}}
+{"prompt": "Open a new issue in composio repo with title Auth failure on Safari.", "expects_tool": "GITHUB_CREATE_ISSUE", "expects_args": {"owner": "composioHQ", "repo": "composio", "title": "Auth failure on Safari"}}
+{"prompt": "List all open issues in composioHQ/composio.", "expects_tool": "GITHUB_LIST_ISSUES", "expects_args": {"owner": "composioHQ", "repo": "composio", "state": "open"}}
+{"prompt": "Show me the top 5 issues labeled 'bug' in the composio repository.", "expects_tool": "GITHUB_LIST_ISSUES", "expects_args": {"owner": "composioHQ", "repo": "composio", "labels": "bug", "per_page": 5}}
+{"prompt": "Get the issue numbered 42 in anthropics/anthropic-sdk-python.", "expects_tool": "GITHUB_GET_ISSUE", "expects_args": {"owner": "anthropics", "repo": "anthropic-sdk-python", "issue_number": 42}}
+{"prompt": "Submit a PR titled 'Fix OAuth' against composioHQ/composio main from my-fork:fix-oauth.", "expects_tool": "GITHUB_CREATE_PULL_REQUEST", "expects_args": {"owner": "composioHQ", "repo": "composio", "title": "Fix OAuth", "head": "my-fork:fix-oauth", "base": "main"}}
+{"prompt": "List the open pull requests in langchain-ai/langchain.", "expects_tool": "GITHUB_LIST_PULL_REQUESTS", "expects_args": {"owner": "langchain-ai", "repo": "langchain", "state": "open"}}
+{"prompt": "Get the PR #1234 in openai/openai-python.", "expects_tool": "GITHUB_GET_PULL_REQUEST", "expects_args": {"owner": "openai", "repo": "openai-python", "pull_number": 1234}}
+{"prompt": "Merge the pull request #88 in composioHQ/composio.", "expects_tool": "GITHUB_MERGE_PULL_REQUEST", "expects_args": {"owner": "composioHQ", "repo": "composio", "pull_number": 88}}
+{"prompt": "Get the GitHub repo composioHQ/composio.", "expects_tool": "GITHUB_GET_A_REPOSITORY", "expects_args": {"owner": "composioHQ", "repo": "composio"}}
+{"prompt": "Get repository details for langchain-ai/langgraph.", "expects_tool": "GITHUB_GET_A_REPOSITORY", "expects_args": {"owner": "langchain-ai", "repo": "langgraph"}}
+{"prompt": "Search GitHub repositories for 'mcp server'.", "expects_tool": "GITHUB_SEARCH_REPOS", "expects_args": {"q": "mcp server"}}
+{"prompt": "Find repositories about 'token efficiency'.", "expects_tool": "GITHUB_SEARCH_REPOS", "expects_args": {"q": "token efficiency"}}
+{"prompt": "List the last 10 commits on the main branch of composioHQ/composio.", "expects_tool": "GITHUB_LIST_COMMITS", "expects_args": {"owner": "composioHQ", "repo": "composio", "sha": "main", "per_page": 10}}
+{"prompt": "Get commit abc123def in openai/openai-python.", "expects_tool": "GITHUB_GET_COMMIT", "expects_args": {"owner": "openai", "repo": "openai-python", "ref": "abc123def"}}
+{"prompt": "List the branches of langchain-ai/langgraph.", "expects_tool": "GITHUB_LIST_BRANCHES", "expects_args": {"owner": "langchain-ai", "repo": "langgraph"}}
+{"prompt": "Get the 'develop' branch of composioHQ/composio.", "expects_tool": "GITHUB_GET_BRANCH", "expects_args": {"owner": "composioHQ", "repo": "composio", "branch": "develop"}}
+{"prompt": "List collaborators on composioHQ/composio.", "expects_tool": "GITHUB_LIST_COLLABORATORS", "expects_args": {"owner": "composioHQ", "repo": "composio"}}
+{"prompt": "Show all releases of openai/openai-python.", "expects_tool": "GITHUB_LIST_RELEASES", "expects_args": {"owner": "openai", "repo": "openai-python"}}
+{"prompt": "Get release v0.40.0 of anthropics/anthropic-sdk-python.", "expects_tool": "GITHUB_GET_RELEASE", "expects_args": {"owner": "anthropics", "repo": "anthropic-sdk-python", "tag": "v0.40.0"}}
+{"prompt": "Add a comment 'Looks good to me' to issue 42 in composioHQ/composio.", "expects_tool": "GITHUB_CREATE_COMMENT", "expects_args": {"owner": "composioHQ", "repo": "composio", "issue_number": 42, "body": "Looks good to me"}}
+{"prompt": "Close issue 42 in composioHQ/composio.", "expects_tool": "GITHUB_CLOSE_ISSUE", "expects_args": {"owner": "composioHQ", "repo": "composio", "issue_number": 42}}
+{"prompt": "Reopen issue 99 in composioHQ/composio.", "expects_tool": "GITHUB_REOPEN_ISSUE", "expects_args": {"owner": "composioHQ", "repo": "composio", "issue_number": 99}}
+{"prompt": "Assign issue 7 to nikos in composioHQ/composio.", "expects_tool": "GITHUB_ASSIGN_ISSUE", "expects_args": {"owner": "composioHQ", "repo": "composio", "issue_number": 7, "assignees": ["nikos"]}}
+{"prompt": "Star the repo composioHQ/composio.", "expects_tool": "GITHUB_STAR_REPOSITORY", "expects_args": {"owner": "composioHQ", "repo": "composio"}}
+{"prompt": "List the issues assigned to me on langchain-ai/langchain.", "expects_tool": "GITHUB_LIST_ISSUES", "expects_args": {"owner": "langchain-ai", "repo": "langchain", "assignee": "@me"}}
+{"prompt": "Get my GitHub user info.", "expects_tool": "GITHUB_GET_THE_AUTHENTICATED_USER", "expects_args": {}}
+{"prompt": "Get the GitHub user 'nikos'.", "expects_tool": "GITHUB_GET_USER", "expects_args": {"username": "nikos"}}
+{"prompt": "List the languages used in composioHQ/composio.", "expects_tool": "GITHUB_LIST_REPOSITORY_LANGUAGES", "expects_args": {"owner": "composioHQ", "repo": "composio"}}
+{"prompt": "Update the title of issue 42 in composioHQ/composio to 'Auth broken on iOS'.", "expects_tool": "GITHUB_UPDATE_ISSUE", "expects_args": {"owner": "composioHQ", "repo": "composio", "issue_number": 42, "title": "Auth broken on iOS"}}
