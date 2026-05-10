@@ -7,6 +7,20 @@ from typing import Any
 from aperture.schema_optimizer.models import SchemaField
 
 
+def _unwrap_openai_envelope(schema: dict[str, Any]) -> dict[str, Any]:
+    """Composio's default `client.tools.get()` returns OpenAI-shape
+    `{function: {name, description, parameters}, type: 'function'}` dicts.
+    This helper unwraps to the inner dict so the rest of the extractor
+    can work with a single shape.
+
+    Verified live 2026-05-10. The Anthropic provider returns the inner
+    shape directly (no envelope), so we tolerate both.
+    """
+    if isinstance(schema, dict) and schema.get("type") == "function" and isinstance(schema.get("function"), dict):
+        return schema["function"]
+    return schema
+
+
 def _tool_slug(schema: dict[str, Any]) -> str:
     return str(schema.get("slug") or schema.get("name") or "UNKNOWN_TOOL")
 
@@ -14,6 +28,7 @@ def _tool_slug(schema: dict[str, Any]) -> str:
 def extract_description_fields(schema: dict) -> list[SchemaField]:
     """Extract tool and parameter description fields with paths."""
 
+    schema = _unwrap_openai_envelope(schema)
     tool_slug = _tool_slug(schema)
     fields: list[SchemaField] = []
     description = schema.get("description")

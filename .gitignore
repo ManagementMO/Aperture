@@ -1,8 +1,29 @@
 .aperture/
 .pytest_cache/
 .venv/
+.ruff_cache/
 __pycache__/
 *.py[cod]
 *.egg-info/
+
+# Secrets
+.env
+.env.local
+
+# Generated artifacts that change every run
 reports/events.jsonl
+reports/events.db
+reports/events.db-journal
 reports/live_composio_check.json
+reports/raw_token_baseline.json
+
+# Frontend (legacy demo branch)
+frontend/
+
+# Dashboard build output
+aperture-v1-dashboard/node_modules/
+aperture-v1-dashboard/dist/
+aperture-v1-dashboard/tsconfig.tsbuildinfo
+
+# Schema optimizer artifacts (regenerable)
+aperture/schema_optimizer/_schemas.json

@@ -18,10 +18,24 @@ from aperture.tokenization.token_counter import count_tokens_for_payload
 from aperture.types import SchemaOptimizationResult
 
 
+def _unwrap_openai_envelope(schema: dict) -> dict:
+    """Mirror of extract_fields._unwrap_openai_envelope.
+
+    Composio's default `client.tools.get()` returns OpenAI-shape
+    `{function: {name, description, parameters}, type: 'function'}` dicts;
+    the Anthropic provider returns the inner shape directly. The optimizer
+    pipeline normalizes here so downstream code sees one shape.
+    """
+    if isinstance(schema, dict) and schema.get("type") == "function" and isinstance(schema.get("function"), dict):
+        return schema["function"]
+    return schema
+
+
 def optimize_schemas(live: bool = False) -> list[SchemaOptimizationResult]:
     """Run deterministic schema optimization over fixture or live schemas."""
 
-    schemas = fetch_tool_schemas(live=live)
+    raw_schemas = fetch_tool_schemas(live=live)
+    schemas = [_unwrap_openai_envelope(s) for s in raw_schemas if isinstance(s, dict)]
     schema_by_tool = {schema.get("slug") or schema.get("name"): schema for schema in schemas}
     fields = []
     for schema in schemas:

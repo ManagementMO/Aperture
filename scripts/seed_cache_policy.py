@@ -148,22 +148,78 @@ def _entry(
     return out
 
 
-def fetch_slugs_from_composio() -> list[str]:
-    """Live mode: pull every tool slug from Composio. Paginated."""
+def _extract_tool_name(tool: object) -> str | None:
+    """Pull the slug out of any of Composio's tool-shape variants.
+
+    Verified live 2026-05-10: with the default client (no AnthropicProvider),
+    `client.tools.get()` returns OpenAI-shape `{function: {name, ...}, type:
+    'function'}` dicts. The Anthropic provider returns `{name, description,
+    input_schema}` dicts. We tolerate both, plus pydantic models.
+    """
+    if isinstance(tool, dict):
+        # OpenAI shape: {function: {name, ...}, type: 'function'}
+        fn = tool.get("function")
+        if isinstance(fn, dict) and fn.get("name"):
+            return str(fn["name"])
+        # Anthropic shape: {name, description, input_schema}
+        if tool.get("name"):
+            return str(tool["name"])
+        if tool.get("slug"):
+            return str(tool["slug"])
+    name = getattr(tool, "name", None) or getattr(tool, "slug", None)
+    return str(name) if name else None
+
+
+def fetch_slugs_from_composio(user_id: str = "default") -> list[str]:
+    """Live mode: pull every tool slug from Composio.
+
+    The Composio Python SDK (verified live 2026-05-10) doesn't expose a
+    `client.tools.list()` method. The supported pattern is:
+        1. `client.toolkits.list()` to enumerate every toolkit (returns ~1000).
+        2. For each toolkit, `client.tools.get(user_id=, toolkits=[slug])` to
+           fetch every tool in that toolkit.
+    The Anthropic provider returns Anthropic-shape tool dicts with `name`.
+
+    Args:
+        user_id: a Composio user_id with at least one connected account.
+            Required by `client.tools.get()`.
+    """
     if not os.getenv("COMPOSIO_API_KEY"):
         raise RuntimeError("Live mode requires COMPOSIO_API_KEY in env.")
     from composio import Composio
 
     client = Composio(api_key=os.getenv("COMPOSIO_API_KEY"))
-    # `client.tools.list()` may paginate; iterate until exhausted.
-    slugs: list[str] = []
-    response = client.tools.list()  # type: ignore[attr-defined]
-    items = getattr(response, "items", None) or response
-    for item in items:
-        slug = getattr(item, "slug", None) or getattr(item, "name", None)
+
+    # 1. List all toolkits.
+    toolkits_response = client.toolkits.list()
+    toolkit_items = getattr(toolkits_response, "items", None) or toolkits_response
+    toolkit_slugs: list[str] = []
+    for tk in toolkit_items:
+        slug = (
+            getattr(tk, "slug", None)
+            or (tk.get("slug") if isinstance(tk, dict) else None)
+            or getattr(tk, "name", None)
+        )
         if slug:
-            slugs.append(str(slug))
-    return slugs
+            toolkit_slugs.append(str(slug).lower())
+
+    # 2. Fetch tools per toolkit. `client.tools.get` raises InvalidParams if
+    #    user_id has no connected accounts for the toolkit, so swallow per-
+    #    toolkit failures and keep going.
+    seen: set[str] = set()
+    for tk_slug in toolkit_slugs:
+        try:
+            tools = client.tools.get(user_id=user_id, toolkits=[tk_slug], limit=500)
+        except Exception:  # noqa: BLE001
+            continue
+        if not isinstance(tools, list):
+            continue
+        for tool in tools:
+            name = _extract_tool_name(tool)
+            if name:
+                seen.add(name)
+
+    return sorted(seen)
 
 
 def render_yaml(slugs: list[str], existing_yaml_path: Path | None = None) -> str:
@@ -201,10 +257,15 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--slugs-from-json", help="Path to JSON file with a flat list of slugs.")
     parser.add_argument("--output", default="aperture/cache/policy.yaml")
     parser.add_argument("--dry-run", action="store_true", help="Print to stdout instead of writing.")
+    parser.add_argument(
+        "--user-id",
+        default=os.getenv("COMPOSIO_USER_ID", "default"),
+        help="Composio user_id for the live tool-fetch loop (must have ≥1 connected account).",
+    )
     args = parser.parse_args(argv)
 
     if args.live:
-        slugs = fetch_slugs_from_composio()
+        slugs = fetch_slugs_from_composio(user_id=args.user_id)
     elif args.slugs_from_json:
         with open(args.slugs_from_json, encoding="utf-8") as f:
             slugs = json.load(f)

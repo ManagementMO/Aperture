@@ -41,9 +41,16 @@ class ProxyConfig:
             # When the inbound URL is the full Composio shape, the proxy can
             # forward verbatim — the template form is for hosted deployments
             # where the proxy is in front of a single Composio account.
+            # Verified live 2026-05-10 against the Composio Python SDK:
+            # ToolRouterMCPServerConfig returns
+            # `https://backend.composio.dev/tool_router/{session_id}/mcp` with
+            # `x-api-key` in headers (NOT a query param). The template here is
+            # the FORMAT — the per-request session_id substitutes in.
+            # An older Composio v3 path (`/v3/mcp/{server_id}?user_id={user_id}`)
+            # exists for the c.mcp namespace; tool_router uses `/tool_router/`.
             composio_mcp_url_template=os.getenv(
                 "APERTURE_COMPOSIO_MCP_URL_TEMPLATE",
-                "https://backend.composio.dev/v3/mcp/{server_id}?user_id={user_id}",
+                "https://backend.composio.dev/tool_router/{session_id}/mcp",
             ),
             overlay_path=os.getenv("APERTURE_OVERLAY_PATH"),
             log_level=os.getenv("APERTURE_PROXY_LOG_LEVEL", "INFO").upper(),

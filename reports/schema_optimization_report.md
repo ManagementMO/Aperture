@@ -2,7 +2,7 @@
 
 | Tool | Tokens Saved |
 | --- | --- |
-| GITHUB_LIST_REPOSITORY_ISSUES | 12 |
+| GITHUB_LIST_REPOSITORY_ISSUES | 8 |
 | GMAIL_SEARCH_EMAILS | 4 |
 | SLACK_SEARCH_MESSAGES | 3 |
 | NOTION_QUERY_DATABASE | 1 |
@@ -12,7 +12,7 @@
 
 | Tool | Field | Original | Optimized | Saved | Accepted | Rejection |
 | --- | --- | --- | --- | --- | --- | --- |
-| GITHUB_LIST_REPOSITORY_ISSUES | description | 46 | 40 | 6 | True |  |
+| GITHUB_LIST_REPOSITORY_ISSUES | description | 46 | 44 | 2 | True |  |
 | NOTION_QUERY_DATABASE | description | 30 | 29 | 1 | True |  |
 | SLACK_SEARCH_MESSAGES | description | 30 | 29 | 1 | True |  |
 | GMAIL_SEARCH_EMAILS | description | 29 | 28 | 1 | True |  |
