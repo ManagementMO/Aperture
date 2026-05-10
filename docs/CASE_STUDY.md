@@ -56,6 +56,52 @@ tests, 0 ruff findings, 4 independent reviewer sign-offs.
 
 ---
 
+## How the project began: salvage and the Path 1 vs Path 2 decision
+
+This wasn't a greenfield project. A prior team had built a working `demo`
+branch — a userspace SDK wrapper around Composio's `client.tools.execute()`
+with output compression, a Redis-backed cache, and a 14-page React
+dashboard. It shipped. It was not what v1 was supposed to be.
+
+The v1 plan called for a *cross-agent* MCP proxy intercepting Composio's
+six meta tools — a fundamentally different architecture from the
+demo's single-tenant userspace runner. Two paths forward:
+
+- **Path 1 — MCP proxy.** Build a Streamable-HTTP MCP server that
+  splices LLM-client ↔ Composio traffic. Hardest path; ~2-3 weeks of
+  net-new protocol work; cross-agent semantics for free; matches v1
+  vision exactly.
+- **Path 2 — Keep the userspace wrapper.** Strap the cache and the
+  attribution layer onto the existing demo. Faster to ship; loses
+  cross-agent semantics; doesn't match v1.
+
+I chose Path 1 explicitly, after asking. The reasoning: the cross-agent
+cache is the entire reason v1 exists. A single agent's repeated
+`SEARCH_TOOLS` calls are an easy fix; the hard problem is amortizing
+those costs across dozens of agents on the same toolkits at the same
+time. Path 2 doesn't solve that; the demo *was* Path 2 already. If we
+were going to spend weeks shipping again, it should be on the harder
+problem.
+
+Then I made a second decision: **start from `aperture-plan-review` HEAD,
+not from scratch.** A prior v1 attempt at commit `b4e2937` had ~80% of
+the scaffolding done — types, YAML cache policy loader, deterministic
+schema-optimizer pipeline, 41 test files. Plenty of audit work to do
+(some of it had real bugs — the Anthropic tokenizer was secretly using
+chars/4 fallback, the cache key was missing the policy-version segment,
+the rewriter returned one candidate not three) but discarding 2,000
+lines of working scaffolding to build greenfield seemed wasteful.
+Reset, audit, and salvage was the right call. The demo branch stayed
+parallel and untouched the entire time; the two never shared files.
+
+**Lesson.** When a prior attempt exists, the cheapest first step is
+usually an honest audit, not a fresh start. The audit told us what was
+salvageable (most of it) and what was rotten (three real bugs and one
+broken contract). Greenfield would have rediscovered all of those the
+hard way.
+
+---
+
 ## Architecture: where the safety lives
 
 ```
@@ -363,6 +409,223 @@ the live judge only ever sees candidates that *could* land in the
 overlay. Money saved per run, more relevant top-N, no behavior change to
 the safety semantics. **Found by reading the budget telemetry from a
 real run.**
+
+---
+
+## What I learned about MCP
+
+Most engineers haven't worked with the Model Context Protocol yet. Six
+specifics I learned the hard way:
+
+**Streamable HTTP, not WebSocket.** Aperture is built on
+`mcp.server.lowlevel.Server` and `StreamableHTTPSessionManager` with
+`stateless=True`. The transport is HTTP with Server-Sent Events for
+streaming responses. This means the proxy can be horizontally scaled —
+each request is independent, the LLM client gets routed to whichever
+proxy instance handles it. Sessions live in the LLM client's headers
+(`mcp-session-id`), not in the proxy's process memory.
+
+**FastMCP is the wrong abstraction for upstream-defined tools.** I
+considered using FastMCP's `@mcp.tool` decorator. It forces static tool
+declarations: every tool has to be defined in the proxy's code at
+startup. Aperture's tools are *Composio's* — published dynamically by
+the upstream. The low-level `Server` class with `@server.list_tools()`
+and `@server.call_tool()` decorators is the right abstraction; it
+forwards `tools/list` requests to upstream and returns whatever Composio
+publishes. (The schema overlay applies on top of that response.)
+
+**Lifespan-owned state, not module globals.** The `lifespan`
+context-manager pattern in MCP server lets you construct shared
+resources once at startup and pass them to request handlers via
+`server.request_context.lifespan_context`. The proxy uses this for the
+upstream client, session registry, tokenizer service, schema overlay,
+and cache store. Every request reads from the lifespan context;
+nothing is constructed in the request hot path.
+
+**Headers are everything.** Composio's tool-router URL embeds the
+session ID as a path segment
+(`https://backend.composio.dev/tool_router/{session_id}/mcp`) and
+authentication as an `x-api-key` header. The proxy must (a) substitute
+`{session_id}` from the inbound request's `mcp-session-id` header,
+(b) forward `x-api-key` and other auth headers verbatim without dropping
+them, and (c) NOT forward hop-by-hop headers like `accept`,
+`content-length`, `transfer-encoding` (those are owned by the
+proxy's own HTTP transport).
+
+**MCP `CallToolResult.isError` is not in the JSON content payload.**
+The error flag is at the result level, not in the response body. When
+the proxy forwards a result, the cache layer needs to know "this was an
+error" so it doesn't store it. I solved that by tagging the dict
+payload with `_aperture_upstream_error: True` before it reached the
+cache, then stripping the marker before the response went out to the
+LLM. The cache's `_success_response` learned to look for this marker.
+
+**Background tokenization needs strong references.** A naive
+`asyncio.create_task(_runner())` can be garbage-collected mid-flight if
+nothing holds a reference. The `TokenizerService` keeps an
+`_inflight: set[asyncio.Task]` and uses
+`task.add_done_callback(self._inflight.discard)` to clean up. On
+lifespan shutdown, `tokenizer.drain(timeout=2.0)` waits for in-flight
+tasks to complete (or cancels them) before tearing down the upstream
+client.
+
+These are MCP-specific lessons that don't generalize to "any HTTP
+proxy." If you're hiring for a role that touches MCP — building tooling
+on top of Anthropic's protocol, building MCP servers/clients, or
+integrating with platforms that use MCP — these are the gotchas that
+matter.
+
+---
+
+## Tradeoffs I considered and rejected
+
+**Qdrant / vector / semantic cache.** v1 uses exact-match keys
+(`sha256(stable_serialize_payload(params))`). A semantic cache would
+hit on near-duplicate prompts even when the args differ slightly. I
+rejected this for v1 because (a) the policy-version coupling
+(`:p1:`) and scope isolation are hard enough to get right with exact
+match, and adding semantic similarity adds an entire new failure mode
+(false-hits on tools where args matter exactly), and (b) the
+attribution data we collect should drive the decision: if `SEARCH_TOOLS`
+near-duplicates are common, semantic caching is worth it; if they're
+rare, it's not. v2 territory.
+
+**FastMCP.** Already covered above. The dynamic-tool issue made it
+wrong for this use case. Worth flagging because it's the obvious
+"why didn't you just use…" question from a reviewer.
+
+**Writing into Composio's registry directly.** v1's schema optimizer
+produces an *overlay file* the proxy applies on outbound responses —
+it does not commit rewrites back into Composio's registry. I rejected
+direct registry writes because (a) we don't have internal Composio
+access, (b) committing to a shared registry would affect every other
+Composio user, not just our LLM, and (c) keeping rewrites in our
+overlay means we can roll back instantly without coordination with
+Composio. The overlay path is operationally clean.
+
+**Doing schema optimization at runtime instead of offline.** I
+considered making the proxy *compute* description rewrites on the fly
+during a `tools/list`. Rejected: rewrite generation needs the full LLM
+judge run (50 prompts × 2 schemas × Haiku/Sonnet) which costs ~$0.20
+per candidate. Doing that at runtime would cost dollars per
+`tools/list`. Offline batch optimization with a cached overlay is
+strictly better.
+
+**A unified telemetry pipeline (OpenTelemetry).** v1 uses an in-process
+SQLite event log + JSONL sink. Production-grade observability would mean
+OTel traces, Prometheus metrics, structured logs to ELK/Datadog. I
+deferred this because the v1 acceptance criteria specifically asked for
+the `/api/v3.1/...` API shape that mirrors Composio's own attribution
+endpoints. Cleaner to ship that single contract first, then add OTel
+on top later.
+
+---
+
+## Layered testing strategy
+
+Different test layers exist to catch different failure modes:
+
+**Unit tests (most of the 234)** — pure functions, deterministic, no
+network. Catches type errors, wrong-shape bugs, off-by-one, contract
+violations within a module. Cheap to run; runs in pre-commit.
+
+**Replay-mode LLM-judge tests** — JSON fixtures recorded from real
+Anthropic responses, played back in tests. Catches regressions in the
+judge's accept/reject logic without burning $0.20 per CI run. Test
+fixtures are seeded by hand for the basic cases and (in production)
+recorded automatically by setting `replay_dir=` during a live run.
+
+**ASGI integration tests** — `tests/proxy/test_proxy_integration.py`
+boots `create_app()` with `TestClient`, monkey-patches
+`UpstreamClient` and `dispatch`, sends real MCP `initialize` and
+`tools/list` / `tools/call` JSON-RPC requests through the full Starlette
++ MCP middleware stack, and asserts that auth headers, session IDs, and
+dispatch routing all work end-to-end. This is what catches the "proxy
+is not actually wired" class of bug.
+
+**Compression regression tests** — `test_rewriter_compression_benchmark.py`
+runs the rewriter against the actual fixture corpus and asserts ≥20%
+aggregate reduction on top-15 plus ≥9/15 fields with non-zero savings.
+This locks in the rewriter quality so a future change can't silently
+regress it back to 0%.
+
+**Live integration tests** — gated on `live_composio`, `live_anthropic`,
+`live_redis` env-var markers. NEVER run in CI. Run manually when
+verifying a new version against real Composio + Anthropic. The 522-call
+live judge run was via this mechanism.
+
+The mistake I made early was **conflating layers**: thinking that
+passing unit tests + a replay-mode test + an ASGI test meant the live
+integration was good. It wasn't, twice (the silent-pass and
+schema-shape bugs). Each layer needs at least one corresponding live
+verification. Each layer's coverage is real but bounded.
+
+**Lesson.** Test coverage isn't a single number. It's a layer matrix.
+A bug in the live-integration row can sit there for months while
+unit-test coverage is "100%."
+
+---
+
+## The privacy decision
+
+The Anthropic `count_tokens` API is **opt-in via
+`APERTURE_USE_ANTHROPIC_TOKENIZER=true`**. By default, the tokenizer
+falls back to `cl100k_base` (the OpenAI GPT-4 tokenizer) and returns
+counts marked `tokenizer_is_approximate=True`.
+
+The decision: every Composio tool response body that flowed through
+the proxy would otherwise be sent to Anthropic for tokenization,
+regardless of which LLM the user is actually using. A user running on
+GPT-4 would have payload bodies leave for Anthropic. A user running on
+self-hosted Llama would have payload bodies leave for Anthropic. That
+is a privacy regression no operator would accept.
+
+The fix is the opt-in flag plus a default that keeps everything
+local. The accuracy tradeoff is real — `cl100k_base` over-estimates
+Anthropic-bound counts by ~5% on average — but it's the right
+default for cross-cutting privacy. If you're running Claude end-to-end
+and want exact counts, opt in. The flag is documented in the README
+env-var matrix and in `docs/security_privacy.md`.
+
+**Lesson.** When a feature has a cross-cutting privacy implication,
+opt-in is the right default. The flag costs you nothing operationally;
+silently shipping the regression costs you trust.
+
+---
+
+## The Phase 1 baseline that wasn't done
+
+The original v1 plan called for "Phase 1 — Real-token-cost baseline":
+100 real Composio sessions across the seven connected toolkits, captured
+through the proxy, tokenized end-to-end, used to inform the
+`policy.yaml` ranking and the schema-optimizer top-N selection.
+
+I didn't do it. Two reasons: (a) the user had not provided active
+Composio sessions across all seven toolkits — only GitHub had a real
+connected account in the live integration; (b) Anthropic credits ran
+out before the schema optimizer had a chance to run live against the
+real session data.
+
+What this absence costs: the schema optimizer's "top-15 candidates"
+ranking is computed from `tokens × frequency_prior`. The frequency_prior
+in v1 is a uniform constant (every tool has frequency=1) because we
+have no real session data. With real session data, `frequency` would be
+"how often did this tool appear in the 100-session corpus" — and the
+ranking would prioritize tools that get called a lot, not just tools
+with long descriptions. The current overlay's 4 tools (GitHub list
+issues, Notion query, Slack search, Gmail search) are the right ones
+to optimize first regardless of frequency, but a real-session baseline
+would have surfaced ~20-30 more.
+
+The pipeline is right; the input data is approximate. A future
+engineer with funded Anthropic and active Composio sessions can rerun
+the optimizer with real frequency data and the overlay will populate
+naturally.
+
+**Lesson.** When a planned input dataset doesn't materialize, the
+pipeline isn't broken — its inputs are approximate. Be explicit about
+what's approximate. Don't pretend the uniform-frequency-prior is the
+same as real data.
 
 ---
 
