@@ -1064,7 +1064,11 @@ def demo_run(payload: dict) -> dict:
     from aperture.agent.composio_agent import run_agent
 
     ask = (payload.get("ask") or "").strip()
-    run = run_agent(ask)
+    effort_mode = (payload.get("effort_mode") or payload.get("mode") or "medium").strip().lower()
+    if effort_mode not in {"off", "aggressive", "low", "medium", "high", "auto"}:
+        effort_mode = "medium"
+
+    run = run_agent(ask, effort_mode=effort_mode)
 
     steps_out: list[dict] = []
     for s in run.steps:
@@ -1095,6 +1099,8 @@ def demo_run(payload: dict) -> dict:
             "cache_status": s.cache_status,
             "cache_age_seconds": s.cache_age_seconds,
             "composio_cost_avoided_usd": s.composio_cost_avoided_usd,
+            "effort_mode": s.effort_mode,
+            "compression_mode": s.compression_mode,
         })
 
     raw_total = run.total_raw_tokens
@@ -1123,6 +1129,7 @@ def demo_run(payload: dict) -> dict:
         "ask": ask,
         "answer": run.answer,
         "model": run.model,
+        "effort_mode": run.effort_mode,
         "iterations": run.iterations,
         "stopped_reason": run.stopped_reason,
         "error": run.error,
@@ -1150,6 +1157,7 @@ def demo_run(payload: dict) -> dict:
         },
         "cost": cost_block,
         "steps": steps_out,
+        "cache": _demo_cache_stats(run),
     }
 
 
@@ -1169,21 +1177,88 @@ def runtime_cache_stats() -> dict:
 
 @app.get("/api/cache/tools")
 def tool_cache_stats() -> dict:
+    return _demo_cache_stats()
+
+
+def _demo_cache_stats(current_run=None) -> dict:
     """Per-tool-call cache stats — Composio savings."""
-    from aperture.agent.tool_cache import (
-        cache_stats,
-        estimated_composio_savings_usd,
-    )
-    s = cache_stats()
-    s["estimated_composio_saved_usd"] = estimated_composio_savings_usd()
-    return s
+    from aperture.agent.composio_agent import result_cache_stats
+    from aperture.cache.store import CacheStore
+
+    tool_entries = CacheStore().tracked_entries()
+    result_stats = result_cache_stats()
+    result_entries = list(result_stats.get("items", []))
+    if (
+        current_run is not None
+        and getattr(current_run, "answer", None)
+        and not getattr(current_run, "error", None)
+    ):
+        ask = getattr(current_run, "ask", "")
+        model = getattr(current_run, "model", "")
+        effort_mode = getattr(current_run, "effort_mode", "medium")
+        has_current = any(
+            item.get("ask") == ask
+            and item.get("model") == model
+            and item.get("effort_mode") == effort_mode
+            for item in result_entries
+        )
+        if not has_current:
+            age = float(getattr(current_run, "cached_age_seconds", 0.0) or 0.0)
+            ttl = int(os.getenv("APERTURE_RESULT_CACHE_TTL", "300"))
+            result_entries.insert(0, {
+                "ask": ask,
+                "model": model,
+                "effort_mode": effort_mode,
+                "tool_calls": len(getattr(current_run, "steps", []) or []),
+                "age_seconds": round(age, 1),
+                "ttl_remaining_seconds": round(max(0.0, ttl - age), 1),
+                "source": "current_run",
+            })
+    return {
+        "entries": len(tool_entries) + len(result_entries),
+        "items": tool_entries,
+        "tool_entries": len(tool_entries),
+        "result_entries": len(result_entries),
+        "result_items": result_entries,
+    }
 
 
 @app.post("/api/cache/tools/clear")
 def clear_tool_cache() -> dict:
-    from aperture.agent.tool_cache import clear, cache_stats
-    cleared = clear()
-    return {"cleared": cleared, "stats": cache_stats()}
+    from aperture.cache.store import CacheStore
+
+    store = CacheStore()
+    cleared = store.clear_tracked()
+    entries = store.tracked_entries()
+    return {"cleared": cleared, "stats": {"entries": len(entries), "items": entries}}
+
+
+@app.post("/api/cache/demo/reset")
+def reset_demo_cache() -> dict:
+    """Clear demo-visible caches so each browser reload starts clean."""
+    import os
+    import time
+
+    from aperture.agent.composio_agent import clear_result_cache
+    from aperture.cache.store import CacheStore
+
+    store = CacheStore()
+    result_cleared = clear_result_cache()
+    tool_cleared = store.clear_tracked()
+    os.environ["APERTURE_CACHE_DEMO_EPOCH"] = str(int(time.time() * 1000))
+    return {
+        "cleared": {
+            "result_entries": result_cleared,
+            "tool_entries": tool_cleared,
+        },
+        "stats": {
+            "entries": 0,
+            "items": [],
+            "tool_entries": 0,
+            "result_entries": 0,
+            "result_items": [],
+        },
+    }
 
 
 @app.post("/api/agent/prewarm")

@@ -44,12 +44,15 @@ class CachedExecutor:
             return result, event
 
         # Build cache key
+        connected_account_id = (
+            None if cache_scope == "public" else config.connected_account_id
+        )
         cache_key = build_cache_key(
             tool_slug=tool_slug,
             arguments=arguments,
             user_id=config.user_id,
             tenant_id=config.tenant_id,
-            connected_account_id=config.connected_account_id,
+            connected_account_id=connected_account_id,
             cache_scope=cache_scope,
         )
         if cache_key is None:
@@ -67,6 +70,17 @@ class CachedExecutor:
         # Try cache hit
         cached = self.store.get(cache_key)
         if cached is not None:
+            ttl = get_cache_ttl(tool_slug)
+            self.store.track_entry(
+                cache_key,
+                {
+                    "tool": tool_slug,
+                    "arguments": arguments,
+                    "cache_scope": cache_scope,
+                    "cache_key_hash": cache_key_hash(cache_key),
+                },
+                ttl,
+            )
             event = CacheEvent(
                 run_id=config.run_id,
                 toolkit_slug=None,
@@ -86,6 +100,16 @@ class CachedExecutor:
         ttl = get_cache_ttl(tool_slug)
         if _success_response(result):
             self.store.set(cache_key, result, ttl)
+            self.store.track_entry(
+                cache_key,
+                {
+                    "tool": tool_slug,
+                    "arguments": arguments,
+                    "cache_scope": cache_scope,
+                    "cache_key_hash": cache_key_hash(cache_key),
+                },
+                ttl,
+            )
 
         event = CacheEvent(
             run_id=config.run_id,

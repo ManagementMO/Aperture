@@ -1,6 +1,7 @@
 """Deterministic cache key builder with scoping."""
 
 import hashlib
+import os
 
 from aperture.tokenization.serializers import stable_json_dumps
 
@@ -53,4 +54,6 @@ def build_cache_key(
     else:
         return None
 
-    return f"aperture:cache:{scope}:{tool_slug}:{args_hash}"
+    demo_epoch = os.getenv("APERTURE_CACHE_DEMO_EPOCH")
+    prefix = f"aperture:cache:{demo_epoch}" if demo_epoch else "aperture:cache"
+    return f"{prefix}:{scope}:{tool_slug}:{args_hash}"

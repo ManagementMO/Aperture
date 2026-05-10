@@ -1,0 +1,28 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(dir C:UsersEvanNthreestarRL *)",
+      "Bash(jq --version)",
+      "Bash(claude --version)",
+      "Bash(gh auth *)",
+      "Bash(gh repo *)",
+      "Bash(export PATH=\"/c/Program Files/GitHub CLI:$PATH\")",
+      "Bash(gh --version)",
+      "Bash(\"C:/Users/EvanN/threestarRL/.venv/Scripts/python.exe\" -c \"import sandbox_core\")",
+      "Bash(\"C:/Users/EvanN/threestarRL/.venv/Scripts/python.exe\" -c \"import sys; sys.path.insert\\(0, 'app'\\); import sandbox_core; print\\(sandbox_core.__version__\\)\")",
+      "Bash(\"C:/Users/EvanN/threestarRL/.venv/Scripts/python.exe\" tools/gen_full_th6.py)",
+      "Bash(\"C:/Users/EvanN/threestarRL/.venv/Scripts/python.exe\" tools/run_full_th6.py)",
+      "Bash(\"C:/Users/EvanN/threestarRL/.venv/Scripts/python.exe\" tools/check_terminations.py)",
+      "Bash(\"C:/Users/EvanN/threestarRL/.venv/Scripts/python.exe\" -m pytest tests/golden/replays/test_full_th6_attack.py --update-golden -x)",
+      "Bash(\"C:/Users/EvanN/threestarRL/.venv/Scripts/python.exe\" -m pytest tests/golden/replays/test_full_th6_attack.py -x)",
+      "Bash(Get-ChildItem -Recurse \"C:\\\\Users\\\\EvanN\\\\threestarRL\\\\app\\\\cartographer\" -ErrorAction SilentlyContinue)",
+      "Bash(Select-Object FullName, PSIsContainer)",
+      "Bash(Format-Table -AutoSize)",
+      "Bash(uv run *)",
+      "PowerShell(uv run pytest tests/unit/cartographer/test_polygon_grid.py tests/unit/cartographer/test_grass_walls.py tests/unit/cartographer/test_align.py -x -q 2>&1)",
+      "PowerShell(python -m pytest tests/unit/cartographer/test_polygon_grid.py tests/unit/cartographer/test_grass_walls.py tests/unit/cartographer/test_align.py -x -q 2>&1)",
+      "PowerShell(python -m pytest tests/unit/cartographer -x -q 2>&1)",
+      "PowerShell(cd app/sandbox_web; npx tsc --noEmit; \"exit=$LASTEXITCODE\")"
+    ]
+  }
+}

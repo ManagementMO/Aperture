@@ -22,7 +22,7 @@ class ApertureRunConfig:
     user_id: str | None = None
     connected_account_id: str | None = None
     model: str | None = None
-    effort_mode: str = "medium"  # low | medium | high | off | shadow
+    effort_mode: str = "medium"  # off | aggressive | low | medium | high | auto | shadow
     cache_bypass: bool = False
 
 

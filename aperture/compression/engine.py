@@ -7,6 +7,9 @@ Pipeline:
 4. Mode-driven pruning, flattening, list compaction with task-aware protection.
 """
 
+import base64
+import html
+import re
 from typing import Any
 
 from aperture.compression.field_classifier import ClassifierResult, classify_fields
@@ -93,6 +96,7 @@ def compress_tool_output(
 
     normalized = _normalize_for_tool(raw_payload, tool_slug)
     protected_fields = merge_required_fields(tool_slug, task, required_fields)
+    protected_fields |= _auto_required_fields(tool_slug, ask)
 
     # Build the FieldPolicy. Static mode → no ask, no classifier. Ask-aware
     # mode → ask flows through to word-bounded matches. Model-assisted →
@@ -122,7 +126,11 @@ def compress_tool_output(
         )
         if is_small:
             compressed = _compress_records(
-                normalized, mode=mode, protected_fields=protected_fields, skip_wrapper=True, policy=policy
+                normalized,
+                mode=mode,
+                protected_fields=protected_fields,
+                skip_wrapper=True,
+                policy=policy,
             )
             strategy = f"inplace_{mode}"
         else:
@@ -134,13 +142,17 @@ def compress_tool_output(
         compressed = _safe_compress(normalized, protected_fields=protected_fields, policy=policy)
         strategy = "safe"
     elif mode == "balanced":
-        compressed = _balanced_compress(normalized, protected_fields=protected_fields, policy=policy)
+        compressed = _balanced_compress(
+            normalized, protected_fields=protected_fields, policy=policy
+        )
         strategy = "balanced"
     elif mode == "low":
         compressed = _low_compress(normalized, protected_fields=protected_fields, policy=policy)
         strategy = "low"
     else:  # aggressive
-        compressed = _aggressive_compress(normalized, protected_fields=protected_fields, policy=policy)
+        compressed = _aggressive_compress(
+            normalized, protected_fields=protected_fields, policy=policy
+        )
         compressed = caveman_prune_payload(compressed, level="full")
         strategy = "aggressive_caveman"
 
@@ -221,6 +233,15 @@ def _normalize_for_tool(payload: object, tool_slug: str) -> object:
     return payload
 
 
+def _auto_required_fields(tool_slug: str, ask: str | None) -> set[str]:
+    lowered = (ask or "").lower()
+    if "GMAIL" in tool_slug and any(
+        term in lowered for term in ("summarize", "summary", "read", "pull")
+    ):
+        return {"body_text", "messages.body_text"}
+    return set()
+
+
 def _normalize_gmail(payload: object) -> object:
     """Lift Gmail message headers to top-level fields, drop raw MIME parts.
 
@@ -240,7 +261,17 @@ def _normalize_gmail(payload: object) -> object:
             "messages": [_normalize_gmail_message(m) for m in payload["messages"]],
         }
 
+    flattened_message_keys = {
+        "messageText",
+        "preview",
+        "sender",
+        "messageTimestamp",
+        "messageId",
+        "attachmentList",
+    }
     if "payload" in payload and isinstance(payload.get("payload"), dict):
+        return _normalize_gmail_message(payload)
+    if any(key in payload for key in flattened_message_keys):
         return _normalize_gmail_message(payload)
 
     return payload
@@ -251,9 +282,26 @@ def _normalize_gmail_message(msg: dict) -> dict:
         return msg
 
     out: dict[str, Any] = {}
-    for key in ("id", "threadId", "snippet", "labelIds"):
+
+    id_value = _first_present(msg, "id", "messageId")
+    if id_value is not None:
+        out["id"] = id_value
+
+    for key in ("threadId", "labelIds"):
         if key in msg and msg[key] not in (None, "", []):
             out[key] = msg[key]
+
+    snippet = _first_present(msg, "snippet", "preview")
+    if snippet is not None:
+        out["snippet"] = snippet
+
+    sender = _first_present(msg, "sender", "from")
+    if sender is not None:
+        out["from"] = sender
+
+    timestamp = _first_present(msg, "messageTimestamp", "date")
+    if timestamp is not None:
+        out["date"] = timestamp
 
     payload = msg.get("payload")
     if isinstance(payload, dict):
@@ -266,7 +314,128 @@ def _normalize_gmail_message(msg: dict) -> dict:
                     if name in wanted and header.get("value"):
                         out[name.lower().replace("-", "_")] = header["value"]
 
+        body_text = _extract_gmail_body_text(payload)
+        if body_text:
+            out["body_text"] = body_text
+
+    flat_body_text = _extract_flat_email_text(_first_present(msg, "messageText", "bodyText"))
+    if flat_body_text:
+        out["body_text"] = flat_body_text
+
+    attachments = _summarize_gmail_attachments(msg.get("attachmentList"))
+    if attachments:
+        out["attachments"] = attachments
+
     return out
+
+
+def _first_present(obj: dict, *keys: str) -> object | None:
+    for key in keys:
+        value = obj.get(key)
+        if value not in (None, "", [], {}):
+            return value
+    return None
+
+
+def _extract_flat_email_text(value: object) -> str | None:
+    if not isinstance(value, str) or not value.strip():
+        return None
+    text = value
+    if "<" in text and ">" in text:
+        text = _html_to_text(text)
+    text = _clean_email_text(text)
+    if not text:
+        return None
+    return text[:4000]
+
+
+def _summarize_gmail_attachments(value: object) -> list[dict[str, Any]]:
+    if not isinstance(value, list):
+        return []
+
+    attachments: list[dict[str, Any]] = []
+    for item in value[:5]:
+        if not isinstance(item, dict):
+            if item not in (None, ""):
+                attachments.append({"name": str(item)[:120]})
+            continue
+
+        summary: dict[str, Any] = {}
+        name = _first_present(item, "filename", "name")
+        mime_type = _first_present(item, "mimeType", "mime_type", "contentType", "type")
+        size = _first_present(item, "size", "sizeEstimate", "bytes")
+
+        if name is not None:
+            summary["name"] = str(name)[:160]
+        if mime_type is not None:
+            summary["mime_type"] = str(mime_type)[:120]
+        if size is not None:
+            summary["size"] = size
+        if summary:
+            attachments.append(summary)
+    return attachments
+
+
+def _extract_gmail_body_text(payload: dict) -> str | None:
+    """Extract bounded readable text from Gmail's MIME tree.
+
+    Gmail payloads often include large base64url-encoded HTML/plaintext parts.
+    We never forward the raw MIME body, but for summary tasks the model needs
+    some readable body content beyond the short Gmail snippet.
+    """
+    plain_parts: list[str] = []
+    html_parts: list[str] = []
+
+    def walk(part: object) -> None:
+        if not isinstance(part, dict):
+            return
+        mime_type = str(part.get("mimeType") or "").lower()
+        body = part.get("body")
+        decoded = None
+        if isinstance(body, dict):
+            decoded = _decode_gmail_body_data(body.get("data"))
+        if decoded:
+            if mime_type.startswith("text/plain"):
+                plain_parts.append(decoded)
+            elif mime_type.startswith("text/html"):
+                html_parts.append(_html_to_text(decoded))
+        for child in part.get("parts") or []:
+            walk(child)
+
+    walk(payload)
+    text = "\n\n".join(plain_parts or html_parts)
+    text = _clean_email_text(text)
+    if not text:
+        return None
+    # Keep enough for a real summary while preventing full MIME dumps from
+    # becoming the prompt again. Later compression may trim this further by mode.
+    return text[:4000]
+
+
+def _decode_gmail_body_data(data: object) -> str | None:
+    if not isinstance(data, str) or not data:
+        return None
+    try:
+        padded = data + "=" * (-len(data) % 4)
+        raw = base64.urlsafe_b64decode(padded.encode("ascii"))
+        return raw.decode("utf-8", errors="replace")
+    except Exception:
+        return None
+
+
+def _html_to_text(value: str) -> str:
+    text = re.sub(r"(?is)<(script|style).*?</\1>", " ", value)
+    text = re.sub(r"(?i)<br\s*/?>", "\n", text)
+    text = re.sub(r"(?i)</p\s*>", "\n", text)
+    text = re.sub(r"<[^>]+>", " ", text)
+    return html.unescape(text)
+
+
+def _clean_email_text(value: str) -> str:
+    value = value.replace("\r\n", "\n").replace("\r", "\n")
+    lines = [re.sub(r"[ \t]+", " ", line).strip() for line in value.split("\n")]
+    cleaned = "\n".join(line for line in lines if line)
+    return re.sub(r"\n{3,}", "\n\n", cleaned).strip()
 
 
 def _normalize_slack(payload: object) -> object:
@@ -295,7 +464,9 @@ def _normalize_slack(payload: object) -> object:
 
     reactions = out.get("reactions")
     if isinstance(reactions, list):
-        out["reactions"] = [r.get("name") for r in reactions if isinstance(r, dict) and r.get("name")]
+        out["reactions"] = [
+            r.get("name") for r in reactions if isinstance(r, dict) and r.get("name")
+        ]
 
     return out
 
@@ -604,20 +775,40 @@ def _build_sample(data_rows: list, mode: str) -> tuple[list, int]:
 # Generic value compression
 # ---------------------------------------------------------------------------
 
-def _safe_compress(payload: object, protected_fields: set[str] | None = None, policy: FieldPolicy | None = None) -> object:
+def _safe_compress(
+    payload: object,
+    protected_fields: set[str] | None = None,
+    policy: FieldPolicy | None = None,
+) -> object:
     return _compress_value(payload, level="safe", protected_fields=protected_fields, policy=policy)
 
 
-def _balanced_compress(payload: object, protected_fields: set[str] | None = None, policy: FieldPolicy | None = None) -> object:
-    return _compress_value(payload, level="balanced", protected_fields=protected_fields, policy=policy)
+def _balanced_compress(
+    payload: object,
+    protected_fields: set[str] | None = None,
+    policy: FieldPolicy | None = None,
+) -> object:
+    return _compress_value(
+        payload, level="balanced", protected_fields=protected_fields, policy=policy
+    )
 
 
-def _low_compress(payload: object, protected_fields: set[str] | None = None, policy: FieldPolicy | None = None) -> object:
+def _low_compress(
+    payload: object,
+    protected_fields: set[str] | None = None,
+    policy: FieldPolicy | None = None,
+) -> object:
     return _compress_value(payload, level="low", protected_fields=protected_fields, policy=policy)
 
 
-def _aggressive_compress(payload: object, protected_fields: set[str] | None = None, policy: FieldPolicy | None = None) -> object:
-    return _compress_value(payload, level="aggressive", protected_fields=protected_fields, policy=policy)
+def _aggressive_compress(
+    payload: object,
+    protected_fields: set[str] | None = None,
+    policy: FieldPolicy | None = None,
+) -> object:
+    return _compress_value(
+        payload, level="aggressive", protected_fields=protected_fields, policy=policy
+    )
 
 
 def _compress_value(
@@ -630,7 +821,23 @@ def _compress_value(
     if value is None or isinstance(value, (bool, int, float)):
         return value
     if isinstance(value, str):
-        max_len = {"safe": 800, "balanced": 400, "low": 200, "aggressive": 120}.get(level, 400)
+        protected = protected_fields or set()
+        leaf = parent_path.rsplit(".", 1)[-1] if parent_path else ""
+        is_protected = parent_path in protected or leaf in protected
+        if is_protected:
+            max_len = {
+                "safe": 4000,
+                "balanced": 2000,
+                "low": 1200,
+                "aggressive": 800,
+            }.get(level, 2000)
+        else:
+            max_len = {
+                "safe": 800,
+                "balanced": 400,
+                "low": 200,
+                "aggressive": 120,
+            }.get(level, 400)
         if len(value) > max_len:
             return value[: max_len - 3] + "..."
         return value
@@ -708,7 +915,52 @@ def _maybe_flatten(val: dict) -> object | None:
     return None
 
 
+_TRANSFORMED_FIELD_ALIASES: dict[str, str] = {
+    "payload": "body_text",
+    "messageText": "body_text",
+    "bodyText": "body_text",
+    "preview": "snippet",
+    "sender": "from",
+    "messageTimestamp": "date",
+    "messageId": "id",
+    "attachmentList": "attachments",
+}
+
+
 def _collect_omitted_fields(raw: object, compressed: object) -> list[str]:
-    if not isinstance(raw, dict) or not isinstance(compressed, dict):
-        return []
-    return [k for k in raw.keys() if k not in compressed]
+    """Return minimal dot paths present in raw but absent after compression.
+
+    The previous implementation only compared top-level dict keys. Gmail's
+    expensive fields live under `messages[].payload...`, so the dashboard made
+    a huge compression look unexplained. This recursively reports the parent
+    path that was removed instead of every leaf under that parent.
+    """
+    omitted: set[str] = set()
+
+    def walk(raw_obj: object, compressed_obj: object, path: str) -> None:
+        if isinstance(raw_obj, dict):
+            if not isinstance(compressed_obj, dict):
+                if path:
+                    omitted.add(path)
+                return
+            for key, raw_value in raw_obj.items():
+                child_path = f"{path}.{key}" if path else str(key)
+                if key not in compressed_obj:
+                    alias = _TRANSFORMED_FIELD_ALIASES.get(str(key))
+                    if alias and alias in compressed_obj:
+                        continue
+                    omitted.add(child_path)
+                else:
+                    walk(raw_value, compressed_obj[key], child_path)
+            return
+
+        if isinstance(raw_obj, list):
+            if not isinstance(compressed_obj, list):
+                if path:
+                    omitted.add(path)
+                return
+            for raw_item, compressed_item in zip(raw_obj[:10], compressed_obj[:10]):
+                walk(raw_item, compressed_item, f"{path}[]" if path else "[]")
+
+    walk(raw, compressed, "")
+    return sorted(omitted)
