@@ -5,7 +5,6 @@ from __future__ import annotations
 import hashlib
 import json
 from pathlib import Path
-from typing import Any
 
 from aperture.config import ApertureConfig
 from aperture.tokenization.serializers import stable_serialize_payload

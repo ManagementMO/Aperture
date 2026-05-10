@@ -1,5 +1,7 @@
 """Aperture core package."""
 
+__version__ = "0.3.0"
+
 from aperture.config import ApertureConfig
 from aperture.types import (
     BenchmarkMetrics,

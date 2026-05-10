@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from aperture.types import BenchmarkMetrics, BenchmarkRunResult
+from aperture.types import BenchmarkRunResult
 
 
 def aggregate_run_metrics(run: BenchmarkRunResult) -> dict[str, float | int | str]:

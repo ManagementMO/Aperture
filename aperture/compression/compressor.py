@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
+import aperture
 from aperture.compression.deduplication import deduplicate_repeated_objects
 from aperture.compression.envelope import build_compression_envelope
 from aperture.compression.field_pruning import prune_fields
@@ -46,7 +47,7 @@ def _event(
         tokens_saved=tokens_saved,
         compression_ratio=compression_ratio,
         cache_status=None,
-        aperture_version="0.1.0",
+        aperture_version=aperture.__version__,
     )
 
 

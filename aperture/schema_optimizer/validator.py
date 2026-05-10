@@ -50,7 +50,19 @@ def validate_schema_rewrite(
     candidate_schema: dict,
     validation_cases: list[dict] | None = None,
 ) -> ValidationResult:
-    """Validate that rewrite preserves tool selection and parameter behavior."""
+    """Structural validation that a rewrite preserves behavior-relevant fields.
+
+    This is the FAST path: no LLM call, just structural diffs (tool slug,
+    parameter names, required fields, parameter types, safety-term retention).
+    Cheap enough to run on every candidate during the rewrite phase.
+
+    For v1 acceptance per handoff §13.3 cells 5-6, structural validation is
+    NOT sufficient — the validator also needs to confirm behavioral
+    equivalence by running prompts through an LLM judge (Haiku primary +
+    Sonnet spot-check). That layer lives in `aperture/schema_optimizer/llm_judge.py`
+    and is wired below as `validate_schema_rewrite_with_llm_judge`. Phase 5
+    Week 6 implements `llm_judge.py`; until then it raises NotImplementedError.
+    """
 
     cases_run = len(validation_cases or [{"case_id": "structural"}])
     if (original_schema.get("slug") or original_schema.get("name")) != (candidate_schema.get("slug") or candidate_schema.get("name")):
@@ -67,4 +79,56 @@ def validate_schema_rewrite(
     if missing_safety:
         return ValidationResult(cases_run, False, "safety_terms_removed:" + ",".join(sorted(missing_safety)))
     return ValidationResult(cases_run, True, None)
+
+
+def validate_schema_rewrite_with_llm_judge(
+    original_schema: dict,
+    candidate_schema: dict,
+    prompts: list[str],
+    *,
+    judge_model: str = "claude-haiku-4-5",
+    spot_check_model: str = "claude-sonnet-4-5",
+    spot_check_fraction: float = 0.10,
+    similar_tools: list[dict] | None = None,
+) -> ValidationResult:
+    """Behavioral validation: a rewrite is accepted only if a Claude model
+    selects the same tool and extracts the same parameters across all prompts.
+
+    Per handoff §6.4 + decision #4:
+        - Run every prompt through `judge_model` (Haiku) with original schema,
+          then with candidate schema. Compare `tool_use.name` and normalized args.
+        - For 10% of prompts (configurable via `spot_check_fraction`), also run
+          through `spot_check_model` (Sonnet) and reject if Sonnet disagrees
+          with Haiku on either selection or parameters.
+        - Accept only if 100% of judged prompts and 100% of spot-checked
+          prompts pass.
+        - Disambiguation: include `similar_tools` (e.g. GITHUB_CREATE_ISSUE
+          alongside GITHUB_CREATE_PULL_REQUEST) so the model has a real choice.
+
+    Implementation lives in `aperture/schema_optimizer/llm_judge.py` and is
+    constructed in Phase 5 Week 6. Calling this function before that phase
+    raises NotImplementedError so misuse is loud.
+
+    Tests for this function MUST use replay-recorded LLM responses
+    (see `tests/schema_optimizer/replay/`) — never live LLM in CI per handoff §14.4.
+    """
+
+    try:
+        from aperture.schema_optimizer.llm_judge import run_judge as _run_judge
+    except ImportError as exc:
+        raise NotImplementedError(
+            "LLM judge not yet implemented; structural validation only. "
+            "Phase 5 Week 6 fills in aperture/schema_optimizer/llm_judge.py. "
+            "Until then call validate_schema_rewrite() instead."
+        ) from exc
+
+    return _run_judge(
+        original_schema=original_schema,
+        candidate_schema=candidate_schema,
+        prompts=prompts,
+        judge_model=judge_model,
+        spot_check_model=spot_check_model,
+        spot_check_fraction=spot_check_fraction,
+        similar_tools=similar_tools or [],
+    )
 

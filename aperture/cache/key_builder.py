@@ -40,7 +40,12 @@ def build_cache_key(
         return None
     normalized = normalize_params(tool_slug, params)
     digest = hashlib.sha256(stable_serialize_payload(normalized).encode("utf-8")).hexdigest()
-    return f"aperture:v1:{policy.privacy_scope}:{scope_id}:{tool_slug}:{digest}"
+    # Format: aperture:v1:p1:{scope}:{scope_id}:{tool_slug}:{sha256_hex}
+    # The `p1` segment is the policy YAML version. When `aperture/cache/policy.yaml`
+    # bumps its `version:` field (e.g. to v2 after a TTL re-classification), all
+    # cache entries from p1 are automatically invalidated because no read will
+    # produce a matching key. Per handoff §13.1 cell 4 + §17.6 migration plan.
+    return f"aperture:v1:p1:{policy.privacy_scope}:{scope_id}:{tool_slug}:{digest}"
 
 
 def cache_key_hash(cache_key: str | None) -> str | None:

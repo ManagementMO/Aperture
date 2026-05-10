@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import inspect
 from datetime import datetime, timezone
-from typing import Any, Awaitable, Callable
+from typing import Awaitable, Callable
 
 from aperture.cache.key_builder import build_cache_key, cache_key_hash
 from aperture.cache.policy import load_cache_policy

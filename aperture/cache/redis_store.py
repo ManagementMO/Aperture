@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import time
 from dataclasses import dataclass
-from typing import Any, Protocol
+from typing import Protocol
 
 
 class CacheStore(Protocol):
