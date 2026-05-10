@@ -31,6 +31,19 @@ class SessionRegistry:
     `request_context.session_id` (protocol-level) — we use that as the
     `connection_id` key here, distinct from the app-level `session_id`
     we mint and emit in TokenAttributionEvents.
+
+    Concurrency notes (per adversarial review 2026-05-10):
+      - The proxy runs single-threaded asyncio; no async coroutine ever
+        contends with another for this lock.
+      - The SDK-runner path (sync) uses `SessionRegistry` from one thread
+        per process in practice.
+      - Lock holds are O(1) dict lookups + scalar increments — sub-microsecond
+        when uncontended; never a meaningful asyncio loop block.
+      - The lock exists as defense-in-depth for any future multi-threaded
+        consumer; it costs nothing on the hot path.
+      - DO NOT call any of these methods from inside an asyncio coroutine
+        if you've also wrapped the registry in another lock — that would
+        be a deadlock.
     """
 
     def __init__(self) -> None:

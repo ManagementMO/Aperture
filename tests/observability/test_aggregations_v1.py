@@ -107,6 +107,47 @@ def test_token_aggregation_rejects_invalid_group_by():
         aggregate_token_events_v1([], group_by="nonsense_field")
 
 
+def test_token_aggregation_order_direction_desc_largest_first():
+    rows = [
+        _token_row(timestamp="2026-05-09T00:00:00Z", meta_tool_slug="TOOL_A", input_tokens_contributed=500),
+        _token_row(timestamp="2026-05-09T00:01:00Z", meta_tool_slug="TOOL_B", input_tokens_contributed=100),
+    ]
+    result = aggregate_token_events_v1(rows, group_by="meta_tool_slug", order_direction="desc")
+    assert [r["group_value"] for r in result["data"]] == ["TOOL_A", "TOOL_B"]
+
+
+def test_token_aggregation_order_direction_asc_smallest_first():
+    rows = [
+        _token_row(timestamp="2026-05-09T00:00:00Z", meta_tool_slug="TOOL_A", input_tokens_contributed=500),
+        _token_row(timestamp="2026-05-09T00:01:00Z", meta_tool_slug="TOOL_B", input_tokens_contributed=100),
+    ]
+    result = aggregate_token_events_v1(rows, group_by="meta_tool_slug", order_direction="asc")
+    assert [r["group_value"] for r in result["data"]] == ["TOOL_B", "TOOL_A"]
+
+
+def test_token_aggregation_order_by_name_alphabetical():
+    rows = [
+        _token_row(timestamp="2026-05-09T00:00:00Z", meta_tool_slug="ZEBRA", input_tokens_contributed=500),
+        _token_row(timestamp="2026-05-09T00:01:00Z", meta_tool_slug="ALPHA", input_tokens_contributed=100),
+    ]
+    asc = aggregate_token_events_v1(rows, group_by="meta_tool_slug", order_by="name", order_direction="asc")
+    desc = aggregate_token_events_v1(rows, group_by="meta_tool_slug", order_by="name", order_direction="desc")
+    assert [r["group_value"] for r in asc["data"]] == ["ALPHA", "ZEBRA"]
+    assert [r["group_value"] for r in desc["data"]] == ["ZEBRA", "ALPHA"]
+
+
+def test_token_aggregation_rejects_invalid_order_direction():
+    with pytest.raises(ValueError):
+        aggregate_token_events_v1([], group_by="meta_tool_slug", order_direction="random")
+
+
+def test_token_aggregation_rejects_invalid_pagination():
+    with pytest.raises(ValueError):
+        aggregate_token_events_v1([], group_by="meta_tool_slug", page=0)
+    with pytest.raises(ValueError):
+        aggregate_token_events_v1([], group_by="meta_tool_slug", page_size=0)
+
+
 def _cache_row(
     *,
     timestamp: str,

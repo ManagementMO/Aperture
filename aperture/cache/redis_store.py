@@ -58,7 +58,16 @@ class InMemoryCacheStore:
 
 
 class RedisCacheStore:
-    """Redis-backed cache store using JSON serialization."""
+    """Redis-backed cache store using JSON serialization.
+
+    All Redis network calls are wrapped in try/except — Redis being down
+    must NEVER break the proxy or SDK runner. Failures log a warning and
+    return safe defaults (None for reads, no-op for writes). Per
+    adversarial review 2026-05-10: the previous implementation let
+    Redis exceptions bubble up, and while the @safe decorators in the
+    proxy caught them, the SDK runner path didn't — and the silent
+    failure on `set` meant subsequent identical calls would also miss.
+    """
 
     def __init__(self, redis_url: str) -> None:
         try:
@@ -66,23 +75,50 @@ class RedisCacheStore:
         except Exception as exc:
             raise RuntimeError("redis package is required for RedisCacheStore") from exc
         self._client = redis.Redis.from_url(redis_url)
+        import logging
+        self._logger = logging.getLogger(__name__)
 
     def get(self, key: str) -> object | None:
-        raw = self._client.get(key)
+        try:
+            raw = self._client.get(key)
+        except Exception as exc:  # noqa: BLE001
+            self._logger.warning("redis get failed for key prefix %s...: %s", key[:32], exc)
+            return None
         if raw is None:
             return None
-        return json.loads(raw)["value"]
+        try:
+            return json.loads(raw)["value"]
+        except (KeyError, ValueError, TypeError) as exc:
+            # Corrupt/old-format entry. Treat as miss + best-effort delete.
+            self._logger.warning("redis get returned malformed value for %s...: %s", key[:32], exc)
+            self.delete(key)
+            return None
 
     def set(self, key: str, value: object, ttl_seconds: int) -> None:
         wrapped = {"stored_at": time.time(), "value": value}
-        self._client.setex(key, ttl_seconds, json.dumps(wrapped, sort_keys=True))
+        try:
+            self._client.setex(key, ttl_seconds, json.dumps(wrapped, sort_keys=True))
+        except Exception as exc:  # noqa: BLE001
+            # Cache miss propagates silently to the caller — they got their
+            # response from upstream and we just couldn't persist it.
+            self._logger.warning("redis set failed for %s...: %s", key[:32], exc)
 
     def delete(self, key: str) -> None:
-        self._client.delete(key)
+        try:
+            self._client.delete(key)
+        except Exception as exc:  # noqa: BLE001
+            self._logger.warning("redis delete failed for %s...: %s", key[:32], exc)
 
     def age_seconds(self, key: str) -> int | None:
-        raw = self._client.get(key)
+        try:
+            raw = self._client.get(key)
+        except Exception as exc:  # noqa: BLE001
+            self._logger.warning("redis age_seconds get failed for %s...: %s", key[:32], exc)
+            return None
         if raw is None:
             return None
-        data = json.loads(raw)
+        try:
+            data = json.loads(raw)
+        except (ValueError, TypeError):
+            return None
         return max(0, int(time.time() - data.get("stored_at", time.time())))

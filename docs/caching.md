@@ -15,10 +15,14 @@ returns `cacheable=False, operation_type=unknown`. Adding a new tool
 requires an explicit YAML entry. The auto-classifier
 `scripts/seed_cache_policy.py` produces these from a slug list.
 
-Today's coverage: **126 tools** across the seven seed toolkits + Composio
-meta auth slugs. The YAML coverage gate at
-`tests/cache/test_policy_yaml_coverage.py` enforces ≥100. To scale to ≥800,
-run `python scripts/seed_cache_policy.py --live`.
+Today's coverage: **1768+ tools** across 15 live Composio toolkits
+(github, gmail, slack, notion, linear, googlesheets, supabase, youtube,
+googlecalendar, googledocs, googledrive, asana, jira, discord,
+salesforce) + Composio meta auth slugs + the legacy seed list. The YAML
+coverage gate at `tests/cache/test_policy_yaml_coverage.py` enforces
+≥100. The current count is the union of `scripts/seed_cache_policy.py
+--live --user-id mo` and `scripts/_seed_tool_list.json`. To regenerate,
+run the seed script with live Composio credentials.
 
 ## Key format
 

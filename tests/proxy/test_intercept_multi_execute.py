@@ -65,10 +65,8 @@ async def test_multi_execute_no_subset_callback_forwards_full():
 
 
 @pytest.mark.asyncio
-async def test_multi_execute_partial_batch_forwards_misses_only():
-    """When all inner tools are uncacheable, the subset callback should still
-    receive the full miss list. Ensures the partial-batch wiring works
-    end-to-end without depending on a populated cache."""
+async def test_multi_execute_zero_hits_falls_back_to_full_forward():
+    """All-write inner batch → no cache hits → falls back to upstream_call (full)."""
     subset_received = {"calls": None}
     full_called = {"count": 0}
 
@@ -82,7 +80,7 @@ async def test_multi_execute_partial_batch_forwards_misses_only():
 
     arguments = {
         "tool_calls": [
-            {"tool_slug": "GMAIL_SEND_EMAIL", "arguments": {"to": "x"}},  # write — never cached
+            {"tool_slug": "GMAIL_SEND_EMAIL", "arguments": {"to": "x"}},
             {"tool_slug": "GMAIL_SEND_EMAIL", "arguments": {"to": "y"}},
         ],
     }
@@ -92,10 +90,89 @@ async def test_multi_execute_partial_batch_forwards_misses_only():
         upstream_call=upstream_full,
         upstream_call_subset=upstream_subset,
     )
-    # All inner tools were misses → subset receives all of them; full not called
-    # because we have no cache hits to short-circuit on, but we DO have the
-    # subset path enabled.
-    assert full_called["count"] == 1  # falls back to full forward when no hits
-    # When there are zero cache hits, we skip the subset path entirely and
-    # do a full forward (cleaner). Either way the result has 2 entries.
-    assert len(result.get("results", [])) == 2
+    # When ZERO inner tools cache, we deliberately skip the subset path
+    # (it would just forward everything anyway) and do one full forward.
+    assert full_called["count"] == 1
+    assert subset_received["calls"] is None  # subset path NOT taken
+    assert result["results"] == [{"r": 1}, {"r": 2}]
+
+
+@pytest.mark.asyncio
+async def test_multi_execute_partial_batch_forwards_only_misses(tmp_path):
+    """A real partial-batch run: prime the cache with one cacheable inner
+    tool, then a 2-tool batch with [hit, miss] should forward ONLY the miss
+    via upstream_call_subset and merge cached hit + upstream miss back into
+    the original ordering.
+
+    Per adversarial review 2026-05-10: the previous version of this test
+    didn't actually verify the subset callback received the misses-only
+    list — it only checked shape. This version locks the actual semantics.
+    """
+    from aperture.cache.redis_store import InMemoryCacheStore
+    from aperture.proxy import cache_bridge
+
+    # Inject a fresh in-memory store and prime it with a hit for tool A.
+    store = InMemoryCacheStore()
+    cache_bridge.set_default_store(store)
+
+    ctx = _ctx()
+
+    # Pre-populate cache for GITHUB_LIST_REPOSITORY_ISSUES with specific args.
+    # Use the real key_builder so the entry actually shows up on lookup.
+    from aperture.cache.policy import load_cache_policy
+    from aperture.cache.key_builder import build_cache_key
+    cached_args = {"owner": "ACME", "repo": "X"}
+    policy = load_cache_policy("GITHUB_LIST_REPOSITORY_ISSUES")
+    key = build_cache_key("GITHUB_LIST_REPOSITORY_ISSUES", cached_args, ctx, policy)
+    assert key is not None, "policy.yaml should mark this slug as cacheable+account scope"
+    store.set(key, {"primed": "from_cache", "title": "Login broken"}, ttl_seconds=900)
+
+    subset_received = {"calls": None}
+    full_called = {"count": 0}
+
+    async def upstream_full():
+        full_called["count"] += 1
+        return {"results": [{"primed": "wrong"}, {"miss": "wrong"}]}
+
+    async def upstream_subset(calls):
+        subset_received["calls"] = list(calls)
+        return {"results": [{"miss_resolved": True, "args": calls[0].get("arguments")}]}
+
+    arguments = {
+        "tool_calls": [
+            # idx 0: cache HIT
+            {"tool_slug": "GITHUB_LIST_REPOSITORY_ISSUES", "arguments": cached_args},
+            # idx 1: cache MISS (GMAIL_SEND_EMAIL is non-cacheable write)
+            {"tool_slug": "GMAIL_SEND_EMAIL", "arguments": {"to": "alice@example.com"}},
+        ],
+    }
+    result = await handle_multi_execute(
+        arguments,
+        context=ctx,
+        upstream_call=upstream_full,
+        upstream_call_subset=upstream_subset,
+    )
+
+    # The full upstream MUST NOT be called — partial-batch wins.
+    assert full_called["count"] == 0, "partial-batch path must skip full forward when ANY inner tool hits cache"
+
+    # Subset MUST be called with ONLY the miss.
+    assert subset_received["calls"] is not None, "subset callback must be invoked when there are misses"
+    assert len(subset_received["calls"]) == 1
+    assert subset_received["calls"][0]["tool_slug"] == "GMAIL_SEND_EMAIL"
+
+    # Final result preserves original ordering: cached at idx 0, upstream at idx 1.
+    assert len(result["results"]) == 2
+    assert result["results"][0] == {"primed": "from_cache", "title": "Login broken"}
+    assert result["results"][1]["miss_resolved"] is True
+    assert result["results"][1]["args"] == {"to": "alice@example.com"}
+
+    # Telemetry record on the assembled response.
+    aperture_meta = result.get("_aperture_partial_batch")
+    assert aperture_meta is not None
+    assert aperture_meta["total"] == 2
+    assert aperture_meta["from_cache"] == 1
+    assert aperture_meta["from_upstream"] == 1
+
+    # Cleanup so other tests don't see this store
+    cache_bridge.set_default_store(InMemoryCacheStore())

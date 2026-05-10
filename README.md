@@ -7,7 +7,8 @@ and ships three compounding optimizations:
 1. **Safe execution cache** (Component A) — deny-by-default per-tool YAML
    policy, exact-match keys with policy-version coupling, partial-batch
    caching for `MULTI_EXECUTE_TOOL`, public/account/user/project/session
-   scope isolation. 126 tools classified.
+   scope isolation. 1768+ tools classified from live Composio across 15
+   toolkits.
 2. **Token attribution observability** (Component B) — every meta-tool
    response tokenized in the proxy's hot path, events flow to SQLite,
    queryable through `/api/v3.1/project/usage/...` FastAPI endpoints.

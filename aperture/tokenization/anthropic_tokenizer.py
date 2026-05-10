@@ -62,7 +62,13 @@ def count_anthropic_tokens(payload: object, model: str) -> int | None:
             model=model,
             messages=[{"role": "user", "content": text}],
         )
-        return int(getattr(resp, "input_tokens", 0)) or None
+        # Distinguish "missing field" from "field is 0". The earlier
+        # `... or None` collapsed legit-zero counts to None and fell back
+        # to the cl100k path, silently inflating reported counts.
+        tokens = getattr(resp, "input_tokens", None)
+        if tokens is None:
+            return None
+        return int(tokens)
     except Exception:
         # Silent fallback — never fail the caller's hot path.
         return None

@@ -216,20 +216,27 @@ def test_run_judge_rejects_on_invalid_spot_check_fraction(tmp_path):
         )
 
 
-def test_run_judge_in_replay_mode_with_missing_replays_rejects():
-    """If replay files don't exist, both outcomes are None — fails comparison."""
+def test_run_judge_with_missing_replay_fixtures_rejects(tmp_path):
+    """A missing replay file is a missing test fixture, NOT 'no signal = pass'.
+
+    Pre-fix (commit 4743a2d7): the validator silent-passed when both
+    original and candidate replay outcomes returned `None` (file didn't
+    exist), because `None == None` skipped the failure-append. This test
+    locks in the corrected behavior: missing replays produce rejection
+    with reason='missing_replay_fixtures'.
+    """
+    # Use a tmp_path with NO seeded replays. Every _ask() will return None.
     result = run_judge(
         original_schema=_ORIGINAL,
         candidate_schema=_CANDIDATE,
         prompts=["x", "y"],
         live=False,
-        replay_dir=Path("/tmp/nonexistent_dir_zzzz"),
+        replay_dir=tmp_path,  # exists but empty
         spot_check_fraction=0.0,
     )
-    # Both outcomes are None / None → equal → passes haiku
-    # because nothing differed. This is intentional: a missing replay is an
-    # implicit "no signal", not a forced reject.
-    assert result.passed is True
+    assert result.passed is False, "missing replays MUST not silent-pass"
+    assert result.rejection_reason == "missing_replay_fixtures"
+    assert result.validation_cases_run == 2
 
 
 def test_validator_calls_into_judge_when_present(monkeypatch, tmp_path):

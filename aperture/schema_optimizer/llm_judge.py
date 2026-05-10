@@ -220,6 +220,7 @@ def run_judge(
     haiku_passes = 0
     sonnet_passes = 0
     sonnet_disagreements = 0
+    missing_replay_keys: list[str] = []
 
     def _ask(*, model: str, schema: dict, prompt: str, prompt_index: int, schema_label: str) -> JudgeOutcome:
         key = _replay_key(
@@ -230,9 +231,16 @@ def run_judge(
         )
         if not live:
             if replay_dir is None:
+                missing_replay_keys.append(key)
                 return JudgeOutcome(tool_name=None, tool_input_normalized=None)
             outcome = load_replay(replay_dir, key)
             if outcome is None:
+                # Per adversarial review 2026-05-10: a missing replay file
+                # is a missing test fixture, NOT "no signal = pass". The
+                # downstream `None == None` comparison would silently mark
+                # the candidate accepted; we explicitly track this here so
+                # the result.rejection_reason can flag it.
+                missing_replay_keys.append(key)
                 return JudgeOutcome(tool_name=None, tool_input_normalized=None)
             return outcome
         outcome = _ask_anthropic(
@@ -297,10 +305,15 @@ def run_judge(
             else:
                 sonnet_passes += 1
 
-    accepted = len(failures) == 0
+    # If the replay store was missing fixtures, the candidate cannot be
+    # judged — surface this explicitly rather than silent-passing.
+    incomplete_validation = bool(missing_replay_keys) and not live
+    accepted = len(failures) == 0 and not incomplete_validation
     rejection_reason = None
     if not accepted:
-        if any(f["stage"] == "haiku" for f in failures):
+        if incomplete_validation:
+            rejection_reason = "missing_replay_fixtures"
+        elif any(f["stage"] == "haiku" for f in failures):
             rejection_reason = "haiku_disagreement"
         elif any(f["stage"] == "sonnet_spot_check" for f in failures):
             rejection_reason = "sonnet_disagreement"
