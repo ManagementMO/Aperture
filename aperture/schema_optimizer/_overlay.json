@@ -1,0 +1,133 @@
+{
+  "aperture_optimizer_version": "0.3.0",
+  "generated_at": "2026-05-10T03:25:08.152517+00:00",
+  "stats": {
+    "accepted": 8,
+    "rejected": 5,
+    "total_results": 13,
+    "total_tokens_saved": 16
+  },
+  "tools": {
+    "GITHUB_LIST_REPOSITORY_ISSUES": {
+      "description": {
+        "aperture_optimized": true,
+        "aperture_optimizer_version": "0.3.0",
+        "optimized": "Get a list of issues in a specified GitHub repository. You must provide the repository owner username and repository name. Optionally, you may include state, labels, assignee, and search terms to filter the returned issues.",
+        "optimized_tokens": 44,
+        "original": "Retrieves a list of issues in a specified GitHub repository. You must provide the repository owner username and repository name. Optionally, you may include state, labels, assignee, and search terms to filter the returned issues.",
+        "original_tokens": 46,
+        "reduction_pct": 0.0435,
+        "reduction_tokens": 2,
+        "validation": {
+          "cases_run": 1,
+          "passed": true
+        }
+      },
+      "parameters.properties.owner.description": {
+        "aperture_optimized": true,
+        "aperture_optimizer_version": "0.3.0",
+        "optimized": "GitHub repository owner username or organization name.",
+        "optimized_tokens": 9,
+        "original": "A string containing the GitHub repository owner username or organization name.",
+        "original_tokens": 12,
+        "reduction_pct": 0.25,
+        "reduction_tokens": 3,
+        "validation": {
+          "cases_run": 1,
+          "passed": true
+        }
+      },
+      "parameters.properties.repo.description": {
+        "aperture_optimized": true,
+        "aperture_optimizer_version": "0.3.0",
+        "optimized": "repository name where issues should be listed.",
+        "optimized_tokens": 9,
+        "original": "A string containing the repository name where issues should be listed.",
+        "original_tokens": 12,
+        "reduction_pct": 0.25,
+        "reduction_tokens": 3,
+        "validation": {
+          "cases_run": 1,
+          "passed": true
+        }
+      }
+    },
+    "GMAIL_SEARCH_EMAILS": {
+      "description": {
+        "aperture_optimized": true,
+        "aperture_optimizer_version": "0.3.0",
+        "optimized": "Searches Gmail messages for the connected user account. Required: a Gmail query string and may include pagination options to retrieve matching email conversations.",
+        "optimized_tokens": 28,
+        "original": "Searches Gmail messages for the connected user account. You must provide a Gmail query string and may include pagination options to retrieve matching email conversations.",
+        "original_tokens": 29,
+        "reduction_pct": 0.0345,
+        "reduction_tokens": 1,
+        "validation": {
+          "cases_run": 1,
+          "passed": true
+        }
+      },
+      "parameters.properties.query.description": {
+        "aperture_optimized": true,
+        "aperture_optimizer_version": "0.3.0",
+        "optimized": "Gmail search query to execute for the connected account.",
+        "optimized_tokens": 11,
+        "original": "A string containing the Gmail search query to execute for the connected account.",
+        "original_tokens": 14,
+        "reduction_pct": 0.2143,
+        "reduction_tokens": 3,
+        "validation": {
+          "cases_run": 1,
+          "passed": true
+        }
+      }
+    },
+    "NOTION_QUERY_DATABASE": {
+      "description": {
+        "aperture_optimized": true,
+        "aperture_optimizer_version": "0.3.0",
+        "optimized": "Queries a Notion database for pages that match a filter or search term. Required: the database identifier and may include filtering or sorting options.",
+        "optimized_tokens": 29,
+        "original": "Queries a Notion database for pages that match a filter or search term. You must provide the database identifier and may include filtering or sorting options.",
+        "original_tokens": 30,
+        "reduction_pct": 0.0333,
+        "reduction_tokens": 1,
+        "validation": {
+          "cases_run": 1,
+          "passed": true
+        }
+      }
+    },
+    "SLACK_SEARCH_MESSAGES": {
+      "description": {
+        "aperture_optimized": true,
+        "aperture_optimizer_version": "0.3.0",
+        "optimized": "Searches Slack messages in channels available to the connected user account. Required: the search query and can optionally specify a channel or date range.",
+        "optimized_tokens": 29,
+        "original": "Searches Slack messages in channels available to the connected user account. You must provide the search query and can optionally specify a channel or date range.",
+        "original_tokens": 30,
+        "reduction_pct": 0.0333,
+        "reduction_tokens": 1,
+        "validation": {
+          "cases_run": 1,
+          "passed": true
+        }
+      },
+      "parameters.properties.query.description": {
+        "aperture_optimized": true,
+        "aperture_optimizer_version": "0.3.0",
+        "optimized": "Slack search query to run.",
+        "optimized_tokens": 8,
+        "original": "A string containing the Slack search query to run.",
+        "original_tokens": 10,
+        "reduction_pct": 0.2,
+        "reduction_tokens": 2,
+        "validation": {
+          "cases_run": 1,
+          "passed": true
+        }
+      }
+    }
+  },
+  "version": 1
+}

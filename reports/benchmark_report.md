@@ -6,16 +6,35 @@ Deterministic fixture benchmark comparing raw Composio-style outputs against Ape
 
 | mode | tasks | raw_tokens | compressed_tokens | tokens_saved | compression_ratio | cache_hits | api_calls_avoided | schema_tokens_saved | success_rate |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| raw | 5 | 1242 | 1242 | 0 | 1.000 | 0 | 0 | 0 | 0.800 |
-| aperture_compressed | 5 | 1242 | 1069 | 212 | 0.861 | 0 | 0 | 0 | 1.000 |
-| aperture_cached | 5 | 1242 | 1069 | 212 | 0.861 | 5 | 5 | 0 | 1.000 |
-| aperture_full | 5 | 1242 | 1069 | 212 | 0.861 | 5 | 5 | 20 | 1.000 |
-| shadow | 5 | 1242 | 1242 | 0 | 1.000 | 0 | 0 | 0 | 0.800 |
+| raw | 20 | 4550 | 4550 | 0 | 1.000 | 0 | 0 | 0 | 0.650 |
+| aperture_compressed | 20 | 4550 | 4223 | 636 | 0.928 | 0 | 0 | 0 | 0.750 |
+| aperture_cached | 20 | 4550 | 4223 | 636 | 0.928 | 20 | 20 | 0 | 0.750 |
+| aperture_full | 20 | 4550 | 4223 | 636 | 0.928 | 20 | 20 | 55 | 0.750 |
 
 ## Failure Cases
 
+- `raw` / `github_005`: score=0.75
+- `raw` / `gmail_004`: score=0.75
+- `raw` / `mixed_003`: score=0.75
 - `raw` / `slack_001`: score=0.75
-- `shadow` / `slack_001`: score=0.75
+- `raw` / `slack_002`: score=0.50
+- `raw` / `slack_003`: score=0.50
+- `raw` / `slack_004`: score=0.25
+- `aperture_compressed` / `github_005`: score=0.75
+- `aperture_compressed` / `gmail_004`: score=0.75
+- `aperture_compressed` / `slack_002`: score=0.75
+- `aperture_compressed` / `slack_003`: score=0.50
+- `aperture_compressed` / `slack_004`: score=0.25
+- `aperture_cached` / `github_005`: score=0.75
+- `aperture_cached` / `gmail_004`: score=0.75
+- `aperture_cached` / `slack_002`: score=0.75
+- `aperture_cached` / `slack_003`: score=0.50
+- `aperture_cached` / `slack_004`: score=0.25
+- `aperture_full` / `github_005`: score=0.75
+- `aperture_full` / `gmail_004`: score=0.75
+- `aperture_full` / `slack_002`: score=0.75
+- `aperture_full` / `slack_003`: score=0.50
+- `aperture_full` / `slack_004`: score=0.25
 
 ## Recommendation
 
