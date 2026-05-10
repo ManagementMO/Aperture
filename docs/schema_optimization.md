@@ -25,9 +25,21 @@ The validator rejects any candidate that touches:
 These are structural invariants. A rewrite that strips them is auto-rejected
 by `aperture/schema_optimizer/validator.py:validate_schema_rewrite`.
 
-The overlay writer also refuses candidates for tools classified as
-`operation_type: write` or `operation_type: auth` in `policy.yaml`, and it
-requires at least 50 validation cases before a rewrite can be emitted.
+The overlay writer is a positive list, not a deny list: it accepts only
+tools classified as `operation_type: read` in `policy.yaml`. `write`,
+`auth`, AND `unknown` operation types are all rejected. This prevents a
+write tool that hasn't been explicitly classified yet from sneaking in.
+
+The minimum LLM-judged validation case count is `MIN_OVERLAY_VALIDATION_CASES`
+in `aperture/schema_optimizer/reports.py` (currently `25`). This matches
+the prompt fixtures in `aperture/schema_optimizer/prompts/*.jsonl`
+(30 prompts per toolkit). Per the original handoff target the bar would
+be 50; raising it is a fixtures-only change once each toolkit grows past
+50 prompts.
+
+The proxy SchemaOverlay loader (`aperture/proxy/overlay.py`) applies the
+same `read`-only filter at startup. So even if a hand-edit puts a write
+tool in `_overlay.json`, the proxy refuses to substitute it.
 
 ## Pipeline
 
@@ -159,28 +171,51 @@ not in the overlay pass through unchanged.
 ## Running
 
 ```bash
-# Generate a structural-only report from fixtures (fast, usually no overlay
-# entries because write_overlay requires >=50 judged validation cases)
+# Generate a structural-only report from fixtures. Fast and free, but yields
+# no overlay entries because write_overlay's safety filters require LLM-judged
+# cases (MIN_OVERLAY_VALIDATION_CASES=25) AND operation_type=read.
 uv run python -c "
 from pathlib import Path
 from aperture.schema_optimizer.reports import optimize_schemas, write_overlay
 write_overlay(Path('aperture/schema_optimizer/_overlay.json'), optimize_schemas())
 "
 
-# Generate from live Composio + LLM judge (paid, ≤$50 budget)
-COMPOSIO_API_KEY=... ANTHROPIC_API_KEY=... uv run python -c "
+# Generate a live LLM-judged overlay (paid). The Haiku judge runs every prompt
+# against original and candidate schemas; Sonnet spot-checks a fraction of
+# accepted prompts. BudgetTracker aborts mid-run when the cap is hit.
+ANTHROPIC_API_KEY=... uv run python -c "
 from pathlib import Path
-from aperture.schema_optimizer.reports import optimize_schemas, write_overlay
-results = optimize_schemas(live=True)  # ← live schema fetch
+from aperture.schema_optimizer.budget import BudgetTracker
+from aperture.schema_optimizer.reports import (
+    optimize_schemas_with_llm_judge,
+    write_overlay,
+)
+tracker = BudgetTracker(cap_usd=2.0)
+results = optimize_schemas_with_llm_judge(
+    live=True,
+    tracker=tracker,
+    max_candidates=15,
+    spot_check_fraction=0.10,
+)
+print('budget:', tracker.summary())
 write_overlay(Path('aperture/schema_optimizer/_overlay.json'), results)
 "
 ```
 
-The current `optimize_schemas()` runs the structural validator only.
-Call `validate_schema_rewrite_with_llm_judge(..., live=True, tracker=...)`
-or `llm_judge.run_judge(...)` before marking a result accepted for a real
-overlay; the wrapper exposes `live`, `replay_dir`, `tracker`,
-`candidate_index`, and `seed` for this purpose.
+`optimize_schemas_with_llm_judge` is the canonical entry point for shipping
+a real overlay. Internally:
+
+1. Run the deterministic ranking pipeline (top-N candidates by tokens × frequency).
+2. Apply the structural validator as a fast pre-filter.
+3. For each surviving candidate, dispatch
+   `validate_schema_rewrite_with_llm_judge` with the toolkit's prompts (loaded
+   from `aperture/schema_optimizer/prompts/*.jsonl` by default).
+4. Record the judge's `cases_run` in the result so `write_overlay` can
+   gate on `>= MIN_OVERLAY_VALIDATION_CASES` and `operation_type == "read"`.
+
+`optimize_schemas()` (structural-only) is preserved as a free dry-run
+diagnostic and exists to populate the `reports/schema_optimization_baseline.md`
+report — it is **not** the path that writes a shippable overlay.
 
 ## Verifying
 

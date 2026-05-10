@@ -70,3 +70,25 @@ async def test_schedule_count_swallows_callback_exceptions():
     # Must not raise even though the callback does.
     result = await task
     assert result is not None  # tokenization itself succeeded
+
+
+@pytest.mark.asyncio
+async def test_schedule_count_holds_strong_task_ref():
+    """Inflight tasks must be tracked so the GC can't collect them mid-flight."""
+
+    svc = TokenizerService()
+    task = svc.schedule_count("never-awaited", model="gpt-4o")
+    # Task is alive in the inflight set until it completes.
+    assert task in svc._inflight
+    await task
+    assert task not in svc._inflight
+    assert svc.stats()["inflight"] == 0
+
+
+@pytest.mark.asyncio
+async def test_drain_waits_for_inflight_tasks():
+    svc = TokenizerService()
+    task = svc.schedule_count({"x": 1}, model="gpt-4o")
+    await svc.drain(timeout=2.0)
+    assert task.done()
+    assert svc.stats()["inflight"] == 0

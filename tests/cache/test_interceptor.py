@@ -50,3 +50,18 @@ async def test_failed_response_is_not_cached():
     await maybe_execute_with_cache("GITHUB_LIST_ISSUES", {"q": "auth"}, _context(), execute, store)
     await maybe_execute_with_cache("GITHUB_LIST_ISSUES", {"q": "auth"}, _context(), execute, store)
     assert calls["count"] == 2
+
+
+async def test_upstream_error_marker_is_not_cached():
+    """Payloads tagged with _aperture_upstream_error must never be cached."""
+
+    calls = {"count": 0}
+    store = InMemoryCacheStore()
+
+    def execute():
+        calls["count"] += 1
+        return {"_aperture_upstream_error": True, "ok": True, "data": [1, 2, 3]}
+
+    await maybe_execute_with_cache("GITHUB_LIST_ISSUES", {"q": "x"}, _context(), execute, store)
+    await maybe_execute_with_cache("GITHUB_LIST_ISSUES", {"q": "x"}, _context(), execute, store)
+    assert calls["count"] == 2

@@ -43,6 +43,9 @@ class TokenizerService:
         self._cache: dict[str, _CacheEntry] = {}
         self._lock = asyncio.Lock()
         self._stats = {"hits": 0, "misses": 0, "evictions": 0}
+        # Strong refs so Python doesn't GC fire-and-forget tasks mid-flight.
+        # See PEP 4 "asyncio.create_task strong reference" warning, 3.11+.
+        self._inflight: set[asyncio.Task] = set()
 
     @staticmethod
     def _key(serialized: str, model: str | None) -> str:
@@ -118,10 +121,29 @@ class TokenizerService:
                     )
             return count
 
-        return asyncio.create_task(_runner())
+        task = asyncio.create_task(_runner())
+        self._inflight.add(task)
+        task.add_done_callback(self._inflight.discard)
+        return task
+
+    async def drain(self, timeout: float | None = None) -> None:
+        """Wait for in-flight tokenization tasks to finish (lifespan shutdown)."""
+
+        if not self._inflight:
+            return
+        pending = list(self._inflight)
+        try:
+            await asyncio.wait_for(
+                asyncio.gather(*pending, return_exceptions=True),
+                timeout=timeout,
+            )
+        except asyncio.TimeoutError:
+            for task in pending:
+                if not task.done():
+                    task.cancel()
 
     def stats(self) -> dict[str, int]:
-        return {**self._stats, "entries": len(self._cache)}
+        return {**self._stats, "entries": len(self._cache), "inflight": len(self._inflight)}
 
     def clear(self) -> None:
         self._cache.clear()

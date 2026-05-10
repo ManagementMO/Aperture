@@ -239,6 +239,45 @@ def test_run_judge_with_missing_replay_fixtures_rejects(tmp_path):
     assert result.validation_cases_run == 2
 
 
+def test_live_anthropic_call_failures_are_rejections_not_silent_passes(monkeypatch):
+    """When live Anthropic calls fail (4xx/5xx), `_ask_anthropic` returns
+    JudgeOutcome(None, None, ""). Both orig and cand getting that value MUST
+    NOT be silently treated as agreement — it must be a rejection.
+
+    This locks in the fix for a bug discovered 2026-05-10 during a live run
+    where 400-errors from the Anthropic schema-shape mismatch produced an
+    artifact with falsely "accepted" rewrites.
+    """
+
+    import aperture.schema_optimizer.llm_judge as judge_mod
+
+    # Force every Anthropic call to fail with the empty outcome.
+    def fake_ask_anthropic(*, client, model, tools, prompt, tracker=None):
+        return JudgeOutcome(tool_name=None, tool_input_normalized=None, raw_response_text="")
+
+    # Pretend live works (no real API key needed because we patched the call).
+    class FakeAnthropic:
+        pass
+
+    class FakeAnthropicModule:
+        Anthropic = FakeAnthropic
+
+    monkeypatch.setattr(judge_mod, "_ask_anthropic", fake_ask_anthropic)
+    monkeypatch.setitem(__import__("sys").modules, "anthropic", FakeAnthropicModule)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "fake-for-test")
+
+    result = run_judge(
+        original_schema=_ORIGINAL,
+        candidate_schema=_CANDIDATE,
+        prompts=["a", "b", "c"],
+        live=True,
+        replay_dir=None,
+        spot_check_fraction=0.0,
+    )
+    assert result.passed is False, "all-failed live calls MUST not silent-pass"
+    assert result.rejection_reason == "anthropic_call_failed"
+
+
 def test_validator_calls_into_judge_when_present(tmp_path):
     """validate_schema_rewrite_with_llm_judge() in validator.py imports from
     llm_judge and calls run_judge. With llm_judge present, it should NOT

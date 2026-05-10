@@ -30,7 +30,7 @@ from aperture.cache.bypass import cache_bypass_requested
 from aperture.cache.redis_store import InMemoryCacheStore, RedisCacheStore
 from aperture.config import ApertureConfig
 from aperture.proxy.attribution import emit_meta_tool_event
-from aperture.proxy.cache_bridge import set_default_store
+from aperture.proxy.cache_bridge import set_default_store, unwrap_cached_result
 from aperture.proxy.config import ProxyConfig
 from aperture.proxy.overlay import SchemaOverlay, default_overlay_path
 from aperture.proxy.router import dispatch
@@ -93,6 +93,7 @@ async def _lifespan(server: Server) -> AsyncIterator[dict[str, Any]]:
             "cache_store": cache_store,
         }
     finally:
+        await tokenizer.drain(timeout=2.0)
         await upstream.aclose()
         logger.info("aperture proxy stopped")
 
@@ -218,6 +219,32 @@ def _inner_call_key(arguments: dict[str, Any]) -> str:
     return "tool_calls"
 
 
+_UPSTREAM_ERROR_MARKER = "_aperture_upstream_error"
+
+
+def _mark_upstream_error(payload: Any, is_error: bool) -> Any:
+    """Tag isError responses so the cache layer refuses to store them.
+
+    The marker is stripped in `_strip_upstream_error_marker` before the
+    payload reaches the LLM, so this is purely an internal cache signal.
+    """
+
+    if not is_error:
+        return payload
+    if isinstance(payload, dict):
+        return {**payload, _UPSTREAM_ERROR_MARKER: True}
+    return {_UPSTREAM_ERROR_MARKER: True, "content": payload}
+
+
+def _strip_upstream_error_marker(payload: Any) -> Any:
+    if not isinstance(payload, dict) or _UPSTREAM_ERROR_MARKER not in payload:
+        return payload
+    cleaned = {k: v for k, v in payload.items() if k != _UPSTREAM_ERROR_MARKER}
+    if set(cleaned.keys()) == {"content"}:
+        return cleaned["content"]
+    return cleaned
+
+
 def _build_mcp_server() -> Server:
     """Construct the low-level MCP server with `tools/list` and `tools/call` handlers."""
 
@@ -287,7 +314,8 @@ def _build_mcp_server() -> Server:
                 user_id=user_id,
             )
             payload = _payload_from_call_result(result)
-            return overlay.apply_to_payload(payload)
+            payload = overlay.apply_to_payload(payload)
+            return _mark_upstream_error(payload, result.isError)
 
         async def upstream_call() -> Any:
             return await upstream_payload(arguments)
@@ -304,6 +332,8 @@ def _build_mcp_server() -> Server:
             upstream_call=upstream_call,
             upstream_call_subset=upstream_call_subset,
         )
+        response = unwrap_cached_result(response)
+        response = _strip_upstream_error_marker(response)
 
         tokenizer.schedule_count(
             response,

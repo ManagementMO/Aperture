@@ -57,8 +57,13 @@ async def _execute(execute_fn: ExecuteFn) -> object:
     return result
 
 
+_UPSTREAM_ERROR_MARKER = "_aperture_upstream_error"
+
+
 def _success_response(response: object) -> bool:
     if isinstance(response, dict):
+        if response.get(_UPSTREAM_ERROR_MARKER):
+            return False
         if response.get("success") is False:
             return False
         if "error" in response and response["error"]:

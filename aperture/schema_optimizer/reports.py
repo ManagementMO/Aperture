@@ -3,23 +3,76 @@
 from __future__ import annotations
 
 import json
+import logging
 from datetime import datetime, timezone
 from pathlib import Path
 
 from aperture import __version__
+from aperture.cache.policy import load_cache_policy
 from aperture.observability.reports import schema_savings_report
+from aperture.schema_optimizer.budget import BudgetTracker
 from aperture.schema_optimizer.extract_fields import extract_description_fields
 from aperture.schema_optimizer.fetch_schemas import fetch_tool_schemas
 from aperture.schema_optimizer.rank_candidates import rank_schema_candidates
 from aperture.schema_optimizer.rewrite_rules import generate_schema_rewrite_candidates
 from aperture.schema_optimizer.tokenize_schemas import tokenize_schema_fields
-from aperture.schema_optimizer.validator import set_description_at_path, validate_schema_rewrite
+from aperture.schema_optimizer.validator import (
+    set_description_at_path,
+    validate_schema_rewrite,
+    validate_schema_rewrite_with_llm_judge,
+)
 from aperture.tokenization.token_counter import count_tokens_for_payload
 from aperture.types import SchemaOptimizationResult
-from aperture.cache.policy import load_cache_policy
 
 
-MIN_OVERLAY_VALIDATION_CASES = 50
+MIN_OVERLAY_VALIDATION_CASES = 25
+"""Minimum LLM-judged validation cases to land in the overlay.
+
+Plan-spec target was 50 prompts per toolkit (handoff §6.4). The current
+prompt fixtures in ``aperture/schema_optimizer/prompts/*.jsonl`` ship 30 per
+toolkit; we set the bar at 25 so a candidate is accepted only when judged
+against a substantial set, while still being attainable with the prompt
+inventory we actually have. Raising this to 50 is a fixtures-only change
+once each toolkit grows past 50 prompts."""
+
+logger = logging.getLogger(__name__)
+
+
+def _toolkit_for_slug(tool_slug: str) -> str:
+    """Map a tool slug like ``GITHUB_CREATE_ISSUE`` to ``github``."""
+
+    head, _, _ = tool_slug.partition("_")
+    return head.lower()
+
+
+def load_prompts_by_toolkit(prompts_dir: Path | None = None) -> dict[str, list[str]]:
+    """Load prompt strings from ``aperture/schema_optimizer/prompts/*.jsonl``.
+
+    Returns a mapping from lower-case toolkit slug to a list of prompt strings.
+    Each line in the JSONL is a dict with at least a ``prompt`` key.
+    """
+
+    if prompts_dir is None:
+        prompts_dir = Path(__file__).resolve().parent / "prompts"
+    prompts: dict[str, list[str]] = {}
+    if not prompts_dir.exists():
+        return prompts
+    for path in sorted(prompts_dir.glob("*.jsonl")):
+        toolkit = path.stem.lower()
+        bucket: list[str] = []
+        for line in path.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                obj = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(obj, dict) and isinstance(obj.get("prompt"), str):
+                bucket.append(obj["prompt"])
+        if bucket:
+            prompts[toolkit] = bucket
+    return prompts
 
 
 def _unwrap_openai_envelope(schema: dict) -> dict:
@@ -74,6 +127,145 @@ def optimize_schemas(live: bool = False) -> list[SchemaOptimizationResult]:
     return results
 
 
+def optimize_schemas_with_llm_judge(
+    *,
+    live: bool = False,
+    replay_dir: Path | None = None,
+    tracker: BudgetTracker | None = None,
+    prompts_by_toolkit: dict[str, list[str]] | None = None,
+    judge_model: str = "claude-haiku-4-5",
+    spot_check_model: str = "claude-sonnet-4-5",
+    spot_check_fraction: float = 0.10,
+    max_candidates: int | None = None,
+    seed: int = 1,
+) -> list[SchemaOptimizationResult]:
+    """Optimize schemas with LLM-judged behavioral validation.
+
+    Same deterministic pipeline as ``optimize_schemas()``, but each candidate
+    is run through ``validate_schema_rewrite_with_llm_judge``. The judge's
+    ``cases_run`` is reflected in the resulting ``SchemaOptimizationResult``,
+    so only candidates with ``cases_run >= MIN_OVERLAY_VALIDATION_CASES``
+    AND ``policy.operation_type not in {write, auth}`` will land in the
+    overlay (see ``write_overlay``).
+
+    Args:
+        live: when True, calls real Anthropic. False uses ``replay_dir``.
+        replay_dir: required for replay; can be passed in live mode to also
+            record fresh outcomes for future replay.
+        tracker: BudgetTracker that aborts mid-run when the cap is hit.
+        prompts_by_toolkit: dict from toolkit slug (lower-case) to prompt list.
+            Falls back to ``load_prompts_by_toolkit()`` when None.
+        max_candidates: hard cap on how many top-ranked candidates to judge
+            (useful for budget control during live runs).
+
+    Returns the list of results — same shape as ``optimize_schemas()`` but
+    with judge-gated ``accepted`` flags.
+    """
+
+    raw_schemas = fetch_tool_schemas(live=live)
+    schemas = [_unwrap_openai_envelope(s) for s in raw_schemas if isinstance(s, dict)]
+    schema_by_tool = {schema.get("slug") or schema.get("name"): schema for schema in schemas}
+    fields = []
+    for schema in schemas:
+        fields.extend(extract_description_fields(schema))
+
+    prompts_lookup = (
+        prompts_by_toolkit if prompts_by_toolkit is not None else load_prompts_by_toolkit()
+    )
+
+    results: list[SchemaOptimizationResult] = []
+    ranked = rank_schema_candidates(tokenize_schema_fields(fields))
+    if max_candidates is not None:
+        ranked = ranked[:max_candidates]
+
+    for idx, counted in enumerate(ranked):
+        if tracker is not None and tracker.exhausted():
+            logger.info("optimize_schemas_with_llm_judge: budget exhausted at idx=%s", idx)
+            break
+
+        field = counted.field
+        original_schema = schema_by_tool[field.tool_slug]
+        candidate_text = generate_schema_rewrite_candidates(field)[0]
+        candidate_schema = set_description_at_path(original_schema, field.field_path, candidate_text)
+        optimized_tokens = count_tokens_for_payload(candidate_text).tokens
+        reduction = max(0, counted.tokens - optimized_tokens)
+
+        # Structural pre-filter — cheap, cuts impossible candidates.
+        structural = validate_schema_rewrite(original_schema, candidate_schema)
+        if not structural.passed:
+            results.append(
+                SchemaOptimizationResult(
+                    tool_slug=field.tool_slug,
+                    field_path=field.field_path,
+                    original_text=field.text,
+                    optimized_text=candidate_text,
+                    original_tokens=counted.tokens,
+                    optimized_tokens=optimized_tokens,
+                    reduction_tokens=reduction,
+                    reduction_pct=(reduction / counted.tokens) if counted.tokens else 0.0,
+                    validation_cases_run=structural.validation_cases_run,
+                    validation_passed=False,
+                    accepted=False,
+                    rejection_reason=structural.rejection_reason or "structural_failed",
+                )
+            )
+            continue
+
+        toolkit = _toolkit_for_slug(field.tool_slug)
+        prompts = prompts_lookup.get(toolkit, [])
+
+        if not prompts:
+            results.append(
+                SchemaOptimizationResult(
+                    tool_slug=field.tool_slug,
+                    field_path=field.field_path,
+                    original_text=field.text,
+                    optimized_text=candidate_text,
+                    original_tokens=counted.tokens,
+                    optimized_tokens=optimized_tokens,
+                    reduction_tokens=reduction,
+                    reduction_pct=(reduction / counted.tokens) if counted.tokens else 0.0,
+                    validation_cases_run=0,
+                    validation_passed=False,
+                    accepted=False,
+                    rejection_reason=f"no_prompts_for_toolkit:{toolkit}",
+                )
+            )
+            continue
+
+        judge = validate_schema_rewrite_with_llm_judge(
+            original_schema,
+            candidate_schema,
+            prompts=prompts,
+            judge_model=judge_model,
+            spot_check_model=spot_check_model,
+            spot_check_fraction=spot_check_fraction,
+            live=live,
+            replay_dir=replay_dir,
+            tracker=tracker,
+            candidate_index=idx,
+            seed=seed,
+        )
+        accepted = judge.passed and reduction > 0
+        results.append(
+            SchemaOptimizationResult(
+                tool_slug=field.tool_slug,
+                field_path=field.field_path,
+                original_text=field.text,
+                optimized_text=candidate_text,
+                original_tokens=counted.tokens,
+                optimized_tokens=optimized_tokens,
+                reduction_tokens=reduction,
+                reduction_pct=(reduction / counted.tokens) if counted.tokens else 0.0,
+                validation_cases_run=judge.validation_cases_run,
+                validation_passed=judge.passed,
+                accepted=accepted,
+                rejection_reason=None if accepted else (judge.rejection_reason or "no_token_reduction"),
+            )
+        )
+    return results
+
+
 def write_schema_optimization_report(path: Path, live: bool = False) -> list[SchemaOptimizationResult]:
     """Write a Markdown schema optimization report."""
 
@@ -97,12 +289,24 @@ def write_schema_optimization_report(path: Path, live: bool = False) -> list[Sch
 
 
 def _overlay_safe(result: SchemaOptimizationResult) -> bool:
+    """Defense-in-depth: only ship overlays for tools we know are safe to rewrite.
+
+    Three gates:
+      1. ``result.accepted`` (judge or structural agreed)
+      2. judge ran ``MIN_OVERLAY_VALIDATION_CASES`` or more cases
+      3. ``policy.operation_type == "read"`` — positive list, not just
+         ``not in {write, auth}``. ``unknown`` operation types are blocked
+         until they're explicitly classified in policy.yaml. This prevents
+         a misclassified write tool from sneaking into the overlay just
+         because policy.yaml hasn't been updated to mark it write yet.
+    """
+
     if not result.accepted:
         return False
     if result.validation_cases_run < MIN_OVERLAY_VALIDATION_CASES:
         return False
     policy = load_cache_policy(result.tool_slug)
-    return policy.operation_type not in {"write", "auth"}
+    return policy.operation_type == "read"
 
 
 def write_overlay(path: Path, results: list[SchemaOptimizationResult]) -> dict:

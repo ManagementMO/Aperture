@@ -12,6 +12,7 @@ decision §4).
 from __future__ import annotations
 
 import contextlib
+import string
 from collections import defaultdict
 from typing import Any, AsyncIterator
 
@@ -31,8 +32,15 @@ class UpstreamClient:
 
     def __init__(self, mcp_url: str, timeout_seconds: float = 30.0) -> None:
         self._mcp_url_template = mcp_url
-        self._mcp_url = self.url_for()
+        self._template_fields = {
+            field
+            for _, field, _, _ in string.Formatter().parse(mcp_url)
+            if field
+        }
         self._timeout_seconds = timeout_seconds
+        # Prime _mcp_url only when the template has no placeholders so a
+        # literal URL is reused without forcing callers to pass session_id.
+        self._mcp_url = mcp_url if not self._template_fields else None
 
     def url_for(self, *, session_id: str | None = None, user_id: str | None = None) -> str:
         """Return the upstream MCP URL for one inbound request.
@@ -41,16 +49,29 @@ class UpstreamClient:
         ``https://backend.composio.dev/tool_router/{session_id}/mcp``. Tests and
         local deployments may provide a literal URL with no placeholders; in
         that case it is returned unchanged.
+
+        Raises ``ValueError`` if the template needs a placeholder the caller
+        did not supply — better to fail loud than to issue
+        ``/tool_router//mcp`` and let Composio 404.
         """
 
-        values = defaultdict(
-            str,
-            {
-                "session_id": session_id or "",
-                "server_id": session_id or "",
-                "user_id": user_id or "",
-            },
+        if not self._template_fields:
+            return self._mcp_url_template
+        provided = {
+            "session_id": session_id or "",
+            "server_id": session_id or "",
+            "user_id": user_id or "",
+        }
+        missing = sorted(
+            field
+            for field in self._template_fields
+            if field in provided and not provided[field]
         )
+        if missing:
+            raise ValueError(
+                f"upstream URL template requires {missing!r} but caller did not supply"
+            )
+        values = defaultdict(str, provided)
         return self._mcp_url_template.format_map(values)
 
     @contextlib.asynccontextmanager

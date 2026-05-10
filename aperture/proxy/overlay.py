@@ -10,7 +10,11 @@ from typing import Any
 
 import mcp.types as mcp_types
 
+from aperture.cache.policy import load_cache_policy
+
 logger = logging.getLogger(__name__)
+
+_SAFE_OPERATION_TYPES = {"read"}
 
 
 def default_overlay_path() -> Path:
@@ -22,11 +26,18 @@ class SchemaOverlay:
 
     Missing or malformed overlay files disable the layer. Applying an overlay
     must never block or fail a proxy request.
+
+    Defense-in-depth: at load time we keep ONLY tools whose policy.yaml
+    classifies them as ``operation_type: read``. ``write``/``auth``/``unknown``
+    are dropped (the writer already filters these out, but a hand-edit or
+    stale artifact must never be able to rewrite a mutating tool's
+    description).
     """
 
     def __init__(self, path: str | Path | None) -> None:
         self.path = Path(path) if path else None
         self._tools: dict[str, dict[str, dict[str, Any]]] = {}
+        self._dropped_unsafe: list[str] = []
         if self.path is not None:
             self.reload()
 
@@ -34,17 +45,43 @@ class SchemaOverlay:
     def enabled(self) -> bool:
         return bool(self._tools)
 
+    @property
+    def dropped_unsafe(self) -> list[str]:
+        """Slugs that were in the overlay file but rejected at load time."""
+        return list(self._dropped_unsafe)
+
     def reload(self) -> None:
+        self._dropped_unsafe = []
         if self.path is None or not self.path.exists():
             self._tools = {}
             return
         try:
             data = json.loads(self.path.read_text(encoding="utf-8"))
             tools = data.get("tools") if isinstance(data, dict) else None
-            self._tools = tools if isinstance(tools, dict) else {}
+            raw = tools if isinstance(tools, dict) else {}
         except Exception as exc:  # noqa: BLE001
             logger.warning("failed to load schema overlay %s: %s", self.path, exc)
             self._tools = {}
+            return
+
+        safe: dict[str, dict[str, dict[str, Any]]] = {}
+        for slug, fields in raw.items():
+            try:
+                policy = load_cache_policy(slug)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("overlay: skipping %s (policy lookup failed: %s)", slug, exc)
+                self._dropped_unsafe.append(slug)
+                continue
+            if policy.operation_type not in _SAFE_OPERATION_TYPES:
+                logger.warning(
+                    "overlay: dropping %s (operation_type=%s; only 'read' is allowed)",
+                    slug,
+                    policy.operation_type,
+                )
+                self._dropped_unsafe.append(slug)
+                continue
+            safe[slug] = fields
+        self._tools = safe
 
     def apply_to_tools(self, tools: list[mcp_types.Tool]) -> list[mcp_types.Tool]:
         if not self.enabled:

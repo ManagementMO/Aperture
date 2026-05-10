@@ -231,3 +231,130 @@ def test_tools_call_enters_dispatch_and_forwards_auth_headers(monkeypatch):
     assert captured["call_tool"]["headers"]["authorization"] == "Bearer test-token"
     assert captured["call_tool"]["session_id"] == "sess_test"
     assert captured["call_tool"]["user_id"] == "user_test"
+
+
+def test_tools_call_response_unwraps_cached_result(monkeypatch):
+    """A cache-hit CachedResult must never reach the MCP content serializer."""
+
+    import aperture.proxy.server as server_module
+    from aperture.types import CachedResult
+
+    class FakeUpstream:
+        def __init__(self, mcp_url, timeout_seconds): pass
+        async def list_tools(self, headers, *, session_id=None, user_id=None): return []
+        async def call_tool(self, name, arguments, headers, *, session_id=None, user_id=None):
+            return mcp_types.CallToolResult(
+                content=[mcp_types.TextContent(type="text", text=json.dumps({"unused": True}))]
+            )
+        async def aclose(self): pass
+
+    async def fake_dispatch(name, arguments, *, context, upstream_call, **_):
+        # Simulate cache layer: return CachedResult instead of raw dict.
+        return CachedResult(
+            data={"hello": "from_cache"},
+            cached_age_seconds=42,
+            original_cost_tokens=120,
+        )
+
+    monkeypatch.setattr(server_module, "UpstreamClient", FakeUpstream)
+    monkeypatch.setattr(server_module, "dispatch", fake_dispatch)
+    monkeypatch.setenv(
+        "APERTURE_COMPOSIO_MCP_URL_TEMPLATE",
+        "https://backend.composio.dev/tool_router/{session_id}/mcp",
+    )
+
+    app = server_module.create_app()
+    headers = {
+        "accept": "application/json, text/event-stream",
+        "content-type": "application/json",
+        "x-api-key": "test-key",
+    }
+
+    with TestClient(app) as client:
+        client.post(
+            "/mcp/?session_id=sess_unwrap&user_id=u",
+            headers=headers,
+            json={
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "initialize",
+                "params": {"protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": {"name": "p", "version": "0"}},
+            },
+        )
+        response = client.post(
+            "/mcp/?session_id=sess_unwrap&user_id=u",
+            headers=headers,
+            json={
+                "jsonrpc": "2.0",
+                "id": 2,
+                "method": "tools/call",
+                "params": {"name": "COMPOSIO_SEARCH_TOOLS", "arguments": {"query": "x"}},
+            },
+        )
+
+    assert response.status_code == 200
+    # The response must contain the unwrapped payload, not a CachedResult repr.
+    assert "from_cache" in response.text
+    assert "CachedResult" not in response.text
+    assert "cached_age_seconds" not in response.text
+
+
+def test_isError_upstream_response_strips_marker_for_client(monkeypatch):
+    """An isError=True upstream response must surface to the client without
+    leaking the internal _aperture_upstream_error marker."""
+
+    import aperture.proxy.server as server_module
+
+    class FakeUpstream:
+        def __init__(self, mcp_url, timeout_seconds): pass
+        async def list_tools(self, headers, *, session_id=None, user_id=None): return []
+        async def call_tool(self, name, arguments, headers, *, session_id=None, user_id=None):
+            return mcp_types.CallToolResult(
+                isError=True,
+                content=[mcp_types.TextContent(type="text", text=json.dumps({"failure": "permission denied"}))],
+            )
+        async def aclose(self): pass
+
+    async def fake_dispatch(name, arguments, *, context, upstream_call, **_):
+        return await upstream_call()
+
+    monkeypatch.setattr(server_module, "UpstreamClient", FakeUpstream)
+    monkeypatch.setattr(server_module, "dispatch", fake_dispatch)
+    monkeypatch.setenv(
+        "APERTURE_COMPOSIO_MCP_URL_TEMPLATE",
+        "https://backend.composio.dev/tool_router/{session_id}/mcp",
+    )
+
+    app = server_module.create_app()
+    headers = {
+        "accept": "application/json, text/event-stream",
+        "content-type": "application/json",
+        "x-api-key": "test-key",
+    }
+
+    with TestClient(app) as client:
+        client.post(
+            "/mcp/?session_id=s_err&user_id=u",
+            headers=headers,
+            json={
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "initialize",
+                "params": {"protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": {"name": "p", "version": "0"}},
+            },
+        )
+        response = client.post(
+            "/mcp/?session_id=s_err&user_id=u",
+            headers=headers,
+            json={
+                "jsonrpc": "2.0",
+                "id": 2,
+                "method": "tools/call",
+                "params": {"name": "COMPOSIO_GET_TOOL_SCHEMAS", "arguments": {"slugs": ["X"]}},
+            },
+        )
+
+    assert response.status_code == 200
+    assert "permission denied" in response.text
+    # Internal cache sentinel must NOT leak to the MCP client.
+    assert "_aperture_upstream_error" not in response.text
