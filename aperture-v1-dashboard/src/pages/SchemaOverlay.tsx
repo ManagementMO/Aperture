@@ -16,12 +16,15 @@ interface OverlayDocument {
   version: number;
   aperture_optimizer_version: string;
   generated_at: string;
+  quality_level?: "llm_judged" | "structural_only";
+  warning?: string;
   tools: Record<string, Record<string, OverlayEntry>>;
   stats: {
     total_results: number;
     accepted: number;
     rejected: number;
     total_tokens_saved: number;
+    min_cases_required?: number;
   };
 }
 
@@ -30,9 +33,9 @@ export function SchemaOverlay() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetch("/aperture/schema_optimizer/_overlay.json")
+    fetch("/api/v3.1/overlay")
       .then((r) => {
-        if (!r.ok) throw new Error(`overlay file → ${r.status}`);
+        if (!r.ok) throw new Error(`overlay API -> ${r.status}`);
         return r.json();
       })
       .then(setOverlay)
@@ -44,8 +47,8 @@ export function SchemaOverlay() {
       <div>
         <h2 style={{ marginTop: 0 }}>Schema overlay</h2>
         <p style={{ color: "var(--muted)" }}>
-          The overlay file at <code>aperture/schema_optimizer/_overlay.json</code> isn't
-          accessible. Run the schema optimizer pipeline first:
+          The overlay endpoint is not accessible. Run the schema optimizer pipeline
+          first and start the v3.1 API:
         </p>
         <pre
           style={{
@@ -84,11 +87,28 @@ export function SchemaOverlay() {
         these into outbound SEARCH_TOOLS / GET_TOOL_SCHEMAS responses.
       </p>
 
+      {overlay.warning && (
+        <div
+          style={{
+            padding: 12,
+            background: "rgba(255,180,80,0.10)",
+            border: "1px solid var(--orange, #ffaa55)",
+            borderRadius: 6,
+            marginBottom: 16,
+            color: "var(--orange, #ffaa55)",
+            fontSize: 12,
+          }}
+        >
+          <strong>{overlay.quality_level?.toUpperCase()}</strong>: {overlay.warning}
+        </div>
+      )}
+
       <div style={{ display: "flex", gap: 24, marginBottom: 24 }}>
         <Stat label="Tools optimized" value={String(tools.length)} />
         <Stat label="Total results" value={String(overlay.stats.total_results)} />
         <Stat label="Accepted" value={String(overlay.stats.accepted)} />
         <Stat label="Tokens saved" value={overlay.stats.total_tokens_saved.toLocaleString()} />
+        <Stat label="Quality" value={overlay.quality_level ?? "llm_judged"} />
         <Stat label="Optimizer version" value={overlay.aperture_optimizer_version} />
       </div>
 

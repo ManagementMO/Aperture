@@ -6,8 +6,9 @@ A SEARCH_TOOLS response contains three logical portions (handoff §13.1 cell 11)
     3. Connection status — per-user, NOT shareable.
 
 The cache key for the schema+plan portion uses scope=public + the search query
-hash; the connection_status portion is fetched fresh on every call and merged
-into the response before it's returned to the LLM.
+hash. When the proxy has a cheap fresh-status callback, the connection_status
+portion can be merged after a cache hit; otherwise the cached schema+plan is
+returned without issuing a second full SEARCH_TOOLS call.
 
 This module exposes:
     - split_response(): tear apart the upstream response into (cacheable, fresh).

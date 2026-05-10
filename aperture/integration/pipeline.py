@@ -8,7 +8,7 @@ from aperture.cache.interceptor import maybe_execute_with_cache
 from aperture.cache.redis_store import CacheStore
 from aperture.compression.compressor import compress_tool_output
 from aperture.config import ApertureConfig
-from aperture.types import CompressionContext, ExecutionContext
+from aperture.types import CachedResult, CompressionContext, ExecutionContext
 
 ExecuteFn = Callable[[], object | Awaitable[object]]
 
@@ -30,6 +30,8 @@ async def aperture_tool_result_pipeline(
         execute_fn=execute_fn,
         store=cache_store,
     )
+    if isinstance(raw_result, CachedResult):
+        raw_result = raw_result.data
     if context.compression_bypass:
         return raw_result
     compression_mode = ApertureConfig.from_env().mode

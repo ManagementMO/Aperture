@@ -39,8 +39,7 @@ async def dispatch(
     Returns the (possibly cache-served, possibly enriched) response payload.
     """
     if not is_meta_tool(name):
-        # Not a meta tool — forward verbatim. PR 2 doesn't add interception
-        # for custom tools.
+        # Not a meta tool — forward verbatim without interception.
         return await upstream_call()
 
     if name == MetaTool.SEARCH_TOOLS.value:
@@ -60,5 +59,7 @@ async def dispatch(
         )
 
     # GET_TOOL_SCHEMAS / MANAGE_CONNECTIONS / REMOTE_WORKBENCH / REMOTE_BASH_TOOL:
-    # PR 2 forwards verbatim. PR 3 will tokenize them, PR 4 will overlay schemas.
+    # forward verbatim. Tokenization + overlay happen in server.py above this
+    # layer (the overlay is applied via upstream_payload before the response
+    # reaches the cache).
     return await upstream_call()

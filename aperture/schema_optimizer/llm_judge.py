@@ -112,6 +112,34 @@ def save_replay(replay_dir: Path, key: str, outcome: JudgeOutcome) -> None:
 
 # --------------------- Live mode ---------------------
 
+
+def _to_anthropic_tool(schema: dict) -> dict:
+    """Normalize an OpenAI/Composio-shape schema to Anthropic's tool shape.
+
+    Anthropic's ``tools=`` parameter requires entries shaped like
+    ``{"name": str, "description": str, "input_schema": dict}``. Composio's
+    ``client.tools.get()`` and our fixture schemas use ``parameters`` for the
+    JSON Schema instead of ``input_schema``. Detect either shape and return
+    the Anthropic-compatible form.
+    """
+
+    if isinstance(schema.get("function"), dict):
+        # OpenAI envelope shape: {"function": {...}, "type": "function"}
+        schema = schema["function"]
+    name = schema.get("name") or schema.get("slug") or "_unknown_"
+    description = schema.get("description") or ""
+    input_schema = (
+        schema.get("input_schema")
+        or schema.get("parameters")
+        or {"type": "object", "properties": {}}
+    )
+    return {
+        "name": name,
+        "description": description,
+        "input_schema": input_schema,
+    }
+
+
 def _ask_anthropic(
     *,
     client: Any,
@@ -125,11 +153,12 @@ def _ask_anthropic(
     Validator MUST NOT crash on a single 4xx/5xx — catches and returns an
     empty outcome so the higher-level loop can record a failure.
     """
+    anthropic_tools = [_to_anthropic_tool(tool) for tool in tools]
     try:
         response = client.messages.create(
             model=model,
             max_tokens=512,
-            tools=tools,
+            tools=anthropic_tools,
             messages=[{"role": "user", "content": prompt}],
         )
     except Exception as exc:
@@ -254,6 +283,19 @@ def run_judge(
             save_replay(replay_dir, key, outcome)
         return outcome
 
+    api_failures = 0
+
+    def _is_failed_call(outcome: JudgeOutcome) -> bool:
+        """A live call that returned no tool_use AND no text is a failure,
+        not a "passing" None==None. Live errors get caught in `_ask_anthropic`
+        and produce this empty shape; we must not silently accept them."""
+
+        return (
+            outcome.tool_name is None
+            and outcome.tool_input_normalized is None
+            and not outcome.raw_response_text
+        )
+
     for idx, prompt in enumerate(prompts):
         if tracker is not None and tracker.exhausted():
             return ValidationResult(idx, False, "budget_exhausted")
@@ -266,6 +308,20 @@ def run_judge(
             model=judge_model, schema=candidate_schema, prompt=prompt,
             prompt_index=idx, schema_label="cand",
         )
+
+        # Live mode: if either call failed (no tool_use AND no text), record
+        # as a hard failure — do not let None==None become a silent "pass".
+        # Replay mode handles missing fixtures separately via `missing_replay_keys`.
+        if live and (_is_failed_call(original_outcome) or _is_failed_call(candidate_outcome)):
+            api_failures += 1
+            failures.append({
+                "prompt": prompt,
+                "stage": "haiku",
+                "reason": "anthropic_call_failed",
+                "original": {"name": original_outcome.tool_name, "input": original_outcome.tool_input_normalized},
+                "candidate": {"name": candidate_outcome.tool_name, "input": candidate_outcome.tool_input_normalized},
+            })
+            continue
 
         if (
             original_outcome.tool_name != candidate_outcome.tool_name
@@ -313,6 +369,8 @@ def run_judge(
     if not accepted:
         if incomplete_validation:
             rejection_reason = "missing_replay_fixtures"
+        elif api_failures and any(f.get("reason") == "anthropic_call_failed" for f in failures):
+            rejection_reason = "anthropic_call_failed"
         elif any(f["stage"] == "haiku" for f in failures):
             rejection_reason = "haiku_disagreement"
         elif any(f["stage"] == "sonnet_spot_check" for f in failures):

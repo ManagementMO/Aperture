@@ -25,6 +25,37 @@ The validator rejects any candidate that touches:
 These are structural invariants. A rewrite that strips them is auto-rejected
 by `aperture/schema_optimizer/validator.py:validate_schema_rewrite`.
 
+The overlay writer is a positive list, not a deny list: it accepts only
+tools classified as `operation_type: read` in `policy.yaml`. `write`,
+`auth`, AND `unknown` operation types are all rejected. This prevents a
+write tool that hasn't been explicitly classified yet from sneaking in.
+
+The minimum LLM-judged validation case count is `MIN_OVERLAY_VALIDATION_CASES`
+in `aperture/schema_optimizer/reports.py` (currently `50`, matching the
+handoff §6.4 plan-spec target). The prompt fixtures in
+`aperture/schema_optimizer/prompts/*.jsonl` ship at least 50 per toolkit:
+github=50, gmail=50, linear=60, notion=50, slack=50.
+
+`write_overlay()` exposes a `quality_level` flag with two values:
+
+- `"llm_judged"` (default): requires `cases_run >= 50` from a real LLM
+  judge run. Production-grade. Run via `optimize_schemas_with_llm_judge(live=True)`.
+- `"structural_only"`: relaxes `cases_run >= 1` so structurally-validated
+  rewrites can ship without LLM cost. The overlay file is stamped with
+  `"quality_level": "structural_only"` and a top-level `"warning"` so
+  operators (and the dashboard, which surfaces the warning) know these
+  entries weren't behaviorally validated. The read-only operation_type
+  filter is non-negotiable in either mode — write/auth/unknown tools
+  never ship.
+
+The proxy's `SchemaOverlay` loader applies the same read-only filter at
+startup, so even a hand-edited or stale overlay can't apply rewrites to
+mutating tools.
+
+The proxy SchemaOverlay loader (`aperture/proxy/overlay.py`) applies the
+same `read`-only filter at startup. So even if a hand-edit puts a write
+tool in `_overlay.json`, the proxy refuses to substitute it.
+
 ## Pipeline
 
 ```
@@ -125,7 +156,7 @@ Schema (`aperture/schema_optimizer/_overlay.json`):
   "aperture_optimizer_version": "0.3.0",
   "generated_at": "2026-05-09T16:00:00Z",
   "tools": {
-    "GITHUB_CREATE_ISSUE": {
+    "GITHUB_LIST_REPOSITORY_ISSUES": {
       "description": {
         "original": "Creates a new issue in a specified GitHub repository...",
         "optimized": "Create a GitHub issue. Required: owner, repo, title.",
@@ -148,33 +179,58 @@ Schema (`aperture/schema_optimizer/_overlay.json`):
 }
 ```
 
-The proxy reads this on startup (PR 4) and substitutes `optimized` text
+The proxy reads this on startup and substitutes `optimized` text
 into the relevant schema responses before forwarding to the LLM. Tools
 not in the overlay pass through unchanged.
 
 ## Running
 
 ```bash
-# Generate overlay from fixtures (no LLM, fast)
+# Generate a structural-only report from fixtures. Fast and free, but yields
+# no overlay entries because write_overlay's safety filters require LLM-judged
+# cases (MIN_OVERLAY_VALIDATION_CASES=25) AND operation_type=read.
 uv run python -c "
 from pathlib import Path
 from aperture.schema_optimizer.reports import optimize_schemas, write_overlay
 write_overlay(Path('aperture/schema_optimizer/_overlay.json'), optimize_schemas())
 "
 
-# Generate from live Composio + LLM judge (paid, ≤$50 budget)
-COMPOSIO_API_KEY=... ANTHROPIC_API_KEY=... uv run python -c "
+# Generate a live LLM-judged overlay (paid). The Haiku judge runs every prompt
+# against original and candidate schemas; Sonnet spot-checks a fraction of
+# accepted prompts. BudgetTracker aborts mid-run when the cap is hit.
+ANTHROPIC_API_KEY=... uv run python -c "
 from pathlib import Path
-from aperture.schema_optimizer.reports import optimize_schemas, write_overlay
-results = optimize_schemas(live=True)  # ← live schema fetch
-# TODO: route through llm_judge.run_judge for accept gate
+from aperture.schema_optimizer.budget import BudgetTracker
+from aperture.schema_optimizer.reports import (
+    optimize_schemas_with_llm_judge,
+    write_overlay,
+)
+tracker = BudgetTracker(cap_usd=2.0)
+results = optimize_schemas_with_llm_judge(
+    live=True,
+    tracker=tracker,
+    max_candidates=15,
+    spot_check_fraction=0.10,
+)
+print('budget:', tracker.summary())
 write_overlay(Path('aperture/schema_optimizer/_overlay.json'), results)
 "
 ```
 
-The current `optimize_schemas()` runs the structural validator only.
-Wiring it through `llm_judge.run_judge()` is the next step (the function
-exists; reports.py picks structural for now).
+`optimize_schemas_with_llm_judge` is the canonical entry point for shipping
+a real overlay. Internally:
+
+1. Run the deterministic ranking pipeline (top-N candidates by tokens × frequency).
+2. Apply the structural validator as a fast pre-filter.
+3. For each surviving candidate, dispatch
+   `validate_schema_rewrite_with_llm_judge` with the toolkit's prompts (loaded
+   from `aperture/schema_optimizer/prompts/*.jsonl` by default).
+4. Record the judge's `cases_run` in the result so `write_overlay` can
+   gate on `>= MIN_OVERLAY_VALIDATION_CASES` and `operation_type == "read"`.
+
+`optimize_schemas()` (structural-only) is preserved as a free dry-run
+diagnostic and exists to populate the `reports/schema_optimization_baseline.md`
+report — it is **not** the path that writes a shippable overlay.
 
 ## Verifying
 

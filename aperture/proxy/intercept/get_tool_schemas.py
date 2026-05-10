@@ -1,7 +1,10 @@
-"""Handler for `COMPOSIO_GET_TOOL_SCHEMAS`.
+"""Handler for ``COMPOSIO_GET_TOOL_SCHEMAS``.
 
-PR 3: tokenize the response, emit attribution event, return verbatim.
-PR 4: apply schema overlay (rewrite descriptions per _overlay.json).
+Tokenization + attribution events are emitted in ``server.py:_call_tool``
+above this layer. The schema overlay is applied in ``upstream_payload``
+(also in ``server.py``) before this handler sees the result, so the
+overlay's optimized descriptions appear in the response and in the cached
+representation.
 """
 
 from __future__ import annotations

@@ -28,3 +28,23 @@
 {"prompt": "Get the user with email alice@x.com on Slack.", "expects_tool": "SLACK_GET_USER", "expects_args": {"email": "alice@x.com"}}
 {"prompt": "List Slack files uploaded last week.", "expects_tool": "SLACK_LIST_FILES", "expects_args": {"ts_from": "7d"}}
 {"prompt": "Post 'reviewing now' to channel C12345 thread 8888.123.", "expects_tool": "SLACK_POST_MESSAGE", "expects_args": {"channel": "C12345", "thread_ts": "8888.123", "text": "reviewing now"}}
+{"prompt": "Send 'Hello team' to the #general channel in Slack.", "expects_tool": "SLACK_SEND_MESSAGE", "expects_args": {"channel": "#general", "text": "Hello team"}}
+{"prompt": "Post 'Deploy complete' to channel #releases.", "expects_tool": "SLACK_SEND_MESSAGE", "expects_args": {"channel": "#releases", "text": "Deploy complete"}}
+{"prompt": "DM @alice 'Quick question?'", "expects_tool": "SLACK_SEND_MESSAGE", "expects_args": {"channel": "@alice", "text": "Quick question?"}}
+{"prompt": "List the public Slack channels.", "expects_tool": "SLACK_LIST_CHANNELS", "expects_args": {}}
+{"prompt": "Get the Slack channel #engineering.", "expects_tool": "SLACK_GET_CHANNEL_INFO", "expects_args": {"channel": "#engineering"}}
+{"prompt": "Search Slack for 'incident review'.", "expects_tool": "SLACK_SEARCH_MESSAGES", "expects_args": {"query": "incident review"}}
+{"prompt": "Find Slack messages from @alice.", "expects_tool": "SLACK_SEARCH_MESSAGES", "expects_args": {"query": "from:@alice"}}
+{"prompt": "Get the latest 20 messages in #engineering on Slack.", "expects_tool": "SLACK_GET_CHANNEL_HISTORY", "expects_args": {"channel": "#engineering", "limit": 20}}
+{"prompt": "List my Slack DMs.", "expects_tool": "SLACK_LIST_DIRECT_MESSAGES", "expects_args": {}}
+{"prompt": "Show the members of channel #engineering on Slack.", "expects_tool": "SLACK_LIST_CHANNEL_MEMBERS", "expects_args": {"channel": "#engineering"}}
+{"prompt": "Add @bob to Slack channel #engineering.", "expects_tool": "SLACK_INVITE_TO_CHANNEL", "expects_args": {"channel": "#engineering", "users": ["bob"]}}
+{"prompt": "Create a Slack channel called 'aperture-launch'.", "expects_tool": "SLACK_CREATE_CHANNEL", "expects_args": {"name": "aperture-launch"}}
+{"prompt": "Archive the Slack channel 'old-project'.", "expects_tool": "SLACK_ARCHIVE_CHANNEL", "expects_args": {"channel": "old-project"}}
+{"prompt": "Set the topic of #engineering to 'sprint planning'.", "expects_tool": "SLACK_SET_CHANNEL_TOPIC", "expects_args": {"channel": "#engineering", "topic": "sprint planning"}}
+{"prompt": "List the reactions on Slack message ts 1700000000.0001.", "expects_tool": "SLACK_GET_REACTIONS", "expects_args": {"timestamp": "1700000000.0001"}}
+{"prompt": "Add a thumbs-up reaction to Slack message 1700000000.0001 in #engineering.", "expects_tool": "SLACK_ADD_REACTION", "expects_args": {"channel": "#engineering", "timestamp": "1700000000.0001", "name": "thumbsup"}}
+{"prompt": "Reply 'on it' to Slack message 1700000000.0001 in #engineering.", "expects_tool": "SLACK_SEND_MESSAGE", "expects_args": {"channel": "#engineering", "thread_ts": "1700000000.0001", "text": "on it"}}
+{"prompt": "Pin Slack message 1700000000.0001 in #engineering.", "expects_tool": "SLACK_PIN_MESSAGE", "expects_args": {"channel": "#engineering", "timestamp": "1700000000.0001"}}
+{"prompt": "Get my Slack user info.", "expects_tool": "SLACK_GET_AUTHENTICATED_USER", "expects_args": {}}
+{"prompt": "Find the Slack user with email alice@x.com.", "expects_tool": "SLACK_LOOKUP_USER_BY_EMAIL", "expects_args": {"email": "alice@x.com"}}

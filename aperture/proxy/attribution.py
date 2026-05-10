@@ -30,9 +30,9 @@ def build_meta_tool_response_event(
 ) -> TokenAttributionEvent:
     """Build the canonical token attribution event for one meta-tool response.
 
-    `compressed_count` is None when no compression was applied (the proxy
-    forwards raw payloads in PR 3; PR 4 may apply schema overlay rewrites
-    which DO change the size — at that point compressed_count != raw_count).
+    ``compressed_count`` is None when no compression was applied. When the
+    schema overlay rewrites a description, the rewritten payload's count
+    is passed as ``compressed_count`` so the event reflects the savings.
     """
     final_count = compressed_count or raw_count
     raw_tokens = raw_count.tokens

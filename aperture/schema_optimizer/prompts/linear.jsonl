@@ -28,3 +28,33 @@
 {"prompt": "List all issues for team 'Aperture' on Linear.", "expects_tool": "LINEAR_LIST_TEAM_ISSUES", "expects_args": {"team": "Aperture"}}
 {"prompt": "Delete Linear issue 'BUG-42'.", "expects_tool": "LINEAR_DELETE_ISSUE", "expects_args": {"issue_id": "BUG-42"}}
 {"prompt": "Get Linear current user.", "expects_tool": "LINEAR_GET_CURRENT_USER", "expects_args": {}}
+{"prompt": "Show me the Linear teams I'm in.", "expects_tool": "LINEAR_LIST_TEAMS", "expects_args": {}}
+{"prompt": "Get the Linear team with id team_abc.", "expects_tool": "LINEAR_GET_TEAM", "expects_args": {"team_id": "team_abc"}}
+{"prompt": "List the projects on the Engineering team in Linear.", "expects_tool": "LINEAR_LIST_PROJECTS", "expects_args": {"team_id": "engineering"}}
+{"prompt": "Create a Linear issue 'API rate limit exceeded' on the API team.", "expects_tool": "LINEAR_CREATE_ISSUE", "expects_args": {"team_id": "api", "title": "API rate limit exceeded"}}
+{"prompt": "Update Linear issue ENG-42 to priority urgent.", "expects_tool": "LINEAR_UPDATE_ISSUE", "expects_args": {"issue_id": "ENG-42", "priority": 1}}
+{"prompt": "Mark Linear issue API-99 as 'In Progress'.", "expects_tool": "LINEAR_UPDATE_ISSUE", "expects_args": {"issue_id": "API-99", "state": "In Progress"}}
+{"prompt": "Close Linear issue ENG-7.", "expects_tool": "LINEAR_UPDATE_ISSUE", "expects_args": {"issue_id": "ENG-7", "state": "Done"}}
+{"prompt": "Get the Linear issue ENG-42.", "expects_tool": "LINEAR_GET_ISSUE", "expects_args": {"issue_id": "ENG-42"}}
+{"prompt": "Add a comment 'fixed in PR' to Linear issue API-12.", "expects_tool": "LINEAR_CREATE_COMMENT", "expects_args": {"issue_id": "API-12", "body": "fixed in PR"}}
+{"prompt": "List the comments on Linear issue ENG-42.", "expects_tool": "LINEAR_LIST_COMMENTS", "expects_args": {"issue_id": "ENG-42"}}
+{"prompt": "Show me the Linear cycles for the Engineering team.", "expects_tool": "LINEAR_LIST_CYCLES", "expects_args": {"team_id": "engineering"}}
+{"prompt": "List the Linear labels for the API team.", "expects_tool": "LINEAR_LIST_LABELS", "expects_args": {"team_id": "api"}}
+{"prompt": "Add the label 'p0' to Linear issue ENG-42.", "expects_tool": "LINEAR_UPDATE_ISSUE", "expects_args": {"issue_id": "ENG-42", "label_ids": ["p0"]}}
+{"prompt": "Search Linear issues for 'auth bug'.", "expects_tool": "LINEAR_SEARCH_ISSUES", "expects_args": {"query": "auth bug"}}
+{"prompt": "Find Linear issues assigned to me.", "expects_tool": "LINEAR_SEARCH_ISSUES", "expects_args": {"query": "assignee:me"}}
+{"prompt": "Get my Linear user.", "expects_tool": "LINEAR_GET_VIEWER", "expects_args": {}}
+{"prompt": "List Linear users on the Engineering team.", "expects_tool": "LINEAR_LIST_USERS", "expects_args": {"team_id": "engineering"}}
+{"prompt": "Create a Linear project 'Aperture v1' on the Engineering team.", "expects_tool": "LINEAR_CREATE_PROJECT", "expects_args": {"team_id": "engineering", "name": "Aperture v1"}}
+{"prompt": "Get the Linear project with id proj_abc.", "expects_tool": "LINEAR_GET_PROJECT", "expects_args": {"project_id": "proj_abc"}}
+{"prompt": "List the workflow states on the Engineering team in Linear.", "expects_tool": "LINEAR_LIST_WORKFLOW_STATES", "expects_args": {"team_id": "engineering"}}
+{"prompt": "Show me the issue templates available on the API team.", "expects_tool": "LINEAR_LIST_ISSUE_TEMPLATES", "expects_args": {"team_id": "api"}}
+{"prompt": "Get the issue history for ENG-42 in Linear.", "expects_tool": "LINEAR_GET_ISSUE_HISTORY", "expects_args": {"issue_id": "ENG-42"}}
+{"prompt": "Subscribe me to Linear issue ENG-42.", "expects_tool": "LINEAR_SUBSCRIBE_TO_ISSUE", "expects_args": {"issue_id": "ENG-42"}}
+{"prompt": "Show all my Linear notifications.", "expects_tool": "LINEAR_LIST_NOTIFICATIONS", "expects_args": {}}
+{"prompt": "Mark Linear notification ntf_abc as read.", "expects_tool": "LINEAR_MARK_NOTIFICATION_READ", "expects_args": {"notification_id": "ntf_abc"}}
+{"prompt": "Add an attachment URL to Linear issue ENG-42.", "expects_tool": "LINEAR_CREATE_ATTACHMENT", "expects_args": {"issue_id": "ENG-42", "url": "https://example.com/spec"}}
+{"prompt": "Get the priority labels available in Linear.", "expects_tool": "LINEAR_GET_PRIORITY_VALUES", "expects_args": {}}
+{"prompt": "List Linear documents in my workspace.", "expects_tool": "LINEAR_LIST_DOCUMENTS", "expects_args": {}}
+{"prompt": "Get the Linear document with id doc_abc.", "expects_tool": "LINEAR_GET_DOCUMENT", "expects_args": {"document_id": "doc_abc"}}
+{"prompt": "List my Linear favorites.", "expects_tool": "LINEAR_LIST_FAVORITES", "expects_args": {}}

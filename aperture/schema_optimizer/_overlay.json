@@ -1,553 +1,159 @@
 {
   "aperture_optimizer_version": "0.3.0",
-  "generated_at": "2026-05-10T04:11:07.184900+00:00",
+  "generated_at": "2026-05-10T07:47:21.844523+00:00",
+  "quality_level": "structural_only",
   "stats": {
-    "accepted": 36,
-    "rejected": 54,
-    "total_results": 90,
-    "total_tokens_saved": 364
+    "accepted": 9,
+    "min_cases_required": 1,
+    "rejected": 4,
+    "total_results": 13,
+    "total_tokens_saved": 64
   },
   "tools": {
-    "GITHUB_ABORT_REPOSITORY_MIGRATION": {
-      "parameters.properties.clientMutationId.description": {
-        "aperture_optimized": true,
-        "aperture_optimizer_version": "0.3.0",
-        "optimized": "A unique identifier for the client performing the mutation. This can be used to track the mutation in.",
-        "optimized_tokens": 20,
-        "original": "A unique identifier for the client performing the mutation. This can be used to track the mutation in logs or for idempotency purposes. Please provide a value of type string.",
-        "original_tokens": 36,
-        "reduction_pct": 0.4444,
-        "reduction_tokens": 16,
-        "validation": {
-          "cases_run": 1,
-          "passed": true
-        }
-      }
-    },
-    "GITHUB_ACCEPT_REPOSITORY_INVITATION": {
+    "GITHUB_LIST_REPOSITORY_ISSUES": {
       "description": {
         "aperture_optimized": true,
         "aperture_optimizer_version": "0.3.0",
-        "optimized": "Accepts a PENDING repo invitation that has been issued to the user.",
-        "optimized_tokens": 16,
-        "original": "Accepts a PENDING repository invitation that has been issued to the authenticated user.",
-        "original_tokens": 17,
-        "reduction_pct": 0.0588,
-        "reduction_tokens": 1,
+        "optimized": "Get issues in a repo. Required: owner and repo name. Optional: state, labels, assignee, and search to filter results.",
+        "optimized_tokens": 29,
+        "original": "Retrieves a list of issues in a specified GitHub repository. You must provide the repository owner username and repository name. Optionally, you may include state, labels, assignee, and search terms to filter the returned issues.",
+        "original_tokens": 46,
+        "reduction_pct": 0.3696,
+        "reduction_tokens": 17,
         "validation": {
           "cases_run": 1,
-          "passed": true
+          "passed": true,
+          "quality_level": "structural_only"
         }
       },
-      "parameters.properties.invitation_id.description": {
+      "parameters.properties.owner.description": {
         "aperture_optimized": true,
         "aperture_optimizer_version": "0.3.0",
-        "optimized": "Unique identifier of the repo invitation sent TO the user. Get this ID by listing your pending invitations using the 'List repo invitations for the user' action. Please provide a value of type integer. This parameter is required.",
-        "optimized_tokens": 45,
-        "original": "Unique identifier of the repository invitation sent TO the authenticated user. Get this ID by listing your pending invitations using the 'List repository invitations for the authenticated user' action. Please provide a value of type integer. This parameter is required.",
-        "original_tokens": 47,
-        "reduction_pct": 0.0426,
-        "reduction_tokens": 2,
-        "validation": {
-          "cases_run": 1,
-          "passed": true
-        }
-      }
-    },
-    "GITHUB_ADD_APP_ACCESS_RESTRICTIONS": {
-      "parameters.properties.branch.description": {
-        "aperture_optimized": true,
-        "aperture_optimizer_version": "0.3.0",
-        "optimized": "The name of the branch to which restrictions will be applied. Wildcard characters (e.g., '*') are not allowed.",
-        "optimized_tokens": 25,
-        "original": "The name of the branch to which restrictions will be applied. Wildcard characters (e.g., '*') are not allowed in the branch name when using this REST API endpoint. For operations involving wildcard branch names, consult the GitHub GraphQL API. Please provide a value of type string. This parameter is required.",
-        "original_tokens": 61,
-        "reduction_pct": 0.5902,
-        "reduction_tokens": 36,
-        "validation": {
-          "cases_run": 1,
-          "passed": true
-        }
-      }
-    },
-    "GITHUB_ADD_ASSIGNEES_TO_AN_ISSUE": {
-      "description": {
-        "aperture_optimized": true,
-        "aperture_optimizer_version": "0.3.0",
-        "optimized": "Adds assignees to a GitHub issue. This action only adds users - it does not remove existing assignees. Changes are silently ignored if the user lacks push access to the repo.",
-        "optimized_tokens": 37,
-        "original": "Adds assignees to a GitHub issue. This action only adds users - it does not remove existing assignees. Changes are silently ignored if the authenticated user lacks push access to the repository.",
-        "original_tokens": 38,
-        "reduction_pct": 0.0263,
-        "reduction_tokens": 1,
-        "validation": {
-          "cases_run": 1,
-          "passed": true
-        }
-      },
-      "parameters.properties.assignees.description": {
-        "aperture_optimized": true,
-        "aperture_optimizer_version": "0.3.0",
-        "optimized": "A list of GitHub usernames to add as assignees to the issue. Up to 10 assignees total can be on an issue. NOTE: This endpoint ADDS assignees - it does not replace existing ones. Users already assigned are kept. To remove assignees, use the 'remove_assignees_from_an_issue' action instead. The user must have push access to the repo; otherwise changes are silently ignored.",
-        "optimized_tokens": 83,
-        "original": "A list of GitHub usernames to add as assignees to the issue. Up to 10 assignees total can be on an issue. NOTE: This endpoint ADDS assignees - it does not replace existing ones. Users already assigned are kept. To remove assignees, use the 'remove_assignees_from_an_issue' action instead. The authenticated user must have push access to the repository; otherwise changes are silently ignored.",
-        "original_tokens": 84,
-        "reduction_pct": 0.0119,
-        "reduction_tokens": 1,
-        "validation": {
-          "cases_run": 1,
-          "passed": true
-        }
-      }
-    },
-    "GITHUB_ADD_EMAIL_ADDRESS_FOR_AUTHENTICATED_USER": {
-      "description": {
-        "aperture_optimized": true,
-        "aperture_optimizer_version": "0.3.0",
-        "optimized": "Adds one or more email addresses (which will be initially unverified) to the user's GitHub account; use this to associate new emails, noting an email verified for another account will error, while an existing email for the current user is accepted.",
-        "optimized_tokens": 50,
-        "original": "Adds one or more email addresses (which will be initially unverified) to the authenticated user's GitHub account; use this to associate new emails, noting an email verified for another account will error, while an existing email for the current user is accepted.",
-        "original_tokens": 51,
-        "reduction_pct": 0.0196,
-        "reduction_tokens": 1,
-        "validation": {
-          "cases_run": 1,
-          "passed": true
-        }
-      },
-      "parameters.properties.emails.description": {
-        "aperture_optimized": true,
-        "aperture_optimizer_version": "0.3.0",
-        "optimized": "Array of email addresses to add to the user account. Must contain at least one email address. This parameter is required.",
-        "optimized_tokens": 25,
-        "original": "Array of email addresses to add to the authenticated user account. Must contain at least one email address. This parameter is required.",
-        "original_tokens": 26,
-        "reduction_pct": 0.0385,
-        "reduction_tokens": 1,
-        "validation": {
-          "cases_run": 1,
-          "passed": true
-        }
-      }
-    },
-    "GITHUB_ADD_FIELD_TO_USER_PROJECT": {
-      "description": {
-        "aperture_optimized": true,
-        "aperture_optimizer_version": "0.3.0",
-        "optimized": "Tool to add a custom field to a user-owned GitHub Projects V2 project. Use when you need to.",
-        "optimized_tokens": 23,
-        "original": "Tool to add a custom field to a user-owned GitHub Projects V2 project. Use when you need to add fields like status, priority, or custom data to organize project items.",
-        "original_tokens": 37,
-        "reduction_pct": 0.3784,
-        "reduction_tokens": 14,
-        "validation": {
-          "cases_run": 1,
-          "passed": true
-        }
-      },
-      "parameters.properties.data_type.description": {
-        "aperture_optimized": true,
-        "aperture_optimizer_version": "0.3.0",
-        "optimized": "The data type of the field. Use 'single_select' for dropdown fields, 'iteration' for sprint fields, or other types.",
-        "optimized_tokens": 27,
-        "original": "The data type of the field. Use 'single_select' for dropdown fields, 'iteration' for sprint fields, or other types for simple fields. Please provide a value of type string. This parameter is required.",
-        "original_tokens": 43,
-        "reduction_pct": 0.3721,
-        "reduction_tokens": 16,
-        "validation": {
-          "cases_run": 1,
-          "passed": true
-        }
-      }
-    },
-    "GITHUB_ADD_ITEM_TO_USER_PROJECT": {
-      "parameters.properties.id.description": {
-        "aperture_optimized": true,
-        "aperture_optimizer_version": "0.3.0",
-        "optimized": "The unique identifier of the issue or pull request to add to the project. Required if owner, repo.",
-        "optimized_tokens": 21,
-        "original": "The unique identifier of the issue or pull request to add to the project. Required if owner, repo, and number are not provided. Please provide a value of type integer.",
-        "original_tokens": 35,
-        "reduction_pct": 0.4,
-        "reduction_tokens": 14,
-        "validation": {
-          "cases_run": 1,
-          "passed": true
-        }
-      },
-      "parameters.properties.number.description": {
-        "aperture_optimized": true,
-        "aperture_optimizer_version": "0.3.0",
-        "optimized": "The issue or pull request number. Required with owner and repo if id is not provided. Please provide.",
-        "optimized_tokens": 21,
-        "original": "The issue or pull request number. Required with owner and repo if id is not provided. Please provide a value of type integer.",
-        "original_tokens": 26,
-        "reduction_pct": 0.1923,
-        "reduction_tokens": 5,
-        "validation": {
-          "cases_run": 1,
-          "passed": true
-        }
-      },
-      "parameters.properties.type.description": {
-        "aperture_optimized": true,
-        "aperture_optimizer_version": "0.3.0",
-        "optimized": "The type of item to add to the project. Must be either Issue or PullRequest. Please provide a.",
-        "optimized_tokens": 22,
-        "original": "The type of item to add to the project. Must be either Issue or PullRequest. Please provide a value of type string. This parameter is required.",
-        "original_tokens": 31,
-        "reduction_pct": 0.2903,
-        "reduction_tokens": 9,
-        "validation": {
-          "cases_run": 1,
-          "passed": true
-        }
-      }
-    },
-    "GITHUB_ADD_LABELS_TO_AN_ISSUE": {
-      "parameters.properties.labels.description": {
-        "aperture_optimized": true,
-        "aperture_optimizer_version": "0.3.0",
-        "optimized": "Array of label names to add to the issue. Labels that don't exist will be created automatically. This.",
-        "optimized_tokens": 23,
-        "original": "Array of label names to add to the issue. Labels that don't exist will be created automatically. This parameter is required.",
-        "original_tokens": 26,
-        "reduction_pct": 0.1154,
-        "reduction_tokens": 3,
-        "validation": {
-          "cases_run": 1,
-          "passed": true
-        }
-      }
-    },
-    "GITHUB_ADD_ORG_RUNNER_LABELS": {
-      "description": {
-        "aperture_optimized": true,
-        "aperture_optimizer_version": "0.3.0",
-        "optimized": "Adds new custom labels to an existing self-hosted runner for an organization; existing labels are not removed, and.",
-        "optimized_tokens": 24,
-        "original": "Adds new custom labels to an existing self-hosted runner for an organization; existing labels are not removed, and duplicates are not added.",
-        "original_tokens": 28,
-        "reduction_pct": 0.1429,
-        "reduction_tokens": 4,
-        "validation": {
-          "cases_run": 1,
-          "passed": true
-        }
-      },
-      "parameters.properties.labels.description": {
-        "aperture_optimized": true,
-        "aperture_optimizer_version": "0.3.0",
-        "optimized": "A list of custom label names to add to the self-hosted runner. Previously applied labels are not removed.",
-        "optimized_tokens": 22,
-        "original": "A list of custom label names to add to the self-hosted runner. Previously applied labels are not removed. This parameter is required.",
-        "original_tokens": 27,
-        "reduction_pct": 0.1852,
-        "reduction_tokens": 5,
-        "validation": {
-          "cases_run": 1,
-          "passed": true
-        }
-      }
-    },
-    "GITHUB_ADD_OR_UPDATE_TEAM_MEMBERSHIP_FOR_USER": {
-      "description": {
-        "aperture_optimized": true,
-        "aperture_optimizer_version": "0.3.0",
-        "optimized": "Adds a GitHub user to a team or updates their role (member or maintainer), inviting them to the.",
-        "optimized_tokens": 23,
-        "original": "Adds a GitHub user to a team or updates their role (member or maintainer), inviting them to the organization if not already a member; idempotent, returning current details if no change is made.",
-        "original_tokens": 42,
-        "reduction_pct": 0.4524,
-        "reduction_tokens": 19,
-        "validation": {
-          "cases_run": 1,
-          "passed": true
-        }
-      },
-      "parameters.properties.org.description": {
-        "aperture_optimized": true,
-        "aperture_optimizer_version": "0.3.0",
-        "optimized": "The name of the GitHub organization. This name is not case-sensitive. Please provide a value of type string.",
-        "optimized_tokens": 22,
-        "original": "The name of the GitHub organization. This name is not case-sensitive. Please provide a value of type string. This parameter is required.",
-        "original_tokens": 27,
-        "reduction_pct": 0.1852,
-        "reduction_tokens": 5,
-        "validation": {
-          "cases_run": 1,
-          "passed": true
-        }
-      },
-      "parameters.properties.role.description": {
-        "aperture_optimized": true,
-        "aperture_optimizer_version": "0.3.0",
-        "optimized": "The role to assign to the user within the team. A 'maintainer' has broader permissions than a 'member'.",
-        "optimized_tokens": 25,
-        "original": "The role to assign to the user within the team. A 'maintainer' has broader permissions than a 'member', such as managing team members and settings. Please provide a value of type string.",
-        "original_tokens": 40,
-        "reduction_pct": 0.375,
-        "reduction_tokens": 15,
-        "validation": {
-          "cases_run": 1,
-          "passed": true
-        }
-      },
-      "parameters.properties.team_slug.description": {
-        "aperture_optimized": true,
-        "aperture_optimizer_version": "0.3.0",
-        "optimized": "The slug (URL-friendly version) of the team's name. Must be lowercase with hyphens instead of spaces (e.g., 'my-team'.",
-        "optimized_tokens": 32,
-        "original": "The slug (URL-friendly version) of the team's name. Must be lowercase with hyphens instead of spaces (e.g., 'my-team' not 'My Team'). Spaces will be automatically converted to hyphens and text will be lowercased. Please provide a value of type string. This parameter is required.",
-        "original_tokens": 65,
-        "reduction_pct": 0.5077,
-        "reduction_tokens": 33,
-        "validation": {
-          "cases_run": 1,
-          "passed": true
-        }
-      },
-      "parameters.properties.username.description": {
-        "aperture_optimized": true,
-        "aperture_optimizer_version": "0.3.0",
-        "optimized": "The GitHub username of the user to add or whose membership to update. Please provide a value of.",
-        "optimized_tokens": 20,
-        "original": "The GitHub username of the user to add or whose membership to update. Please provide a value of type string. This parameter is required.",
-        "original_tokens": 27,
-        "reduction_pct": 0.2593,
-        "reduction_tokens": 7,
-        "validation": {
-          "cases_run": 1,
-          "passed": true
-        }
-      }
-    },
-    "GITHUB_ADD_OR_UPDATE_TEAM_PROJECT_PERMISSIONS": {
-      "parameters.properties.org.description": {
-        "aperture_optimized": true,
-        "aperture_optimizer_version": "0.3.0",
-        "optimized": "The organization name (login) that owns both the team and the classic project. Case-insensitive. Please provide a value.",
-        "optimized_tokens": 25,
-        "original": "The organization name (login) that owns both the team and the classic project. Case-insensitive. Please provide a value of type string. This parameter is required.",
-        "original_tokens": 33,
-        "reduction_pct": 0.2424,
-        "reduction_tokens": 8,
-        "validation": {
-          "cases_run": 1,
-          "passed": true
-        }
-      },
-      "parameters.properties.permission.description": {
-        "aperture_optimized": true,
-        "aperture_optimizer_version": "0.3.0",
-        "optimized": "Permission level to grant the team: 'read' (view only), 'write' (view and edit), or 'admin' (full control including.",
-        "optimized_tokens": 32,
-        "original": "Permission level to grant the team: 'read' (view only), 'write' (view and edit), or 'admin' (full control including settings). If omitted, uses the team's default permission. Please provide a value of type string.",
-        "original_tokens": 51,
-        "reduction_pct": 0.3725,
-        "reduction_tokens": 19,
-        "validation": {
-          "cases_run": 1,
-          "passed": true
-        }
-      },
-      "parameters.properties.project_id.description": {
-        "aperture_optimized": true,
-        "aperture_optimizer_version": "0.3.0",
-        "optimized": "The unique numeric ID of the classic project. This is NOT the project number displayed in the UI.",
-        "optimized_tokens": 20,
-        "original": "The unique numeric ID of the classic project. This is NOT the project number displayed in the UI. Please provide a value of type integer. This parameter is required.",
-        "original_tokens": 33,
-        "reduction_pct": 0.3939,
-        "reduction_tokens": 13,
-        "validation": {
-          "cases_run": 1,
-          "passed": true
-        }
-      },
-      "parameters.properties.team_slug.description": {
-        "aperture_optimized": true,
-        "aperture_optimizer_version": "0.3.0",
-        "optimized": "The team's URL-friendly slug identifier within the organization. Found in the team's URL path. Please provide a value.",
-        "optimized_tokens": 24,
-        "original": "The team's URL-friendly slug identifier within the organization. Found in the team's URL path. Please provide a value of type string. This parameter is required.",
-        "original_tokens": 32,
-        "reduction_pct": 0.25,
-        "reduction_tokens": 8,
-        "validation": {
-          "cases_run": 1,
-          "passed": true
-        }
-      }
-    },
-    "GITHUB_ADD_PROJECT_COLLABORATOR": {
-      "description": {
-        "aperture_optimized": true,
-        "aperture_optimizer_version": "0.3.0",
-        "optimized": "Adds a specified GitHub user as a collaborator to an existing organization project with a given permission level.",
-        "optimized_tokens": 21,
-        "original": "Adds a specified GitHub user as a collaborator to an existing organization project with a given permission level. Note: This endpoint is for organization projects (classic). You must be an organization owner or a project admin to add a collaborator. Classic projects are being deprecated in favor of the new Projects experience.",
-        "original_tokens": 61,
-        "reduction_pct": 0.6557,
-        "reduction_tokens": 40,
-        "validation": {
-          "cases_run": 1,
-          "passed": true
-        }
-      },
-      "parameters.properties.username.description": {
-        "aperture_optimized": true,
-        "aperture_optimizer_version": "0.3.0",
-        "optimized": "The GitHub username of the user to be added as a collaborator. Please provide a value of type.",
-        "optimized_tokens": 21,
-        "original": "The GitHub username of the user to be added as a collaborator. Please provide a value of type string. This parameter is required.",
-        "original_tokens": 27,
-        "reduction_pct": 0.2222,
+        "optimized": "owner or organization name.",
+        "optimized_tokens": 6,
+        "original": "A string containing the GitHub repository owner username or organization name.",
+        "original_tokens": 12,
+        "reduction_pct": 0.5,
         "reduction_tokens": 6,
         "validation": {
           "cases_run": 1,
-          "passed": true
+          "passed": true,
+          "quality_level": "structural_only"
+        }
+      },
+      "parameters.properties.repo.description": {
+        "aperture_optimized": true,
+        "aperture_optimizer_version": "0.3.0",
+        "optimized": "repo name where issues should be listed.",
+        "optimized_tokens": 9,
+        "original": "A string containing the repository name where issues should be listed.",
+        "original_tokens": 12,
+        "reduction_pct": 0.25,
+        "reduction_tokens": 3,
+        "validation": {
+          "cases_run": 1,
+          "passed": true,
+          "quality_level": "structural_only"
         }
       }
     },
-    "GITHUB_ADD_REPOSITORY_TO_APP_INSTALLATION": {
+    "GMAIL_SEARCH_EMAILS": {
       "description": {
         "aperture_optimized": true,
         "aperture_optimizer_version": "0.3.0",
-        "optimized": "Adds a repo to a GitHub App installation, granting the app access; requires user to have admin rights for the repo and access to the installation.",
-        "optimized_tokens": 30,
-        "original": "Adds a repository to a GitHub App installation, granting the app access; requires authenticated user to have admin rights for the repository and access to the installation.",
-        "original_tokens": 31,
-        "reduction_pct": 0.0323,
-        "reduction_tokens": 1,
+        "optimized": "Search Gmail messages. Required: a Gmail query. Optional: pagination email.",
+        "optimized_tokens": 16,
+        "original": "Searches Gmail messages for the connected user account. You must provide a Gmail query string and may include pagination options to retrieve matching email conversations.",
+        "original_tokens": 29,
+        "reduction_pct": 0.4483,
+        "reduction_tokens": 13,
         "validation": {
           "cases_run": 1,
-          "passed": true
+          "passed": true,
+          "quality_level": "structural_only"
         }
       },
-      "parameters.properties.installation_id.description": {
+      "parameters.properties.limit.description": {
         "aperture_optimized": true,
         "aperture_optimizer_version": "0.3.0",
-        "optimized": "The unique identifier of the GitHub App installation to which the repo will be added. This installation must be accessible to the user. Please provide a value of type integer. This parameter is required.",
-        "optimized_tokens": 38,
-        "original": "The unique identifier of the GitHub App installation to which the repository will be added. This installation must be accessible to the authenticated user. Please provide a value of type integer. This parameter is required.",
-        "original_tokens": 39,
-        "reduction_pct": 0.0256,
-        "reduction_tokens": 1,
+        "optimized": "Max email to return from the search.",
+        "optimized_tokens": 9,
+        "original": "Maximum number of email messages to return from the search operation.",
+        "original_tokens": 13,
+        "reduction_pct": 0.3077,
+        "reduction_tokens": 4,
         "validation": {
           "cases_run": 1,
-          "passed": true
+          "passed": true,
+          "quality_level": "structural_only"
         }
       },
-      "parameters.properties.repository_id.description": {
+      "parameters.properties.query.description": {
         "aperture_optimized": true,
         "aperture_optimizer_version": "0.3.0",
-        "optimized": "The unique identifier of the repo to add to the installation. The user must have admin permissions for this repo. Please provide a value of type integer. This parameter is required.",
-        "optimized_tokens": 35,
-        "original": "The unique identifier of the repository to add to the installation. The authenticated user must have admin permissions for this repository. Please provide a value of type integer. This parameter is required.",
-        "original_tokens": 36,
-        "reduction_pct": 0.0278,
-        "reduction_tokens": 1,
+        "optimized": "Gmail query to execute.",
+        "optimized_tokens": 6,
+        "original": "A string containing the Gmail search query to execute for the connected account.",
+        "original_tokens": 14,
+        "reduction_pct": 0.5714,
+        "reduction_tokens": 8,
         "validation": {
           "cases_run": 1,
-          "passed": true
+          "passed": true,
+          "quality_level": "structural_only"
         }
       }
     },
-    "GITHUB_ADD_REPO_TO_ORG_SECRET_WITH_SELECTED_ACCESS": {
-      "parameters.properties.org.description": {
+    "NOTION_QUERY_DATABASE": {
+      "description": {
         "aperture_optimized": true,
         "aperture_optimizer_version": "0.3.0",
-        "optimized": "The name of the GitHub organization. This field is not case-sensitive. Please provide a value of type string.",
-        "optimized_tokens": 22,
-        "original": "The name of the GitHub organization. This field is not case-sensitive. Please provide a value of type string. This parameter is required.",
-        "original_tokens": 27,
-        "reduction_pct": 0.1852,
-        "reduction_tokens": 5,
-        "validation": {
-          "cases_run": 1,
-          "passed": true
-        }
-      }
-    },
-    "GITHUB_ADD_REPO_TO_ORG_SECRET_WITH_SELECTED_VISIBILITY": {
-      "parameters.properties.secret_name.description": {
-        "aperture_optimized": true,
-        "aperture_optimizer_version": "0.3.0",
-        "optimized": "Name of the Dependabot secret; must be alphanumeric or underscore, no spaces (lowercase auto-converts to uppercase). Please provide.",
-        "optimized_tokens": 30,
-        "original": "Name of the Dependabot secret; must be alphanumeric or underscore, no spaces (lowercase auto-converts to uppercase). Please provide a value of type string. This parameter is required.",
-        "original_tokens": 40,
-        "reduction_pct": 0.25,
-        "reduction_tokens": 10,
-        "validation": {
-          "cases_run": 1,
-          "passed": true
-        }
-      }
-    },
-    "GITHUB_ADD_RUNNER_LABELS": {
-      "parameters.properties.labels.description": {
-        "aperture_optimized": true,
-        "aperture_optimizer_version": "0.3.0",
-        "optimized": "Custom label names to add. Appended to existing labels. Names are case-insensitive. Empty list means no changes. This.",
+        "optimized": "Query a Notion database for pages that match a filter or search term. Required: database id. Optional: filter, sort.",
         "optimized_tokens": 27,
-        "original": "Custom label names to add. Appended to existing labels. Names are case-insensitive. Empty list means no changes. This parameter is required.",
+        "original": "Queries a Notion database for pages that match a filter or search term. You must provide the database identifier and may include filtering or sorting options.",
         "original_tokens": 30,
         "reduction_pct": 0.1,
         "reduction_tokens": 3,
         "validation": {
           "cases_run": 1,
-          "passed": true
+          "passed": true,
+          "quality_level": "structural_only"
         }
       }
     },
-    "GITHUB_ADD_SELECTED_REPOSITORY_TO_ORGANIZATION_SECRET": {
-      "parameters.properties.org.description": {
+    "SLACK_SEARCH_MESSAGES": {
+      "description": {
         "aperture_optimized": true,
         "aperture_optimizer_version": "0.3.0",
-        "optimized": "The name of the organization. This name is not case sensitive. Please provide a value of type string.",
-        "optimized_tokens": 21,
-        "original": "The name of the organization. This name is not case sensitive. Please provide a value of type string. This parameter is required.",
-        "original_tokens": 26,
-        "reduction_pct": 0.1923,
-        "reduction_tokens": 5,
+        "optimized": "Search Slack messages in channels available to the user. Required: query. Optional: a channel or date range.",
+        "optimized_tokens": 23,
+        "original": "Searches Slack messages in channels available to the connected user account. You must provide the search query and can optionally specify a channel or date range.",
+        "original_tokens": 30,
+        "reduction_pct": 0.2333,
+        "reduction_tokens": 7,
         "validation": {
           "cases_run": 1,
-          "passed": true
+          "passed": true,
+          "quality_level": "structural_only"
         }
       },
-      "parameters.properties.secret_name.description": {
+      "parameters.properties.query.description": {
         "aperture_optimized": true,
         "aperture_optimizer_version": "0.3.0",
-        "optimized": "The name of the secret. Secret names can only contain alphanumeric characters ([A-Z], [a-z], [0-9]) or underscores (_).",
-        "optimized_tokens": 30,
-        "original": "The name of the secret. Secret names can only contain alphanumeric characters ([A-Z], [a-z], [0-9]) or underscores (_). Spaces are not allowed. Secret names cannot start with GITHUB_ and must be less than 255 characters. Please provide a value of type string. This parameter is required.",
-        "original_tokens": 65,
-        "reduction_pct": 0.5385,
-        "reduction_tokens": 35,
+        "optimized": "Slack query to run.",
+        "optimized_tokens": 7,
+        "original": "A string containing the Slack search query to run.",
+        "original_tokens": 10,
+        "reduction_pct": 0.3,
+        "reduction_tokens": 3,
         "validation": {
           "cases_run": 1,
-          "passed": true
-        }
-      }
-    },
-    "GITHUB_ADD_SELECTED_REPOSITORY_TO_ORGANIZATION_VARIABLE": {
-      "parameters.properties.name.description": {
-        "aperture_optimized": true,
-        "aperture_optimizer_version": "0.3.0",
-        "optimized": "Name of the existing organization-level GitHub Actions variable. Please provide a value of type string. This parameter is.",
-        "optimized_tokens": 23,
-        "original": "Name of the existing organization-level GitHub Actions variable. Please provide a value of type string. This parameter is required.",
-        "original_tokens": 24,
-        "reduction_pct": 0.0417,
-        "reduction_tokens": 1,
-        "validation": {
-          "cases_run": 1,
-          "passed": true
+          "passed": true,
+          "quality_level": "structural_only"
         }
       }
     }
   },
-  "version": 1
+  "version": 1,
+  "warning": "STRUCTURAL_ONLY: rewrites passed structural validation (parameters, required fields, types, safety keywords preserved) but were NOT behaviorally validated by an LLM judge. Treat as preview quality. For the production-grade overlay, run optimize_schemas_with_llm_judge(live=True) and write with quality_level='llm_judged'."
 }

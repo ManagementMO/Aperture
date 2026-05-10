@@ -41,12 +41,11 @@ def test_policy_yaml_default_is_deny():
     assert default["matching"] == "none"
 
 
-def test_policy_yaml_covers_at_least_100_tools():
+def test_policy_yaml_covers_at_least_1500_tools():
     doc = _load_yaml()
-    assert len(doc["tools"]) >= 100, (
+    assert len(doc["tools"]) >= 1500, (
         f"policy.yaml has {len(doc['tools'])} entries; v1 acceptance "
-        "(handoff §13.1 cell 2) requires ≥800 tools at full scale and "
-        "≥100 for the foundation. Run scripts/seed_cache_policy.py to "
+        "(handoff §13.1 cell 2) requires broad Composio coverage. Run scripts/seed_cache_policy.py to "
         "regenerate from a Composio dump."
     )
 
