@@ -66,7 +66,7 @@ export default function SchemaCompaction() {
           Tool schemas, smaller
         </h1>
         <p className="text-sm text-muted-foreground mt-2 max-w-3xl">
-          Tool definitions sit in every prompt. Aperture reshapes them into a
+          Tool definitions sit in every prompt. Quava reshapes them into a
           dense single-line form an LLM can still read &mdash; same call signatures,
           fewer tokens spent before the agent has even said anything.
         </p>
@@ -159,7 +159,7 @@ function SideBySide({
             isJson
           />
           <Pane
-            title="What Aperture sends instead"
+            title="What Quava sends instead"
             tokens={sample.compact_tokens}
             tone="primary"
             content={sample.compact}

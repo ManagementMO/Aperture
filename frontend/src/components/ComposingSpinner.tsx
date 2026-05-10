@@ -5,7 +5,7 @@ interface ComposingSpinnerProps {
 }
 
 /**
- * "Composing..." indicator with a spinning ✽. Used wherever Aperture is
+ * "Composing..." indicator with a spinning ✽. Used wherever Quava is
  * in-flight (waiting on a tool, classifying, compressing, etc.).
  */
 export function ComposingSpinner({

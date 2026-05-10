@@ -69,7 +69,7 @@ export default function Overview() {
         <p className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">Overview</p>
         <h1 className="text-3xl font-semibold tracking-tight mt-1">What we&apos;re saving</h1>
         <p className="text-sm text-muted-foreground mt-2 max-w-3xl">
-          Every count below is measured by Aperture &mdash; from the bytes the
+          Every count below is measured by Quava &mdash; from the bytes the
           tool actually returned to the bytes the LLM actually reads. No estimates.
         </p>
       </div>
@@ -101,7 +101,7 @@ export default function Overview() {
           <CardContent className="pt-5 space-y-1">
             <p className="text-[11px] uppercase tracking-[0.14em] text-primary">Raw tokens</p>
             <p className="text-2xl font-semibold metric-value">{totalTokens.toLocaleString()}</p>
-            <p className="text-xs text-muted-foreground">measured by Aperture</p>
+            <p className="text-xs text-muted-foreground">measured by Quava</p>
           </CardContent>
         </Card>
       </div>
@@ -145,7 +145,7 @@ export default function Overview() {
           </CardHeader>
           <CardContent className="space-y-2 text-[12px] text-muted-foreground leading-relaxed">
             <p>
-              Aperture is the layer between an agent and its tools. We watch
+              Quava is the layer between an agent and its tools. We watch
               every payload coming back from those tools and trim what the
               model doesn&apos;t need to read &mdash; while keeping every value the
               agent will actually use.

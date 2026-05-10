@@ -1,0 +1,228 @@
+/* ============================================================================
+ * Quava Design Tokens — Cursor-flavored.
+ *
+ * Philosophy: dense black, near-flat surfaces, very subtle borders, all
+ * the signal hierarchy comes from text opacity + weight, not color.
+ * One brand accent (sky-blue #31A8FC) reserved for the primary CTA only.
+ * Lime/green is gone.
+ * ========================================================================== */
+
+@layer base {
+  :root,
+  :root.dark,
+  .dark {
+    /* ----- Quava neutral palette (Cursor-style dark) ----- */
+    --quava-bg:                       #0A0A0A;
+    --quava-surface:                  #0E0E0E;
+    --quava-surface-container:        #121212;
+    --quava-surface-container-high:   #161616;
+    --quava-surface-container-highest:#1A1A1A;
+    --quava-raised-hover:             #1F1F1F;
+
+    --quava-fg:        #EDEDED;
+    --quava-fg-87:     rgba(237, 237, 237, 0.87);
+    --quava-fg-60:     rgba(237, 237, 237, 0.55);
+    --quava-fg-38:     rgba(237, 237, 237, 0.38);
+    --quava-fg-30:     rgba(237, 237, 237, 0.28);
+
+    --quava-outline:         rgba(255, 255, 255, 0.08);
+    --quava-outline-variant: rgba(255, 255, 255, 0.045);
+
+    --quava-state-hover:    rgba(255, 255, 255, 0.035);
+    --quava-state-focus:    rgba(255, 255, 255, 0.055);
+    --quava-state-pressed:  rgba(255, 255, 255, 0.075);
+    --quava-state-selected: rgba(255, 255, 255, 0.06);
+
+    /* The ONLY brand color. Reserved for the Run CTA + tiny diamond logo. */
+    --quava-accent:        #31A8FC;
+    --quava-accent-hover:  #1F92E5;
+    --quava-accent-soft:   rgba(49, 168, 252, 0.14);
+    --quava-accent-faint:  rgba(49, 168, 252, 0.05);
+
+    /* shadcn semantic bindings — primary IS just the foreground.
+     * Anywhere we use bg-primary / text-primary we now get clean
+     * monochrome white-on-black, Cursor-style. */
+    --background: var(--quava-bg);
+    --foreground: var(--quava-fg);
+    --card: var(--quava-surface);
+    --card-foreground: var(--quava-fg);
+    --popover: var(--quava-surface-container-high);
+    --popover-foreground: var(--quava-fg);
+    --primary: var(--quava-fg);
+    --primary-foreground: var(--quava-bg);
+    --secondary: var(--quava-surface-container);
+    --secondary-foreground: var(--quava-fg);
+    --muted: var(--quava-surface-container);
+    --muted-foreground: var(--quava-fg-60);
+    --accent: var(--quava-fg);
+    --accent-foreground: var(--quava-bg);
+    --destructive: #B85B5B;
+    --destructive-foreground: var(--quava-bg);
+    --border: var(--quava-outline);
+    --input: var(--quava-outline-variant);
+    --ring: var(--quava-accent);
+
+    --chart-1: var(--quava-fg);
+    --chart-2: var(--quava-fg-87);
+    --chart-3: var(--quava-fg-60);
+    --chart-4: var(--quava-fg-38);
+    --chart-5: var(--quava-fg-30);
+
+    --sidebar: var(--quava-bg);
+    --sidebar-foreground: var(--quava-fg);
+    --sidebar-primary: var(--quava-fg);
+    --sidebar-primary-foreground: var(--quava-bg);
+    --sidebar-accent: var(--quava-surface-container);
+    --sidebar-accent-foreground: var(--quava-fg);
+    --sidebar-border: var(--quava-outline);
+    --sidebar-ring: var(--quava-accent);
+  }
+
+  /* Light mode — clean white, same Cursor philosophy. */
+  :root.light,
+  .light {
+    --quava-bg:                        #FFFFFF;
+    --quava-surface:                   #FAFAFA;
+    --quava-surface-container:         #F4F4F5;
+    --quava-surface-container-high:    #ECECEC;
+    --quava-surface-container-highest: #E4E4E4;
+    --quava-raised-hover:              #DDDDDD;
+
+    --quava-fg:        #0A0A0A;
+    --quava-fg-87:     rgba(10, 10, 10, 0.87);
+    --quava-fg-60:     rgba(10, 10, 10, 0.55);
+    --quava-fg-38:     rgba(10, 10, 10, 0.38);
+    --quava-fg-30:     rgba(10, 10, 10, 0.28);
+
+    --quava-outline:         rgba(0, 0, 0, 0.10);
+    --quava-outline-variant: rgba(0, 0, 0, 0.06);
+
+    --quava-state-hover:    rgba(0, 0, 0, 0.03);
+    --quava-state-focus:    rgba(0, 0, 0, 0.05);
+    --quava-state-pressed:  rgba(0, 0, 0, 0.07);
+    --quava-state-selected: rgba(0, 0, 0, 0.05);
+
+    --quava-accent:        #31A8FC;
+    --quava-accent-hover:  #0E7DC9;
+    --quava-accent-soft:   rgba(49, 168, 252, 0.14);
+    --quava-accent-faint:  rgba(49, 168, 252, 0.05);
+
+    --background: var(--quava-bg);
+    --foreground: var(--quava-fg);
+    --card: var(--quava-surface);
+    --card-foreground: var(--quava-fg);
+    --popover: var(--quava-surface-container-high);
+    --popover-foreground: var(--quava-fg);
+    --primary: var(--quava-fg);
+    --primary-foreground: var(--quava-bg);
+    --secondary: var(--quava-surface-container);
+    --secondary-foreground: var(--quava-fg);
+    --muted: var(--quava-surface-container);
+    --muted-foreground: var(--quava-fg-60);
+    --accent: var(--quava-fg);
+    --accent-foreground: var(--quava-bg);
+    --destructive: #C04646;
+    --destructive-foreground: var(--quava-bg);
+    --border: var(--quava-outline);
+    --input: var(--quava-outline-variant);
+    --ring: var(--quava-accent);
+
+    --chart-1: var(--quava-fg);
+    --chart-2: var(--quava-fg-87);
+    --chart-3: var(--quava-fg-60);
+    --chart-4: var(--quava-fg-38);
+    --chart-5: var(--quava-fg-30);
+
+    --sidebar: var(--quava-bg);
+    --sidebar-foreground: var(--quava-fg);
+    --sidebar-primary: var(--quava-fg);
+    --sidebar-primary-foreground: var(--quava-bg);
+    --sidebar-accent: var(--quava-surface-container);
+    --sidebar-accent-foreground: var(--quava-fg);
+    --sidebar-border: var(--quava-outline);
+    --sidebar-ring: var(--quava-accent);
+  }
+}
+
+/* ============================================================================
+ * Numeric typography — tabular-nums Geist Mono everywhere.
+ * ========================================================================== */
+.num,
+.font-mono,
+[data-numeric="true"] {
+  font-family: "Geist Mono", "JetBrains Mono", "SF Mono", monospace;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
+}
+
+.metric-value {
+  font-family: "Geist Mono", "SF Mono", monospace;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+}
+
+/* ============================================================================
+ * Accent utilities — sky-blue accent reserved for very few CTAs.
+ * Use sparingly: monochrome should remain dominant.
+ * ========================================================================== */
+.btn-accent {
+  background-color: var(--quava-accent);
+  color: #FFFFFF;
+}
+.btn-accent:hover:not(:disabled) {
+  background-color: var(--quava-accent-hover);
+}
+.btn-accent:disabled {
+  opacity: 0.5;
+}
+
+.accent-hover {
+  transition: border-color 120ms ease-in-out, color 120ms ease-in-out;
+}
+.accent-hover:hover {
+  border-color: var(--quava-accent) !important;
+  color: var(--foreground);
+}
+
+.text-accent { color: var(--quava-accent); }
+.bg-accent-soft { background-color: var(--quava-accent-soft); }
+.border-accent { border-color: var(--quava-accent); }
+
+/* Backwards-compat aliases — anything that references --aperture-* still works
+ * during the transition. New code should use --quava-* directly. */
+:root, :root.dark, .dark, :root.light, .light {
+  --aperture-bg:                          var(--quava-bg);
+  --aperture-surface:                     var(--quava-surface);
+  --aperture-surface-container:           var(--quava-surface-container);
+  --aperture-surface-container-high:      var(--quava-surface-container-high);
+  --aperture-surface-container-highest:   var(--quava-surface-container-highest);
+  --aperture-fg:                          var(--quava-fg);
+  --aperture-fg-60:                       var(--quava-fg-60);
+  --aperture-outline:                     var(--quava-outline);
+  --aperture-accent:                      var(--quava-accent);
+  --aperture-accent-hover:                var(--quava-accent-hover);
+  --aperture-accent-soft:                 var(--quava-accent-soft);
+  --composio-lime:                        var(--quava-fg);
+  --composio-lime-dim:                    var(--quava-fg);
+  --composio-lime-soft:                   var(--quava-state-selected);
+  --composio-lime-faint:                  var(--quava-state-hover);
+}
+
+/* Drop the old "lime-dot" pulse — replace with a calmer neutral */
+.lime-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background-color: var(--quava-fg-60);
+}
+
+/* Calm pulse for "in progress" status indicators (no color, just opacity). */
+@keyframes quava-pulse {
+  0%, 100% { opacity: 0.45; }
+  50%      { opacity: 1; }
+}
+.aperture-pulse,
+.quava-pulse {
+  animation: quava-pulse 1.4s ease-in-out infinite;
+}
