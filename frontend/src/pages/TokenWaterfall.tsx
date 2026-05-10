@@ -135,7 +135,7 @@ export default function TokenWaterfall() {
         </div>
         <p className="text-sm text-muted-foreground mt-2 max-w-3xl">
           Every Demo run lands here. Tool calls accumulate across the session
-          so you can see what the agent actually touched and what Aperture
+          so you can see what the agent actually touched and what Quava
           shrank along the way.
         </p>
       </div>

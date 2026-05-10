@@ -101,8 +101,8 @@ export default function Benchmarks() {
           Compression × quality
         </h1>
         <p className="text-sm text-muted-foreground mt-2 max-w-3xl">
-          Two questions only. Did Aperture shrink the payload? Did the agent
-          still get to read the values it needed? Numbers measured by Aperture.
+          Two questions only. Did Quava shrink the payload? Did the agent
+          still get to read the values it needed? Numbers measured by Quava.
         </p>
       </div>
 
@@ -170,7 +170,7 @@ export default function Benchmarks() {
                 <CardTitle className="text-[13px] font-medium">Quality gate</CardTitle>
               </div>
               <p className="text-[12px] text-muted-foreground mt-1.5 max-w-2xl leading-relaxed">
-                After Aperture shrinks a payload it asks &quot;could the agent
+                After Quava shrinks a payload it asks &quot;could the agent
                 still answer with this?&quot; For every scenario we probe the
                 compressed output for the concrete values it would have used
                 &mdash; titles, IDs, statuses, addressees. If a probe fails the

@@ -408,7 +408,7 @@ function Header() {
         Spend Studio
       </h1>
       <p className="text-sm text-muted-foreground mt-2 max-w-3xl leading-relaxed">
-        Every run you make is measured. Aperture rolls them up into a
+        Every run you make is measured. Quava rolls them up into a
         per-tool cost map, what-if comparisons across model tiers, and a
         burn-rate projection. Cache hits cost $0 and are counted separately.
       </p>

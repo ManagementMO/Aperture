@@ -23,7 +23,7 @@ interface TerminalBlockProps {
  *   $ composio execute GITHUB_CREATE_ISSUE
  *   ✽ Composing...
  *
- * We use it on the Overview to render a real Aperture CLI invocation
+ * We use it on the Overview to render a real Quava CLI invocation
  * (vanilla_vs_aperture script).
  */
 export function TerminalBlock({ title = "aperture · zsh", lines, animate = true, className = "" }: TerminalBlockProps) {

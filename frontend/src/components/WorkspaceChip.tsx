@@ -13,7 +13,7 @@ interface WorkspaceChipProps {
 export function WorkspaceChip({
   workspace = "default_project",
   initial = "A",
-  identity = "Aperture",
+  identity = "Quava",
 }: WorkspaceChipProps) {
   return (
     <button

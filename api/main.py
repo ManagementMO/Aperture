@@ -8,6 +8,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -1051,6 +1052,58 @@ def _pick_scenario(ask: str) -> dict:
             best, best_score = scenario, score
     # Fall back to research_repo if nothing matched at all.
     return best or _DEMO_SCENARIOS[2]
+
+
+@app.post("/api/demo/run/stream")
+def demo_run_stream(payload: dict):
+    """Server-Sent-Events-flavored NDJSON stream. Each line is one JSON
+    event the UI can render as it lands:
+
+      {"kind":"start","ask":"…","effort_mode":"medium"}
+      {"kind":"step","index":0,"tool":"GMAIL_FETCH_EMAILS","raw_tokens":104010,"sent_tokens":2027,…}
+      {"kind":"step","index":1,…}
+      {"kind":"final","answer":"…","cost":{…},…}
+      {"kind":"done"}
+    """
+    from aperture.agent.composio_agent import run_agent
+    import queue
+    import threading
+
+    ask = (payload.get("ask") or "").strip()
+    effort_mode = payload.get("effort_mode") or "medium"
+    bypass_cache = bool(payload.get("bypass_cache"))
+    q: "queue.Queue[dict | None]" = queue.Queue()
+
+    def on_event(kind: str, data: dict) -> None:
+        q.put({"kind": kind, **data})
+
+    def worker() -> None:
+        try:
+            on_event("start", {"ask": ask, "effort_mode": effort_mode})
+            run_agent(
+                ask, effort_mode=effort_mode,
+                bypass_cache=bypass_cache, on_event=on_event,
+            )
+        except Exception as exc:
+            on_event("error", {"message": f"{type(exc).__name__}: {exc}"})
+        finally:
+            q.put(None)
+
+    threading.Thread(target=worker, daemon=True).start()
+
+    def gen():
+        while True:
+            evt = q.get()
+            if evt is None:
+                yield json.dumps({"kind": "done"}) + "\n"
+                break
+            yield json.dumps(evt, default=str) + "\n"
+
+    return StreamingResponse(
+        gen(),
+        media_type="application/x-ndjson",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 @app.post("/api/demo/run")

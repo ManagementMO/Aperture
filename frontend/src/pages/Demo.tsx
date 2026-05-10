@@ -1,11 +1,13 @@
 import { useEffect, useState } from "react";
-import { apiGet, apiPost, describeApiError } from "@/lib/api";
+import { apiGet, apiPostStream, describeApiError } from "@/lib/api";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ArrowUpRight, Check, ChevronDown, ChevronUp } from "lucide-react";
 import { ComposingSpinner } from "@/components/ComposingSpinner";
 import { TerminalBlock, type TerminalLine } from "@/components/TerminalBlock";
+import { RunTerminal } from "@/components/RunTerminal";
+import { CompareDialog } from "@/components/CompareDialog";
 
 interface Step {
   tool: string;
@@ -183,6 +185,8 @@ export default function Run() {
   const [result, setResult] = useState<RunResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [openSteps, setOpenSteps] = useState<Set<number>>(new Set());
+  const [liveSteps, setLiveSteps] = useState<Step[]>([]);
+  const [compareIndex, setCompareIndex] = useState<number | null>(null);
   const [toolCache, setToolCache] = useState<ToolCacheStats | null>(null);
   const [toolCacheSnapshotMs, setToolCacheSnapshotMs] = useState(Date.now());
   const [nowMs, setNowMs] = useState(Date.now());
@@ -226,34 +230,81 @@ export default function Run() {
     setResult(null);
     setError(null);
     setOpenSteps(new Set());
-    let usedRunCacheSnapshot = false;
+    setLiveSteps([]);
     try {
-      const r = await apiPost<RunResult>("/api/demo/run", {
-        ask: trimmed,
-        effort_mode: effortMode,
-      });
-      if (!r || !r.summary) {
-        setError("Backend returned an empty response.");
-      } else if (r.error) {
-        setError(r.error);
-        setResult(r);
-        if (r.cache) {
-          applyToolCache(r.cache);
-          usedRunCacheSnapshot = true;
-        }
-        appendRunToHistory(r);
-      } else {
-        setResult(r);
-        if (r.cache) {
-          applyToolCache(r.cache);
-          usedRunCacheSnapshot = true;
-        }
-        appendRunToHistory(r);
+      // Streaming submit — every tool call lands in the right-hand
+      // terminal as it completes, not at the end of the run.
+      const partials: Step[] = [];
+      let finalResult: RunResult | null = null as RunResult | null;
+
+      await apiPostStream(
+        "/api/demo/run/stream",
+        { ask: trimmed, effort_mode: effortMode },
+        (evt) => {
+          const kind = evt.kind as string;
+          if (kind === "step") {
+            // Strip 'kind' so the rest is the step shape.
+            const { kind: _k, ...stepData } = evt;
+            partials.push(stepData as unknown as Step);
+            setLiveSteps([...partials]);
+          } else if (kind === "final") {
+            const { kind: _k, ...finalData } = evt;
+            const full = finalData as unknown as Record<string, unknown>;
+            const sentTokens = (full.total_sent_tokens as number) ?? 0;
+            const rawTokens = (full.total_raw_tokens as number) ?? 0;
+            const savedPct =
+              rawTokens > 0
+                ? Math.round((1 - sentTokens / rawTokens) * 1000) / 10
+                : 0;
+            finalResult = {
+              ask: trimmed,
+              answer: (full.answer as string) ?? "",
+              model: (full.model as string) ?? "",
+              effort_mode: effortMode,
+              iterations: (full.iterations as number) ?? 0,
+              stopped_reason: (full.stopped_reason as string) ?? "",
+              error: (full.error as string | null) ?? null,
+              served_from_cache: (full.served_from_cache as boolean) ?? false,
+              cached_age_seconds: (full.cached_age_seconds as number) ?? 0,
+              cost: (full.cost as CostBlock | null) ?? null,
+              steps: partials,
+              summary: {
+                tool_calls: partials.length,
+                raw_tokens: rawTokens,
+                sent_tokens: sentTokens,
+                saved_tokens: Math.max(0, rawTokens - sentTokens),
+                saved_percent: savedPct,
+                elapsed_ms: (full.total_elapsed_ms as number) ?? 0,
+                cost_before_usd:
+                  ((full.cost as CostBlock | null)?.counterfactual_usd) ?? 0,
+                cost_after_usd:
+                  ((full.cost as CostBlock | null)?.actual_usd) ?? 0,
+                cost_saved_usd:
+                  ((full.cost as CostBlock | null)?.saved_usd) ?? 0,
+                composio_calls_made:
+                  (full.composio_calls_made as number) ?? 0,
+                composio_calls_avoided:
+                  (full.composio_calls_avoided as number) ?? 0,
+                composio_cost_avoided_usd:
+                  (full.composio_cost_avoided_usd as number) ?? 0,
+              },
+            };
+            setResult(finalResult);
+          } else if (kind === "error") {
+            setError((evt.message as string) ?? "stream error");
+          }
+        },
+      );
+
+      if (finalResult) {
+        // append to history once the run is settled
+        appendRunToHistory(finalResult);
+        if (finalResult.error) setError(finalResult.error);
       }
     } catch (err) {
       setError(describeApiError(err));
     } finally {
-      if (!usedRunCacheSnapshot) void refreshToolCache();
+      void refreshToolCache();
       setRunning(false);
     }
   };
@@ -272,39 +323,49 @@ export default function Run() {
   };
 
   return (
-    <div className="mx-auto flex min-h-[calc(100vh-8.5rem)] w-full max-w-3xl flex-col justify-center py-8 space-y-6">
-      <div>
-        <p className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
-          Aperture
-        </p>
-        <h1 className="text-3xl font-semibold tracking-tight mt-1">
-          What do you want your agent to do?
-        </h1>
-        <p className="text-sm text-muted-foreground mt-2">
-          Aperture stays between your agent and its tools. Type an ask &mdash;
-          a real agent picks Composio tools, runs them, Aperture compresses
-          each response before the model reads it.
-        </p>
+    <div className="mx-auto grid w-full max-w-7xl gap-6 py-8 lg:grid-cols-[minmax(0,1fr)_minmax(360px,440px)]">
+      <CompareDialog
+        open={compareIndex !== null}
+        step={
+          compareIndex !== null
+            ? (result?.steps[compareIndex] ?? liveSteps[compareIndex] ?? null)
+            : null
+        }
+        onClose={() => setCompareIndex(null)}
+      />
+
+      <div className="flex flex-col space-y-4">
+      {/* Quiet status row — replaces the centered marketing hero. */}
+      <div className="flex items-baseline justify-between border-b border-border/40 pb-2.5">
+        <div className="flex items-baseline gap-3">
+          <span className="text-[13px] font-medium">Run</span>
+          <span className="text-[11px] text-muted-foreground/70">
+            ask · stream · compress · respond
+          </span>
+        </div>
+        <span className="text-[10px] font-mono text-muted-foreground/50 uppercase tracking-wider">
+          mode <span className="text-foreground/80">{selectedMode.label.toLowerCase()}</span>
+        </span>
       </div>
 
-      <div className="rounded-xl border border-border bg-card/80 backdrop-blur-sm p-4 space-y-3">
+      <div className="rounded-md border border-border/60 bg-card/40 overflow-hidden">
         <textarea
           value={ask}
           onChange={(e) => setAsk(e.target.value)}
           onKeyDown={onKey}
           placeholder="Ask anything that needs a real tool. ⌘+Enter to run."
           rows={3}
-          className="w-full resize-none bg-transparent text-[14px] outline-none placeholder:text-muted-foreground/60"
+          className="w-full resize-none bg-transparent px-3 pt-3 pb-2 text-[13px] outline-none placeholder:text-muted-foreground/50"
           autoFocus
         />
-        <div className="flex items-center justify-between gap-3">
-          <div className="flex flex-wrap gap-1.5">
+        <div className="flex items-center justify-between gap-3 border-t border-border/40 px-2 py-1.5">
+          <div className="flex flex-wrap gap-1">
             {PROMPTS.map((p) => (
               <button
                 key={p.label}
                 type="button"
                 onClick={() => setAsk(p.ask)}
-                className="text-[11px] px-2 py-1 rounded-md border border-border text-muted-foreground hover:text-foreground hover:border-primary/50 transition-colors"
+                className="text-[10.5px] px-1.5 py-0.5 rounded text-muted-foreground/70 hover:text-foreground hover:bg-foreground/[0.04] transition-colors"
               >
                 {p.label}
               </button>
@@ -313,24 +374,19 @@ export default function Run() {
           <Button
             onClick={() => void submit()}
             disabled={!ask.trim() || running}
-            className="bg-primary text-primary-foreground hover:bg-primary/90"
+            className="btn-accent h-7 text-[12px] rounded"
+            size="sm"
           >
             {running ? <ComposingSpinner label="Running" /> : (
-              <>Run <ArrowUpRight className="w-4 h-4 ml-1" /></>
+              <>Run <ArrowUpRight className="w-3 h-3 ml-1" /></>
             )}
           </Button>
         </div>
-        <div className="border-t border-border/50 pt-3">
-          <div className="flex items-center justify-between gap-3 mb-2">
-            <p className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
-              Mode
-            </p>
-            <span className="inline-flex items-center gap-1.5 rounded border border-primary/40 bg-primary/10 px-2 py-0.5 text-[10px] font-mono uppercase text-primary">
-              <Check className="h-3 w-3" />
-              {selectedMode.label}
-            </span>
+        <div className="border-t border-border/40 px-2 py-1.5">
+          <div className="flex items-center gap-1 text-[9.5px] uppercase tracking-[0.14em] text-muted-foreground/60 mb-1">
+            <span>compression mode</span>
           </div>
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
+          <div className="inline-flex items-center gap-px rounded-md bg-foreground/[0.03] p-0.5">
             {MODES.map((mode) => {
               const selected = effortMode === mode.value;
               return (
@@ -339,24 +395,24 @@ export default function Run() {
                   type="button"
                   onClick={() => setEffortMode(mode.value)}
                   disabled={running}
-                  className={`rounded-md border px-2 py-2 text-left transition-colors ${
+                  title={mode.detail}
+                  className={`px-2 h-6 rounded text-[10.5px] font-mono uppercase tracking-wider transition-colors disabled:opacity-50 ${
                     selected
-                      ? "border-primary bg-primary/15 text-foreground shadow-[0_0_0_1px_hsl(var(--primary)/0.35)]"
-                      : "border-border/70 text-muted-foreground hover:border-primary/50 hover:text-foreground"
-                  } disabled:opacity-60`}
+                      ? "bg-foreground/10 text-foreground"
+                      : "text-muted-foreground/60 hover:text-foreground"
+                  }`}
                   aria-pressed={selected}
                 >
-                  <span className="flex items-center justify-between gap-2 text-[12px] font-medium">
-                    {mode.label}
-                    {selected && <Check className="h-3 w-3 text-primary" />}
-                  </span>
-                  <span className="block text-[9px] leading-tight text-muted-foreground mt-0.5">
-                    {mode.detail}
-                  </span>
+                  {mode.label}
                 </button>
               );
             })}
           </div>
+          {selectedMode.detail && (
+            <p className="text-[9.5px] text-muted-foreground/60 mt-1 font-mono">
+              {selectedMode.detail}
+            </p>
+          )}
         </div>
       </div>
 
@@ -392,9 +448,30 @@ export default function Run() {
         nowMs={nowMs}
         error={cacheError}
       />
+      </div>
+
+      {/* Right column — live terminal of tool calls (Composio-tree style)
+       * with per-call Compare button. Sticky so it stays in view as the
+       * left column scrolls. */}
+      <aside className="lg:sticky lg:top-16 self-start h-[calc(100vh-7rem)] overflow-hidden">
+        <RunTerminal
+          running={running}
+          steps={(running ? liveSteps : (result?.steps ?? liveSteps)) as RunTerminalStepData[]}
+          totalRawTokens={result?.summary.raw_tokens}
+          totalSentTokens={result?.summary.sent_tokens}
+          totalElapsedMs={result?.summary.elapsed_ms}
+          costSavedUsd={result?.summary.cost_saved_usd}
+          servedFromCache={result?.served_from_cache}
+          onCompareStep={(i) => setCompareIndex(i)}
+        />
+      </aside>
     </div>
   );
 }
+
+// Local alias so the terminal sees the slimmer step shape it actually
+// reads. The full Step interface above has many more optional fields.
+type RunTerminalStepData = import("@/components/RunTerminal").RunTerminalStep;
 
 function ResultPanel({
   result,
@@ -679,13 +756,13 @@ function CostPanel({ cost, model }: { cost: CostBlock; model: string }) {
             sublabel={`${cost.input_tokens.toLocaleString()} in · ${cost.output_tokens.toLocaleString()} out`}
           />
           <CostTile
-            label="Without Aperture"
+            label="Without Quava"
             value={fmtUsd(cost.counterfactual_usd)}
             sublabel={`${cost.raw_input_tokens.toLocaleString()} in · uncached`}
             strike
           />
           <CostTile
-            label="More without Aperture"
+            label="More without Quava"
             value={`+${costIncreasePercent}%`}
             sublabel={
               cost.saved_usd > 0
@@ -698,7 +775,7 @@ function CostPanel({ cost, model }: { cost: CostBlock; model: string }) {
         <p className="text-[11px] text-muted-foreground leading-relaxed">
           Anthropic billed{" "}
           <span className="num text-foreground">{fmtUsd(cost.actual_usd)}</span> for
-          this run. Without Aperture compressing the {cost.raw_input_tokens.toLocaleString()}{" "}
+          this run. Without Quava compressing the {cost.raw_input_tokens.toLocaleString()}{" "}
           raw tool tokens, the same {cost.output_tokens.toLocaleString()}-token answer
           would have cost{" "}
           <span className="num text-foreground">{fmtUsd(cost.counterfactual_usd)}</span>{" "}
@@ -880,7 +957,7 @@ function StepCard({
             {omittedFields.length > 0 && (
               <div>
                 <p className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground mb-1.5">
-                  Aperture dropped {omittedFields.length} bookkeeping field
+                  Quava dropped {omittedFields.length} bookkeeping field
                   {omittedFields.length === 1 ? "" : "s"}
                 </p>
                 <div className="flex flex-wrap gap-1">
@@ -904,7 +981,7 @@ function StepCard({
             {policyPromotions.length > 0 && (
               <div>
                 <p className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground mb-1.5">
-                  Aperture rescued {policyPromotions.length} field
+                  Quava rescued {policyPromotions.length} field
                   {policyPromotions.length === 1 ? "" : "s"} the ask asked for
                 </p>
                 <div className="flex flex-wrap gap-1">
