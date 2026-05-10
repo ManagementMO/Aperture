@@ -42,8 +42,35 @@ def _append_jsonl(path: Path, payload: dict) -> None:
         handle.write(json.dumps(payload, sort_keys=True, separators=(",", ":")) + "\n")
 
 
+def _maybe_append_sqlite_token(event: TokenAttributionEvent) -> None:
+    try:
+        from aperture.observability.event_log_sqlite import get_default_log
+
+        log = get_default_log()
+        if log is not None:
+            log.append_token(event)
+    except Exception:
+        # SQLite path is best-effort; never break the in-memory + JSONL emit.
+        pass
+
+
+def _maybe_append_sqlite_cache(event: CacheEvent) -> None:
+    try:
+        from aperture.observability.event_log_sqlite import get_default_log
+
+        log = get_default_log()
+        if log is not None:
+            log.append_cache(event)
+    except Exception:
+        pass
+
+
 def emit_token_event(event: TokenAttributionEvent, sink_path: Path | None = None) -> None:
-    """Emit a token attribution event to memory and optionally JSONL."""
+    """Emit a token attribution event to memory, optional JSONL, optional SQLite.
+
+    SQLite is enabled when `APERTURE_SQLITE_EVENT_LOG` env var is set or when
+    `aperture.observability.event_log_sqlite.set_default_log()` was called.
+    """
 
     validate_token_event(event)
     _TOKEN_EVENTS.append(event)
@@ -51,10 +78,11 @@ def emit_token_event(event: TokenAttributionEvent, sink_path: Path | None = None
         sink_path = ApertureConfig.from_env().event_sink_path
     if sink_path:
         _append_jsonl(sink_path, {"kind": "token", **event_to_dict(event)})
+    _maybe_append_sqlite_token(event)
 
 
 def emit_cache_event(event: CacheEvent, sink_path: Path | None = None) -> None:
-    """Emit a cache event to memory and optionally JSONL."""
+    """Emit a cache event to memory, optional JSONL, optional SQLite."""
 
     validate_cache_event(event)
     _CACHE_EVENTS.append(event)
@@ -62,4 +90,5 @@ def emit_cache_event(event: CacheEvent, sink_path: Path | None = None) -> None:
         sink_path = ApertureConfig.from_env().event_sink_path
     if sink_path:
         _append_jsonl(sink_path, {"kind": "cache", **event_to_dict(event)})
+    _maybe_append_sqlite_cache(event)
 
