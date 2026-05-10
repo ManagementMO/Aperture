@@ -76,8 +76,9 @@ in version control.
 ## Auth pass-through
 
 The proxy receives the developer's `x-api-key` header on every inbound
-MCP request and forwards it verbatim to Composio's MCP URL. The proxy
-NEVER persists or logs the header value. See
+MCP request and forwards it, along with non-hop-by-hop auth/context
+headers, to Composio's MCP URL. The proxy NEVER persists or logs the
+header value. See
 `aperture/proxy/upstream.py:UpstreamClient` — the header dict flows from
 the inbound request straight into the outbound HTTPX call.
 
@@ -107,3 +108,11 @@ ships with all the hooks needed but doesn't bake an auth layer.
 - Raw payload contents in default JSONL/SQLite (only token counts +
   byte counts; the cache layer DOES store payloads but only in the
   configured cache store, not in the event log)
+
+## Secret scanning
+
+The repository includes a local pre-commit hook (`aperture-secret-scan`)
+that blocks known Composio and Anthropic credential formats from being
+committed. This does not rotate previously exposed keys; leaked provider
+keys must still be revoked in the provider dashboard and removed from git
+history before a public release.

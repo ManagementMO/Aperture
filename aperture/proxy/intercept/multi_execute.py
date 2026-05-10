@@ -16,7 +16,7 @@ import os
 from typing import Any, Awaitable, Callable
 
 from aperture.cache.policy import load_cache_policy
-from aperture.proxy.cache_bridge import cached_or_forward
+from aperture.proxy.cache_bridge import cached_or_forward, unwrap_cached_result
 from aperture.proxy.errors import safe
 from aperture.types import ExecutionContext
 
@@ -120,6 +120,7 @@ async def handle_multi_execute(
             inner_args=inner_args if isinstance(inner_args, dict) else {},
             context=context,
         )
+        cached = unwrap_cached_result(cached)
         if cached is None or _looks_like_miss_sentinel(cached):
             misses.append((idx, call))
         else:

@@ -15,7 +15,7 @@ from typing import Any, Awaitable, Callable
 from aperture.cache.interceptor import maybe_execute_with_cache
 from aperture.cache.policy import load_cache_policy
 from aperture.cache.redis_store import CacheStore, InMemoryCacheStore
-from aperture.types import ExecutionContext
+from aperture.types import CachedResult, ExecutionContext
 
 
 _DEFAULT_STORE: CacheStore | None = None
@@ -58,6 +58,12 @@ async def cached_or_forward(
         upstream_call,
         store=selected_store,
     )
+
+
+def unwrap_cached_result(value: Any) -> Any:
+    """Return the payload the MCP client should see."""
+
+    return value.data if isinstance(value, CachedResult) else value
 
 
 def policy_summary(tool_slug: str) -> dict[str, Any]:

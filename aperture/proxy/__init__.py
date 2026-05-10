@@ -2,11 +2,10 @@
 
 Sits between an LLM client (Claude Desktop, custom agent, etc.) and
 Composio's Tool Router MCP endpoint. The developer points their MCP URL
-at this proxy instead of `https://backend.composio.dev/v3/mcp/...`.
+at this proxy instead of `https://backend.composio.dev/tool_router/.../mcp`.
 
-This package implements Plan-Agent 1's PR-1 design (transparent forwarder).
-Subsequent phases layer in cache (PR 2), token attribution (PR 3), and
-schema overlay (PR 4) without changing the proxy's outer shape.
+This package forwards through Composio while routing meta-tool calls through
+cache, token attribution, and schema-overlay enrichment layers.
 
 Public API surface is intentionally narrow:
     create_app()   → ASGI app for `uvicorn` or any ASGI server

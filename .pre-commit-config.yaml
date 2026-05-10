@@ -1,0 +1,8 @@
+repos:
+  - repo: local
+    hooks:
+      - id: aperture-secret-scan
+        name: Aperture secret scan
+        entry: uv run python scripts/secret_scan.py
+        language: system
+        pass_filenames: true

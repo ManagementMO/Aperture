@@ -1,7 +1,7 @@
 from aperture.cache.interceptor import maybe_execute_with_cache
 from aperture.cache.redis_store import InMemoryCacheStore
 from aperture.observability.event_emitter import clear_in_memory_events, get_in_memory_cache_events
-from aperture.types import ExecutionContext
+from aperture.types import CachedResult, ExecutionContext
 
 
 def _context(cache_bypass=False):
@@ -19,7 +19,10 @@ async def test_cache_hit_avoids_execution():
 
     first = await maybe_execute_with_cache("GITHUB_LIST_ISSUES", {"q": "auth"}, _context(), execute, store)
     second = await maybe_execute_with_cache("GITHUB_LIST_ISSUES", {"q": "auth"}, _context(), execute, store)
-    assert first == second == {"ok": True}
+    assert first == {"ok": True}
+    assert isinstance(second, CachedResult)
+    assert second.data == {"ok": True}
+    assert second.original_cost_tokens > 0
     assert calls["count"] == 1
     assert any(event.cache_status == "hit" for event in get_in_memory_cache_events())
 
@@ -47,4 +50,3 @@ async def test_failed_response_is_not_cached():
     await maybe_execute_with_cache("GITHUB_LIST_ISSUES", {"q": "auth"}, _context(), execute, store)
     await maybe_execute_with_cache("GITHUB_LIST_ISSUES", {"q": "auth"}, _context(), execute, store)
     assert calls["count"] == 2
-

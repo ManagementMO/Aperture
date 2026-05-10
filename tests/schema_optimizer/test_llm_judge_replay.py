@@ -239,7 +239,7 @@ def test_run_judge_with_missing_replay_fixtures_rejects(tmp_path):
     assert result.validation_cases_run == 2
 
 
-def test_validator_calls_into_judge_when_present(monkeypatch, tmp_path):
+def test_validator_calls_into_judge_when_present(tmp_path):
     """validate_schema_rewrite_with_llm_judge() in validator.py imports from
     llm_judge and calls run_judge. With llm_judge present, it should NOT
     raise NotImplementedError anymore."""
@@ -248,30 +248,12 @@ def test_validator_calls_into_judge_when_present(monkeypatch, tmp_path):
     prompts = [f"prompt_{i}" for i in range(5)]
     _seed_passing_replays(tmp_path, prompts)
 
-    # The validator wrapper doesn't expose live= or replay_dir= currently,
-    # so we patch run_judge to feed our replay path.
-    from aperture.schema_optimizer import llm_judge as judge_mod
-
-    real_run = judge_mod.run_judge
-
-    def patched_run(*, original_schema, candidate_schema, prompts, **kwargs):
-        kwargs.setdefault("replay_dir", tmp_path)
-        kwargs.setdefault("live", False)
-        return real_run(
-            original_schema=original_schema,
-            candidate_schema=candidate_schema,
-            prompts=prompts,
-            **kwargs,
-        )
-
-    monkeypatch.setattr(judge_mod, "run_judge", patched_run)
-    # The validator imports `from aperture.schema_optimizer.llm_judge import run_judge as _run_judge`
-    # at call time, so monkey-patching the module attribute should work.
-
     result = validate_schema_rewrite_with_llm_judge(
         original_schema=_ORIGINAL,
         candidate_schema=_CANDIDATE,
         prompts=prompts,
+        live=False,
+        replay_dir=tmp_path,
         spot_check_fraction=0.0,
     )
     assert result.passed is True

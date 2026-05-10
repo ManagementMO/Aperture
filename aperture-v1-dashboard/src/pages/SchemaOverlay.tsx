@@ -30,9 +30,9 @@ export function SchemaOverlay() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetch("/aperture/schema_optimizer/_overlay.json")
+    fetch("/api/v3.1/overlay")
       .then((r) => {
-        if (!r.ok) throw new Error(`overlay file → ${r.status}`);
+        if (!r.ok) throw new Error(`overlay API -> ${r.status}`);
         return r.json();
       })
       .then(setOverlay)
@@ -44,8 +44,8 @@ export function SchemaOverlay() {
       <div>
         <h2 style={{ marginTop: 0 }}>Schema overlay</h2>
         <p style={{ color: "var(--muted)" }}>
-          The overlay file at <code>aperture/schema_optimizer/_overlay.json</code> isn't
-          accessible. Run the schema optimizer pipeline first:
+          The overlay endpoint is not accessible. Run the schema optimizer pipeline
+          first and start the v3.1 API:
         </p>
         <pre
           style={{

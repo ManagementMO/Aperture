@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from datetime import datetime, timezone
 
 import pytest
@@ -138,3 +139,28 @@ def test_endpoints_handle_no_sqlite_log_gracefully(tmp_path):
     body = response.json()
     assert body["data"] == []
     assert "warning" in body
+
+
+def test_overlay_endpoint_serves_configured_overlay(monkeypatch, tmp_path):
+    overlay_path = tmp_path / "_overlay.json"
+    overlay_path.write_text(
+        json.dumps({
+            "version": 1,
+            "aperture_optimizer_version": __version__,
+            "generated_at": "2026-05-10T00:00:00+00:00",
+            "tools": {"GITHUB_LIST_REPOSITORY_ISSUES": {}},
+            "stats": {
+                "total_results": 1,
+                "accepted": 1,
+                "rejected": 0,
+                "total_tokens_saved": 10,
+            },
+        }),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("APERTURE_OVERLAY_PATH", str(overlay_path))
+    c = TestClient(create_api_app())
+    response = c.get("/api/v3.1/overlay")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["tools"] == {"GITHUB_LIST_REPOSITORY_ISSUES": {}}

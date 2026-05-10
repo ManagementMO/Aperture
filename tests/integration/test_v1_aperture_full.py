@@ -82,7 +82,8 @@ async def test_v1_full_stack_end_to_end(tmp_path):
         "GITHUB_GET_REPO", {"owner": "ACME", "repo": "aperture"},
         ctx, execute_repo, store=cache_store,
     )
-    assert result_2["name"] == "aperture"
+    result_2_payload = result_2.data if hasattr(result_2, "data") else result_2
+    assert result_2_payload["name"] == "aperture"
     assert counter["executions"] == 1, "second call should have hit cache"
 
     # 4. Write tool — must not cache
@@ -109,7 +110,7 @@ async def test_v1_full_stack_end_to_end(tmp_path):
     assert write_counter["executions"] == 2, "write tool MUST not cache"
 
     # 5. Tokenize results + emit attribution events
-    for response in (result_1, result_2):
+    for response in (result_1, result_2_payload):
         count = count_tokens_for_payload(response, model="gpt-4o")
         emit_meta_tool_event(context=ctx, raw_count=count, session_turn=1)
 

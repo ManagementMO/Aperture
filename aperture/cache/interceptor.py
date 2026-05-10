@@ -11,9 +11,10 @@ from aperture.cache.policy import load_cache_policy
 from aperture.cache.redis_store import CacheStore, InMemoryCacheStore
 from aperture.observability.event_emitter import emit_cache_event
 from aperture.tokenization.token_counter import count_tokens_for_payload
-from aperture.types import CacheEvent, ExecutionContext
+from aperture.types import CacheEvent, CachedResult, ExecutionContext
 
 ExecuteFn = Callable[[], object | Awaitable[object]]
+_CACHE_ENTRY_VERSION = 1
 
 
 def _event(
@@ -63,6 +64,24 @@ def _success_response(response: object) -> bool:
         if "error" in response and response["error"]:
             return False
     return True
+
+
+def _cache_entry(value: object, original_cost_tokens: int) -> dict:
+    return {
+        "_aperture_cache_entry_version": _CACHE_ENTRY_VERSION,
+        "value": value,
+        "original_cost_tokens": original_cost_tokens,
+    }
+
+
+def _unwrap_cache_entry(cached: object, context: ExecutionContext) -> tuple[object, int]:
+    if isinstance(cached, dict) and cached.get("_aperture_cache_entry_version") == _CACHE_ENTRY_VERSION:
+        value = cached.get("value")
+        original_cost_tokens = cached.get("original_cost_tokens")
+        if isinstance(original_cost_tokens, int):
+            return value, original_cost_tokens
+        return value, count_tokens_for_payload(value, context.model).tokens
+    return cached, count_tokens_for_payload(cached, context.model).tokens
 
 
 async def maybe_execute_with_cache(
@@ -116,6 +135,8 @@ async def maybe_execute_with_cache(
 
     cached = selected_store.get(key)
     if cached is not None:
+        cached_data, original_cost_tokens = _unwrap_cache_entry(cached, context)
+        cached_age_seconds = selected_store.age_seconds(key)
         emit_cache_event(
             _event(
                 context=context,
@@ -124,17 +145,22 @@ async def maybe_execute_with_cache(
                 cache_scope=policy.privacy_scope,
                 key=key,
                 ttl_seconds=policy.ttl_seconds,
-                cached_age_seconds=selected_store.age_seconds(key),
+                cached_age_seconds=cached_age_seconds,
                 api_call_avoided=True,
-                tokens_saved_estimate=count_tokens_for_payload(cached, context.model).tokens,
+                tokens_saved_estimate=original_cost_tokens,
                 reason=None,
             )
         )
-        return cached
+        return CachedResult(
+            data=cached_data,
+            cached_age_seconds=cached_age_seconds or 0,
+            original_cost_tokens=original_cost_tokens,
+        )
 
     response = await _execute(execute_fn)
     if _success_response(response) and policy.ttl_seconds is not None:
-        selected_store.set(key, response, policy.ttl_seconds)
+        original_cost_tokens = count_tokens_for_payload(response, context.model).tokens
+        selected_store.set(key, _cache_entry(response, original_cost_tokens), policy.ttl_seconds)
     emit_cache_event(
         _event(
             context=context,
@@ -150,4 +176,3 @@ async def maybe_execute_with_cache(
         )
     )
     return response
-

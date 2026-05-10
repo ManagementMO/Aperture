@@ -14,7 +14,7 @@ from aperture.cache.search_tools_cache import (
     merge_response,
     split_response,
 )
-from aperture.proxy.cache_bridge import cached_or_forward
+from aperture.proxy.cache_bridge import cached_or_forward, unwrap_cached_result
 from aperture.proxy.errors import safe
 from aperture.types import ExecutionContext
 
@@ -63,6 +63,7 @@ async def handle_search_tools(
     if cached_or_fresh is None:
         # Cache layer itself failed — fall back to a direct forward.
         cached_or_fresh = await upstream_call()
+    cached_or_fresh = unwrap_cached_result(cached_or_fresh)
 
     # If the response carries a schema/plan portion, optionally enrich with
     # fresh connection_status. Otherwise just pass through.

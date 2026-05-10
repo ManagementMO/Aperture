@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 from copy import deepcopy
+from pathlib import Path
 from typing import Any
 
+from aperture.schema_optimizer.budget import BudgetTracker
 from aperture.schema_optimizer.models import ValidationResult
 
 SAFETY_TERMS = {"delete", "send", "auth", "oauth", "token", "permission", "private", "public"}
@@ -90,6 +92,11 @@ def validate_schema_rewrite_with_llm_judge(
     spot_check_model: str = "claude-sonnet-4-5",
     spot_check_fraction: float = 0.10,
     similar_tools: list[dict] | None = None,
+    live: bool = False,
+    replay_dir: str | Path | None = None,
+    tracker: BudgetTracker | None = None,
+    candidate_index: int = 0,
+    seed: int = 1,
 ) -> ValidationResult:
     """Behavioral validation: a rewrite is accepted only if a Claude model
     selects the same tool and extracts the same parameters across all prompts.
@@ -130,5 +137,9 @@ def validate_schema_rewrite_with_llm_judge(
         spot_check_model=spot_check_model,
         spot_check_fraction=spot_check_fraction,
         similar_tools=similar_tools or [],
+        live=live,
+        replay_dir=Path(replay_dir) if replay_dir is not None else None,
+        tracker=tracker,
+        candidate_index=candidate_index,
+        seed=seed,
     )
-

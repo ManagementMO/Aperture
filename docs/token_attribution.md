@@ -61,6 +61,11 @@ Two methods:
 The proxy uses `schedule_count` so the LLM response is forwarded BEFORE
 tokenization completes. `on_complete` emits the `TokenAttributionEvent`.
 
+In the MCP proxy, `server.py` calls this after `router.dispatch()` returns
+the final payload. That means successful `tools/call` responses, cached
+responses, and overlay-adjusted schema responses are measured from the
+same response path the client receives.
+
 ## Storage
 
 Three sinks, all best-effort and independent — failure on one never

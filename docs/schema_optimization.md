@@ -25,6 +25,10 @@ The validator rejects any candidate that touches:
 These are structural invariants. A rewrite that strips them is auto-rejected
 by `aperture/schema_optimizer/validator.py:validate_schema_rewrite`.
 
+The overlay writer also refuses candidates for tools classified as
+`operation_type: write` or `operation_type: auth` in `policy.yaml`, and it
+requires at least 50 validation cases before a rewrite can be emitted.
+
 ## Pipeline
 
 ```
@@ -125,7 +129,7 @@ Schema (`aperture/schema_optimizer/_overlay.json`):
   "aperture_optimizer_version": "0.3.0",
   "generated_at": "2026-05-09T16:00:00Z",
   "tools": {
-    "GITHUB_CREATE_ISSUE": {
+    "GITHUB_LIST_REPOSITORY_ISSUES": {
       "description": {
         "original": "Creates a new issue in a specified GitHub repository...",
         "optimized": "Create a GitHub issue. Required: owner, repo, title.",
@@ -148,14 +152,15 @@ Schema (`aperture/schema_optimizer/_overlay.json`):
 }
 ```
 
-The proxy reads this on startup (PR 4) and substitutes `optimized` text
+The proxy reads this on startup and substitutes `optimized` text
 into the relevant schema responses before forwarding to the LLM. Tools
 not in the overlay pass through unchanged.
 
 ## Running
 
 ```bash
-# Generate overlay from fixtures (no LLM, fast)
+# Generate a structural-only report from fixtures (fast, usually no overlay
+# entries because write_overlay requires >=50 judged validation cases)
 uv run python -c "
 from pathlib import Path
 from aperture.schema_optimizer.reports import optimize_schemas, write_overlay
@@ -167,14 +172,15 @@ COMPOSIO_API_KEY=... ANTHROPIC_API_KEY=... uv run python -c "
 from pathlib import Path
 from aperture.schema_optimizer.reports import optimize_schemas, write_overlay
 results = optimize_schemas(live=True)  # ← live schema fetch
-# TODO: route through llm_judge.run_judge for accept gate
 write_overlay(Path('aperture/schema_optimizer/_overlay.json'), results)
 "
 ```
 
 The current `optimize_schemas()` runs the structural validator only.
-Wiring it through `llm_judge.run_judge()` is the next step (the function
-exists; reports.py picks structural for now).
+Call `validate_schema_rewrite_with_llm_judge(..., live=True, tracker=...)`
+or `llm_judge.run_judge(...)` before marking a result accepted for a real
+overlay; the wrapper exposes `live`, `replay_dir`, `tracker`,
+`candidate_index`, and `seed` for this purpose.
 
 ## Verifying
 

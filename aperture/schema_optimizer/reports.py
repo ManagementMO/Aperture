@@ -16,6 +16,10 @@ from aperture.schema_optimizer.tokenize_schemas import tokenize_schema_fields
 from aperture.schema_optimizer.validator import set_description_at_path, validate_schema_rewrite
 from aperture.tokenization.token_counter import count_tokens_for_payload
 from aperture.types import SchemaOptimizationResult
+from aperture.cache.policy import load_cache_policy
+
+
+MIN_OVERLAY_VALIDATION_CASES = 50
 
 
 def _unwrap_openai_envelope(schema: dict) -> dict:
@@ -92,6 +96,15 @@ def write_schema_optimization_report(path: Path, live: bool = False) -> list[Sch
     return results
 
 
+def _overlay_safe(result: SchemaOptimizationResult) -> bool:
+    if not result.accepted:
+        return False
+    if result.validation_cases_run < MIN_OVERLAY_VALIDATION_CASES:
+        return False
+    policy = load_cache_policy(result.tool_slug)
+    return policy.operation_type not in {"write", "auth"}
+
+
 def write_overlay(path: Path, results: list[SchemaOptimizationResult]) -> dict:
     """Persist accepted rewrites to `_overlay.json` for the proxy to consume.
 
@@ -115,7 +128,7 @@ def write_overlay(path: Path, results: list[SchemaOptimizationResult]) -> dict:
           }
         }
     """
-    accepted = [r for r in results if r.accepted]
+    accepted = [r for r in results if _overlay_safe(r)]
     by_tool: dict[str, dict] = {}
     for r in accepted:
         # Multiple fields per tool — top-level field name is the path's last segment.
@@ -152,4 +165,3 @@ def write_overlay(path: Path, results: list[SchemaOptimizationResult]) -> dict:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(document, indent=2, sort_keys=True))
     return document
-

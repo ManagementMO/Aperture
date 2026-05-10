@@ -23,6 +23,7 @@ from fastapi import APIRouter, FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
 from aperture import __version__
+from aperture.proxy.overlay import default_overlay_path
 from aperture.observability.aggregations import (
     aggregate_cache_events_v1,
     aggregate_token_events_v1,
@@ -127,6 +128,38 @@ def cache_tokens_saved(body: CacheSavingsRequest) -> dict[str, Any]:
         }
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
+
+
+@router.get("/overlay")
+def schema_overlay() -> dict[str, Any]:
+    """Serve the generated schema optimizer overlay for the dashboard."""
+
+    import json
+    import os
+    from pathlib import Path
+
+    path = Path(os.getenv("APERTURE_OVERLAY_PATH") or default_overlay_path())
+    if not path.exists():
+        return {
+            "version": 1,
+            "aperture_optimizer_version": __version__,
+            "generated_at": None,
+            "tools": {},
+            "stats": {
+                "total_results": 0,
+                "accepted": 0,
+                "rejected": 0,
+                "total_tokens_saved": 0,
+            },
+            "warning": "overlay_not_found",
+        }
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise HTTPException(status_code=500, detail=f"invalid overlay JSON: {exc}") from exc
+    if not isinstance(data, dict):
+        raise HTTPException(status_code=500, detail="invalid overlay JSON: expected object")
+    return data
 
 
 def _now_iso() -> str:
