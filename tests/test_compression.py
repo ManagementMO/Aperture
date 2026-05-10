@@ -1,7 +1,5 @@
 """Tests for compression engine."""
 
-import pytest
-
 from aperture.compression.engine import compress_tool_output
 
 
@@ -53,6 +51,43 @@ class TestCompression:
         assert "url" in result.omitted_fields
         assert "node_id" in result.omitted_fields
         assert "title" not in result.omitted_fields
+
+    def test_nested_omitted_fields_tracked(self):
+        payload = {
+            "messages": [
+                {
+                    "id": "msg_1",
+                    "snippet": "Hello",
+                    "payload": {"parts": [{"body": {"data": "AAAA"}}]},
+                    "sizeEstimate": 12345,
+                }
+            ]
+        }
+        compressed = {
+            "messages": [
+                {
+                    "id": "msg_1",
+                    "snippet": "Hello",
+                    "body_text": "decoded body",
+                }
+            ]
+        }
+
+        from aperture.compression.engine import _collect_omitted_fields
+
+        omitted = _collect_omitted_fields(payload, compressed)
+        assert "messages[].payload" not in omitted
+        assert "messages[].sizeEstimate" in omitted
+        assert "messages[].snippet" not in omitted
+
+    def test_transformed_payload_is_not_reported_as_dropped_without_body_text(self):
+        payload = {"messages": [{"id": "msg_1", "payload": {"parts": []}}]}
+        compressed = {"messages": [{"id": "msg_1"}]}
+
+        from aperture.compression.engine import _collect_omitted_fields
+
+        omitted = _collect_omitted_fields(payload, compressed)
+        assert "messages[].payload" in omitted
 
     def test_compression_ratio_sane(self):
         payload = {

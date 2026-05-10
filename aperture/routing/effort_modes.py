@@ -15,7 +15,7 @@ class EffortConfig:
     include_examples: bool = True
     include_enum_descriptions: bool = True
     # Result detail
-    compression_mode: str = "safe"  # safe | balanced | aggressive
+    compression_mode: str = "safe"  # off | safe | balanced | low | aggressive
     max_result_items: int | None = None
     # Caching
     cache_reads: bool = True
@@ -25,6 +25,19 @@ class EffortConfig:
 
 
 EFFORT_MODES: dict[str, EffortConfig] = {
+    "aggressive": EffortConfig(
+        name="aggressive",
+        description="Maximum result compression for low-risk, high-volume output",
+        max_tools_exposed=8,
+        include_optional_fields=False,
+        include_examples=False,
+        include_enum_descriptions=False,
+        compression_mode="aggressive",
+        max_result_items=3,
+        cache_reads=True,
+        cache_ttl_seconds=900,
+        allow_fallback_expansion=True,
+    ),
     "low": EffortConfig(
         name="low",
         description="Minimal context, aggressive caching, expand only on failure",
@@ -32,7 +45,7 @@ EFFORT_MODES: dict[str, EffortConfig] = {
         include_optional_fields=False,
         include_examples=False,
         include_enum_descriptions=False,
-        compression_mode="balanced",
+        compression_mode="low",
         max_result_items=5,
         cache_reads=True,
         cache_ttl_seconds=600,

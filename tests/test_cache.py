@@ -3,6 +3,7 @@
 from aperture.cache.interceptor import CachedExecutor
 from aperture.cache.key_builder import build_cache_key
 from aperture.cache.policy import is_cacheable
+from aperture.cache.store import CacheStore
 from aperture.contracts import ApertureRunConfig
 from aperture.integration import ApertureRunner
 
@@ -121,6 +122,37 @@ class TestCachedExecutor:
         assert first_event.cache_status == "miss"
         assert first_event.reason == "failed_response_not_cached"
         assert second_event.cache_status == "miss"
+
+    def test_cache_hit_retracks_entry_for_demo_visibility(self):
+        calls = {"count": 0}
+        store = CacheStore()
+        store.clear_tracked()
+        executor = CachedExecutor()
+        config = ApertureRunConfig(
+            run_id="retrack-hit",
+            model="gpt-4o",
+            connected_account_id="acct_retrack_test",
+        )
+
+        def execute():
+            calls["count"] += 1
+            return [{"title": "OAuth failure", "state": "open"}]
+
+        _, first_event = executor.execute(
+            "GITHUB_LIST_ISSUES", {"case": "retrack"}, execute, config
+        )
+        store._metadata.clear()
+        _, second_event = executor.execute(
+            "GITHUB_LIST_ISSUES", {"case": "retrack"}, execute, config
+        )
+
+        entries = store.tracked_entries()
+        assert calls["count"] == 1
+        assert first_event.cache_status == "miss"
+        assert second_event.cache_status == "hit"
+        assert len(entries) == 1
+        assert entries[0]["tool"] == "GITHUB_LIST_ISSUES"
+        assert entries[0]["arguments"] == {"case": "retrack"}
 
     def test_runner_compresses_cached_raw_result_on_hit(self):
         config = ApertureRunConfig(

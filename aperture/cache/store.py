@@ -1,6 +1,7 @@
 """Cache store with Upstash Redis backend and in-memory fallback."""
 
 import json
+import os
 import time
 from typing import Any
 
@@ -49,9 +50,12 @@ class CacheStore:
             cls._instance = super().__new__(cls)
             cls._instance._redis = None
             cls._instance._memory = _MemoryStore()
+            cls._instance._metadata = {}
         return cls._instance
 
     def _client(self):
+        if os.getenv("PYTEST_CURRENT_TEST"):
+            return self._memory
         if self._redis is None:
             try:
                 self._redis = Config.redis_client()
@@ -78,6 +82,53 @@ class CacheStore:
             return True
         except Exception:
             return False
+
+    def track_entry(self, key: str, metadata: dict[str, Any], ttl_seconds: int) -> None:
+        """Track cache entry metadata for local demo visibility.
+
+        The cached value may live in Redis, but this small metadata index is
+        process-local and intentionally avoids storing response payloads.
+        """
+        now = time.time()
+        self._metadata[key] = {
+            **metadata,
+            "stored_at": now,
+            "expires_at": now + ttl_seconds if ttl_seconds else None,
+        }
+
+    def tracked_entries(self) -> list[dict[str, Any]]:
+        """Return non-expired tracked cache entries for UI display."""
+        now = time.time()
+        expired = [
+            key for key, meta in self._metadata.items()
+            if meta.get("expires_at") and now > meta["expires_at"]
+        ]
+        for key in expired:
+            self._metadata.pop(key, None)
+
+        entries: list[dict[str, Any]] = []
+        for meta in self._metadata.values():
+            expires_at = meta.get("expires_at")
+            stored_at = meta.get("stored_at", now)
+            entries.append({
+                **meta,
+                "age_seconds": round(max(0.0, now - stored_at), 1),
+                "ttl_remaining_seconds": (
+                    round(max(0.0, expires_at - now), 1) if expires_at else None
+                ),
+            })
+        return sorted(entries, key=lambda entry: entry.get("stored_at", 0), reverse=True)
+
+    def clear_tracked(self) -> int:
+        """Clear tracked in-memory cache entries and metadata."""
+        count = len(self._metadata)
+        keys = list(self._metadata.keys())
+        for key in keys:
+            self.delete(key)
+        self._metadata.clear()
+        if self._redis is None or self._redis is self._memory:
+            self._memory._data.clear()
+        return count
 
     def delete(self, key: str) -> bool:
         """Delete a cache entry."""
