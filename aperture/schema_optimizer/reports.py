@@ -25,15 +25,13 @@ from aperture.tokenization.token_counter import count_tokens_for_payload
 from aperture.types import SchemaOptimizationResult
 
 
-MIN_OVERLAY_VALIDATION_CASES = 25
+MIN_OVERLAY_VALIDATION_CASES = 50
 """Minimum LLM-judged validation cases to land in the overlay.
 
-Plan-spec target was 50 prompts per toolkit (handoff §6.4). The current
-prompt fixtures in ``aperture/schema_optimizer/prompts/*.jsonl`` ship 30 per
-toolkit; we set the bar at 25 so a candidate is accepted only when judged
-against a substantial set, while still being attainable with the prompt
-inventory we actually have. Raising this to 50 is a fixtures-only change
-once each toolkit grows past 50 prompts."""
+Matches the handoff §6.4 plan-spec target. The prompt fixtures in
+``aperture/schema_optimizer/prompts/*.jsonl`` ship at least 50 per toolkit
+(github=50, gmail=50, linear=60, notion=50, slack=50), so this gate is
+attainable with the inventory we have."""
 
 logger = logging.getLogger(__name__)
 
@@ -102,9 +100,15 @@ def optimize_schemas(live: bool = False) -> list[SchemaOptimizationResult]:
     for counted in rank_schema_candidates(tokenize_schema_fields(fields)):
         field = counted.field
         original_schema = schema_by_tool[field.tool_slug]
-        candidate_text = generate_schema_rewrite_candidates(field)[0]
-        candidate_schema = set_description_at_path(original_schema, field.field_path, candidate_text)
-        validation = validate_schema_rewrite(original_schema, candidate_schema)
+        candidates = generate_schema_rewrite_candidates(field)
+        if not candidates:
+            results.append(
+                _empty_result(field, counted.tokens, "rewriter_no_candidate")
+            )
+            continue
+        # Pick the most aggressive candidate that passes structural validation.
+        chosen = _pick_best_structural_candidate(original_schema, field, candidates)
+        candidate_text, candidate_schema, validation = chosen
         optimized_tokens = count_tokens_for_payload(candidate_text).tokens
         reduction = max(0, counted.tokens - optimized_tokens)
         accepted = validation.passed and reduction > 0
@@ -125,6 +129,41 @@ def optimize_schemas(live: bool = False) -> list[SchemaOptimizationResult]:
             )
         )
     return results
+
+
+def _empty_result(field, original_tokens: int, reason: str) -> SchemaOptimizationResult:
+    return SchemaOptimizationResult(
+        tool_slug=field.tool_slug,
+        field_path=field.field_path,
+        original_text=field.text,
+        optimized_text=field.text,
+        original_tokens=original_tokens,
+        optimized_tokens=original_tokens,
+        reduction_tokens=0,
+        reduction_pct=0.0,
+        validation_cases_run=0,
+        validation_passed=False,
+        accepted=False,
+        rejection_reason=reason,
+    )
+
+
+def _pick_best_structural_candidate(original_schema, field, candidates):
+    """Return (text, schema, ValidationResult) for the most aggressive candidate
+    that passes the structural validator, or the first candidate's failure if
+    none passes — so the upper layer still sees a real rejection_reason.
+    """
+
+    last_failure = None
+    for candidate_text in reversed(candidates):  # heaviest first
+        candidate_schema = set_description_at_path(original_schema, field.field_path, candidate_text)
+        validation = validate_schema_rewrite(original_schema, candidate_schema)
+        if validation.passed:
+            return candidate_text, candidate_schema, validation
+        last_failure = (candidate_text, candidate_schema, validation)
+    # Every candidate failed structural — return the first failure as the
+    # canonical rejection so callers can see the reason.
+    return last_failure
 
 
 def optimize_schemas_with_llm_judge(
@@ -185,13 +224,17 @@ def optimize_schemas_with_llm_judge(
 
         field = counted.field
         original_schema = schema_by_tool[field.tool_slug]
-        candidate_text = generate_schema_rewrite_candidates(field)[0]
-        candidate_schema = set_description_at_path(original_schema, field.field_path, candidate_text)
+        candidates = generate_schema_rewrite_candidates(field)
+        if not candidates:
+            results.append(_empty_result(field, counted.tokens, "rewriter_no_candidate"))
+            continue
+        # Most aggressive candidate that passes structural — heaviest wins.
+        chosen = _pick_best_structural_candidate(original_schema, field, candidates)
+        candidate_text, candidate_schema, structural = chosen
         optimized_tokens = count_tokens_for_payload(candidate_text).tokens
         reduction = max(0, counted.tokens - optimized_tokens)
 
         # Structural pre-filter — cheap, cuts impossible candidates.
-        structural = validate_schema_rewrite(original_schema, candidate_schema)
         if not structural.passed:
             results.append(
                 SchemaOptimizationResult(
@@ -266,10 +309,35 @@ def optimize_schemas_with_llm_judge(
     return results
 
 
-def write_schema_optimization_report(path: Path, live: bool = False) -> list[SchemaOptimizationResult]:
-    """Write a Markdown schema optimization report."""
+def write_schema_optimization_report(
+    path: Path,
+    live: bool = False,
+    *,
+    use_llm_judge: bool = False,
+    replay_dir: Path | None = None,
+    tracker: BudgetTracker | None = None,
+    prompts_by_toolkit: dict[str, list[str]] | None = None,
+    max_candidates: int | None = None,
+) -> list[SchemaOptimizationResult]:
+    """Write a Markdown schema optimization report.
 
-    results = optimize_schemas(live=live)
+    By default uses ``optimize_schemas()`` (structural-only, fast, free) so
+    this function is safe to call as a dry-run diagnostic. Pass
+    ``use_llm_judge=True`` (with optional ``tracker`` and ``replay_dir``) to
+    route through the canonical ``optimize_schemas_with_llm_judge()`` pipeline
+    instead — the same path that produces a shippable overlay.
+    """
+
+    if use_llm_judge:
+        results = optimize_schemas_with_llm_judge(
+            live=live,
+            replay_dir=replay_dir,
+            tracker=tracker,
+            prompts_by_toolkit=prompts_by_toolkit,
+            max_candidates=max_candidates,
+        )
+    else:
+        results = optimize_schemas(live=live)
     path.parent.mkdir(parents=True, exist_ok=True)
     detail_rows = []
     for result in results:

@@ -31,11 +31,10 @@ tools classified as `operation_type: read` in `policy.yaml`. `write`,
 write tool that hasn't been explicitly classified yet from sneaking in.
 
 The minimum LLM-judged validation case count is `MIN_OVERLAY_VALIDATION_CASES`
-in `aperture/schema_optimizer/reports.py` (currently `25`). This matches
-the prompt fixtures in `aperture/schema_optimizer/prompts/*.jsonl`
-(30 prompts per toolkit). Per the original handoff target the bar would
-be 50; raising it is a fixtures-only change once each toolkit grows past
-50 prompts.
+in `aperture/schema_optimizer/reports.py` (currently `50`, matching the
+handoff §6.4 plan-spec target). The prompt fixtures in
+`aperture/schema_optimizer/prompts/*.jsonl` ship at least 50 per toolkit:
+github=50, gmail=50, linear=60, notion=50, slack=50.
 
 The proxy SchemaOverlay loader (`aperture/proxy/overlay.py`) applies the
 same `read`-only filter at startup. So even if a hand-edit puts a write

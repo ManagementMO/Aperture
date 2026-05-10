@@ -61,9 +61,9 @@ def validate_schema_rewrite(
     For v1 acceptance per handoff §13.3 cells 5-6, structural validation is
     NOT sufficient — the validator also needs to confirm behavioral
     equivalence by running prompts through an LLM judge (Haiku primary +
-    Sonnet spot-check). That layer lives in `aperture/schema_optimizer/llm_judge.py`
-    and is wired below as `validate_schema_rewrite_with_llm_judge`. Phase 5
-    Week 6 implements `llm_judge.py`; until then it raises NotImplementedError.
+    Sonnet spot-check). That layer lives in
+    ``aperture/schema_optimizer/llm_judge.py`` and is exposed as
+    ``validate_schema_rewrite_with_llm_judge``.
     """
 
     cases_run = len(validation_cases or [{"case_id": "structural"}])
@@ -102,31 +102,33 @@ def validate_schema_rewrite_with_llm_judge(
     selects the same tool and extracts the same parameters across all prompts.
 
     Per handoff §6.4 + decision #4:
-        - Run every prompt through `judge_model` (Haiku) with original schema,
-          then with candidate schema. Compare `tool_use.name` and normalized args.
-        - For 10% of prompts (configurable via `spot_check_fraction`), also run
-          through `spot_check_model` (Sonnet) and reject if Sonnet disagrees
+        - Run every prompt through ``judge_model`` (Haiku) with original schema,
+          then with candidate schema. Compare ``tool_use.name`` and normalized args.
+        - For 10% of prompts (configurable via ``spot_check_fraction``), also run
+          through ``spot_check_model`` (Sonnet) and reject if Sonnet disagrees
           with Haiku on either selection or parameters.
         - Accept only if 100% of judged prompts and 100% of spot-checked
           prompts pass.
-        - Disambiguation: include `similar_tools` (e.g. GITHUB_CREATE_ISSUE
+        - Disambiguation: include ``similar_tools`` (e.g. GITHUB_CREATE_ISSUE
           alongside GITHUB_CREATE_PULL_REQUEST) so the model has a real choice.
 
-    Implementation lives in `aperture/schema_optimizer/llm_judge.py` and is
-    constructed in Phase 5 Week 6. Calling this function before that phase
-    raises NotImplementedError so misuse is loud.
+    Implementation lives in ``aperture/schema_optimizer/llm_judge.py``. The
+    ImportError fallback below remains as a defensive guard against partial
+    installs that don't include the optional Anthropic SDK; in that case the
+    helpful NotImplementedError points the user back to structural-only mode.
 
     Tests for this function MUST use replay-recorded LLM responses
-    (see `tests/schema_optimizer/replay/`) — never live LLM in CI per handoff §14.4.
+    (see ``tests/schema_optimizer/replay/``) — never live LLM in CI per
+    handoff §14.4.
     """
 
     try:
         from aperture.schema_optimizer.llm_judge import run_judge as _run_judge
     except ImportError as exc:
         raise NotImplementedError(
-            "LLM judge not yet implemented; structural validation only. "
-            "Phase 5 Week 6 fills in aperture/schema_optimizer/llm_judge.py. "
-            "Until then call validate_schema_rewrite() instead."
+            "LLM judge implementation not importable. Ensure the "
+            "`anthropic` package is installed for live mode, or call "
+            "validate_schema_rewrite() for structural-only validation."
         ) from exc
 
     return _run_judge(

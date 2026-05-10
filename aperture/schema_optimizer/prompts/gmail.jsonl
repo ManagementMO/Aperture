@@ -28,3 +28,23 @@
 {"prompt": "Find recent emails from bob@example.com.", "expects_tool": "GMAIL_SEARCH_EMAILS", "expects_args": {"query": "from:bob@example.com"}}
 {"prompt": "Search Gmail for 'Q3 results'.", "expects_tool": "GMAIL_SEARCH_EMAILS", "expects_args": {"query": "Q3 results"}}
 {"prompt": "Send an email to legal@x.com about 'Renewal' body 'Please review attached.'", "expects_tool": "GMAIL_SEND_EMAIL", "expects_args": {"to": "legal@x.com", "subject": "Renewal", "body": "Please review attached."}}
+{"prompt": "Reply to message 18bcd0a23 with 'Thanks!'", "expects_tool": "GMAIL_REPLY_TO_THREAD", "expects_args": {"thread_id": "18bcd0a23", "body": "Thanks!"}}
+{"prompt": "Mark email 18bcd0a23 as read.", "expects_tool": "GMAIL_MODIFY_MESSAGE", "expects_args": {"message_id": "18bcd0a23", "remove_label_ids": ["UNREAD"]}}
+{"prompt": "Mark email 18bcd0a23 as unread.", "expects_tool": "GMAIL_MODIFY_MESSAGE", "expects_args": {"message_id": "18bcd0a23", "add_label_ids": ["UNREAD"]}}
+{"prompt": "Star the email with id 18bcd0a23.", "expects_tool": "GMAIL_MODIFY_MESSAGE", "expects_args": {"message_id": "18bcd0a23", "add_label_ids": ["STARRED"]}}
+{"prompt": "Add the label 'follow-up' to email 18bcd0a23.", "expects_tool": "GMAIL_MODIFY_MESSAGE", "expects_args": {"message_id": "18bcd0a23", "add_label_ids": ["follow-up"]}}
+{"prompt": "Get my Gmail profile information.", "expects_tool": "GMAIL_GET_PROFILE", "expects_args": {}}
+{"prompt": "Search emails older than 30 days.", "expects_tool": "GMAIL_SEARCH_EMAILS", "expects_args": {"query": "older_than:30d"}}
+{"prompt": "Find emails sent to me marked important.", "expects_tool": "GMAIL_SEARCH_EMAILS", "expects_args": {"query": "is:important to:me"}}
+{"prompt": "Find Gmail messages larger than 5MB.", "expects_tool": "GMAIL_SEARCH_EMAILS", "expects_args": {"query": "size:5M"}}
+{"prompt": "Find emails about 'meeting' between Jan 1 and Jan 31.", "expects_tool": "GMAIL_SEARCH_EMAILS", "expects_args": {"query": "meeting after:2026/01/01 before:2026/01/31"}}
+{"prompt": "List the messages in my drafts folder.", "expects_tool": "GMAIL_LIST_DRAFTS", "expects_args": {}}
+{"prompt": "Get attachment id 'ANGjdJ' from email 18bcd0a23.", "expects_tool": "GMAIL_GET_ATTACHMENT", "expects_args": {"message_id": "18bcd0a23", "attachment_id": "ANGjdJ"}}
+{"prompt": "Send an email with attachment to alice@example.com.", "expects_tool": "GMAIL_SEND_EMAIL", "expects_args": {"to": "alice@example.com"}}
+{"prompt": "List Gmail filters I have set up.", "expects_tool": "GMAIL_LIST_FILTERS", "expects_args": {}}
+{"prompt": "Create a Gmail filter to label messages from boss@x.com as 'Boss'.", "expects_tool": "GMAIL_CREATE_FILTER", "expects_args": {"criteria": {"from": "boss@x.com"}, "action": {"add_label_ids": ["Boss"]}}}
+{"prompt": "Show me my Gmail signature settings.", "expects_tool": "GMAIL_GET_SIGNATURE", "expects_args": {}}
+{"prompt": "Send a Gmail with bcc to legal@x.com.", "expects_tool": "GMAIL_SEND_EMAIL", "expects_args": {"to": "alice@example.com", "bcc": "legal@x.com"}}
+{"prompt": "Find emails replied to in the last week.", "expects_tool": "GMAIL_SEARCH_EMAILS", "expects_args": {"query": "is:replied newer_than:7d"}}
+{"prompt": "Search Gmail for messages from no-reply addresses.", "expects_tool": "GMAIL_SEARCH_EMAILS", "expects_args": {"query": "from:no-reply"}}
+{"prompt": "Get a list of my Gmail messages with subject 'invoice'.", "expects_tool": "GMAIL_SEARCH_EMAILS", "expects_args": {"query": "subject:invoice"}}

@@ -1,11 +1,10 @@
-"""Async bridge to the existing sync cache layer.
+"""Async bridge to the sync cache layer.
 
-Plan-Agent 1 §7: the salvage `aperture/cache/interceptor.py:maybe_execute_with_cache`
-is *already* `async def` and accepts `Callable[[], Awaitable[object]]`, so the
-bridge can be thinner than originally feared. We just import and delegate.
-
-PR 5 may async-rewrite the Redis store under the hood; the bridge's public
-shape stays stable.
+The cache interceptor at ``aperture/cache/interceptor.py:maybe_execute_with_cache``
+is already ``async def`` and accepts ``Callable[[], Awaitable[object]]``, so
+this bridge can be thin: it imports and delegates, plus exposes a module-level
+default store so the proxy lifespan can wire Redis when ``APERTURE_REDIS_URL``
+is set.
 """
 
 from __future__ import annotations
@@ -67,7 +66,7 @@ def unwrap_cached_result(value: Any) -> Any:
 
 
 def policy_summary(tool_slug: str) -> dict[str, Any]:
-    """Helper for the proxy's debug/admin endpoints (Phase 7)."""
+    """Helper for the proxy's debug/admin endpoints."""
     policy = load_cache_policy(tool_slug)
     return {
         "tool_slug": policy.tool_slug,

@@ -42,7 +42,7 @@ async def handle_search_tools(
     upstream_call: Callable[[], Awaitable[Any]],
     fetch_connection_status: Callable[[], Awaitable[Any]] | None = None,
 ) -> Any:
-    """Run the SEARCH_TOOLS pipeline: cache → overlay (PR 4) → tokenize (PR 3).
+    """Run the SEARCH_TOOLS pipeline: cache → overlay → tokenize.
 
     Args:
         arguments: the inbound `tools/call` arguments dict.

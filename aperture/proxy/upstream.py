@@ -1,10 +1,9 @@
 """Async client for Composio's MCP URL.
 
-The proxy forwards every meta-tool request through this client. PR 1 keeps
-the API minimal: `list_tools()` and `call_tool(name, arguments)`. PR 2 adds
-streaming support for tools that emit progressive responses.
+The proxy forwards every meta-tool request through this client. The public
+API is intentionally minimal: ``list_tools()`` and ``call_tool(name, arguments)``.
 
-Auth: `x-api-key` is forwarded per-request from the inbound MCP request's
+Auth: ``x-api-key`` is forwarded per-request from the inbound MCP request's
 HTTP headers. The proxy NEVER persists or logs the API key (handoff
 decision §4).
 """
@@ -26,8 +25,8 @@ class UpstreamClient:
 
     Creates a fresh session per request because Composio's MCP sessions
     are typically tied to short-lived state (auth, connected accounts) and
-    the proxy is stateless w.r.t. credentials. PR 5 considers connection
-    pooling for hosted deployments.
+    the proxy is stateless w.r.t. credentials. Connection pooling for
+    hosted deployments is a future optimization.
     """
 
     def __init__(self, mcp_url: str, timeout_seconds: float = 30.0) -> None:
@@ -122,15 +121,15 @@ class UpstreamClient:
         session_id: str | None = None,
         user_id: str | None = None,
     ) -> mcp_types.CallToolResult:
-        """Forward `tools/call` to Composio. PR 1 returns the result unchanged.
-
-        PR 2 will wrap this with cache lookup; PR 3 with token attribution;
-        PR 4 with schema overlay application.
+        """Forward ``tools/call`` to Composio and return the raw
+        ``CallToolResult``. The cache, attribution, and overlay layers wrap
+        this from above (see ``aperture/proxy/server.py:_call_tool``).
         """
         async with self._session(headers, session_id=session_id, user_id=user_id) as session:
             return await session.call_tool(name, arguments=arguments)
 
     async def aclose(self) -> None:
-        """No persistent resources today; method exists so PR 5's connection
-        pool can plug in without changing the proxy's lifespan code."""
+        """No persistent resources today; method exists so a future
+        connection pool can plug in without changing the proxy's lifespan
+        code."""
         return None

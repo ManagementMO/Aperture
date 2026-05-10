@@ -28,3 +28,23 @@
 {"prompt": "Get the GitHub user 'nikos'.", "expects_tool": "GITHUB_GET_USER", "expects_args": {"username": "nikos"}}
 {"prompt": "List the languages used in composioHQ/composio.", "expects_tool": "GITHUB_LIST_REPOSITORY_LANGUAGES", "expects_args": {"owner": "composioHQ", "repo": "composio"}}
 {"prompt": "Update the title of issue 42 in composioHQ/composio to 'Auth broken on iOS'.", "expects_tool": "GITHUB_UPDATE_ISSUE", "expects_args": {"owner": "composioHQ", "repo": "composio", "issue_number": 42, "title": "Auth broken on iOS"}}
+{"prompt": "Show me the README of composioHQ/composio.", "expects_tool": "GITHUB_GET_REPOSITORY_README", "expects_args": {"owner": "composioHQ", "repo": "composio"}}
+{"prompt": "Get the contents of src/index.ts in openai/openai-node.", "expects_tool": "GITHUB_GET_REPOSITORY_CONTENT", "expects_args": {"owner": "openai", "repo": "openai-node", "path": "src/index.ts"}}
+{"prompt": "List the workflows configured for composioHQ/composio.", "expects_tool": "GITHUB_LIST_WORKFLOWS", "expects_args": {"owner": "composioHQ", "repo": "composio"}}
+{"prompt": "Show recent CI runs for the build.yml workflow in langchain-ai/langchain.", "expects_tool": "GITHUB_LIST_WORKFLOW_RUNS", "expects_args": {"owner": "langchain-ai", "repo": "langchain", "workflow_id": "build.yml"}}
+{"prompt": "Get the labels available on issues in composioHQ/composio.", "expects_tool": "GITHUB_LIST_REPOSITORY_LABELS", "expects_args": {"owner": "composioHQ", "repo": "composio"}}
+{"prompt": "Add the label 'priority:high' to issue 42 in composioHQ/composio.", "expects_tool": "GITHUB_ADD_LABELS_TO_AN_ISSUE", "expects_args": {"owner": "composioHQ", "repo": "composio", "issue_number": 42, "labels": ["priority:high"]}}
+{"prompt": "Remove the 'wontfix' label from issue 88 in composioHQ/composio.", "expects_tool": "GITHUB_REMOVE_LABEL_FROM_ISSUE", "expects_args": {"owner": "composioHQ", "repo": "composio", "issue_number": 88, "name": "wontfix"}}
+{"prompt": "List all milestones in composioHQ/composio.", "expects_tool": "GITHUB_LIST_MILESTONES", "expects_args": {"owner": "composioHQ", "repo": "composio"}}
+{"prompt": "Create a milestone called 'v2.0 release' in composioHQ/composio.", "expects_tool": "GITHUB_CREATE_MILESTONE", "expects_args": {"owner": "composioHQ", "repo": "composio", "title": "v2.0 release"}}
+{"prompt": "Show me the topics/tags on composioHQ/composio.", "expects_tool": "GITHUB_LIST_REPOSITORY_TOPICS", "expects_args": {"owner": "composioHQ", "repo": "composio"}}
+{"prompt": "List all the forks of openai/openai-python.", "expects_tool": "GITHUB_LIST_REPOSITORY_FORKS", "expects_args": {"owner": "openai", "repo": "openai-python"}}
+{"prompt": "Get the people watching composioHQ/composio.", "expects_tool": "GITHUB_LIST_WATCHERS", "expects_args": {"owner": "composioHQ", "repo": "composio"}}
+{"prompt": "Show me who starred langchain-ai/langgraph.", "expects_tool": "GITHUB_LIST_STARGAZERS", "expects_args": {"owner": "langchain-ai", "repo": "langgraph"}}
+{"prompt": "Get the contributors of composioHQ/composio.", "expects_tool": "GITHUB_LIST_REPOSITORY_CONTRIBUTORS", "expects_args": {"owner": "composioHQ", "repo": "composio"}}
+{"prompt": "List my GitHub organizations.", "expects_tool": "GITHUB_LIST_ORGANIZATIONS_FOR_THE_AUTHENTICATED_USER", "expects_args": {}}
+{"prompt": "Show repositories I own.", "expects_tool": "GITHUB_LIST_REPOSITORIES_FOR_THE_AUTHENTICATED_USER", "expects_args": {}}
+{"prompt": "Search GitHub code for 'aperture proxy' across composioHQ.", "expects_tool": "GITHUB_SEARCH_CODE", "expects_args": {"q": "aperture proxy org:composioHQ"}}
+{"prompt": "Find issues mentioning 'token attribution' in composioHQ/composio.", "expects_tool": "GITHUB_SEARCH_ISSUES_AND_PULL_REQUESTS", "expects_args": {"q": "token attribution repo:composioHQ/composio"}}
+{"prompt": "Show me which deploy keys are configured on composioHQ/composio.", "expects_tool": "GITHUB_LIST_REPOSITORY_DEPLOY_KEYS", "expects_args": {"owner": "composioHQ", "repo": "composio"}}
+{"prompt": "Get the latest release for composioHQ/composio.", "expects_tool": "GITHUB_GET_LATEST_RELEASE", "expects_args": {"owner": "composioHQ", "repo": "composio"}}
