@@ -17,7 +17,8 @@ export function ThemeSwitcher() {
   const { pref, setPref } = useTheme();
   return (
     <div
-      className="inline-flex items-center gap-0 h-8 p-0.5 rounded-full bg-foreground/[0.04]"
+      className="inline-flex items-center gap-0 h-8 p-0.5 rounded-full"
+      style={{ backgroundColor: "color-mix(in oklab, var(--foreground) 8%, transparent)" }}
       role="radiogroup"
       aria-label="Theme"
     >

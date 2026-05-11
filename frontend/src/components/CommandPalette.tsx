@@ -91,7 +91,8 @@ export function CommandPalette() {
       <button
         type="button"
         onClick={openPalette}
-        className="hidden md:inline-flex items-center gap-2.5 h-8 pl-2.5 pr-1.5 rounded-full bg-foreground/[0.04] hover:bg-foreground/[0.07] text-[12px] text-muted-foreground hover:text-foreground transition-colors"
+        className="hidden md:inline-flex items-center gap-2.5 h-8 pl-2.5 pr-1.5 rounded-full text-[12px] text-muted-foreground hover:text-foreground transition-colors"
+        style={{ backgroundColor: "color-mix(in oklab, var(--foreground) 8%, transparent)" }}
       >
         <Search className="w-3.5 h-3.5" />
         <span>Search</span>

@@ -4,6 +4,8 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { ArrowUp, Check, ChevronDown, ChevronUp, Sparkles, Terminal as TerminalIcon, X } from "lucide-react";
 import { ComposingSpinner } from "@/components/ComposingSpinner";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { TerminalBlock, type TerminalLine } from "@/components/TerminalBlock";
 import { RunTerminal } from "@/components/RunTerminal";
 import { CompareDialog } from "@/components/CompareDialog";
@@ -182,6 +184,8 @@ export default function Run() {
   const [effortMode, setEffortMode] = useState<EffortMode>("medium");
   const [running, setRunning] = useState(false);
   const [result, setResult] = useState<RunResult | null>(null);
+  const [turns, setTurns] = useState<RunResult[]>([]);
+  const [pendingAsk, setPendingAsk] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
   const [openSteps, setOpenSteps] = useState<Set<number>>(new Set());
   const [liveSteps, setLiveSteps] = useState<Step[]>([]);
@@ -205,8 +209,15 @@ export default function Run() {
   const submit = async (): Promise<void> => {
     const trimmed = ask.trim();
     if (!trimmed || running) return;
+    // Push the previous turn (if any) into the conversation history so the
+    // new run renders BELOW it instead of replacing it.
+    if (result) {
+      setTurns((prev) => [...prev, result]);
+      setResult(null);
+    }
+    setPendingAsk(trimmed);
+    setAsk(""); // clear the input immediately, ChatGPT-style
     setRunning(true);
-    setResult(null);
     setError(null);
     setOpenSteps(new Set());
     setLiveSteps([]);
@@ -285,6 +296,7 @@ export default function Run() {
     } finally {
       void refreshToolCache();
       setRunning(false);
+      setPendingAsk("");
     }
   };
 
@@ -301,13 +313,27 @@ export default function Run() {
     });
   };
 
-  const hasConversation = running || liveSteps.length > 0 || result || error;
+  const hasConversation = running || liveSteps.length > 0 || result || error || turns.length > 0 || pendingAsk;
   const stepsForTerminal = (running ? liveSteps : (result?.steps ?? liveSteps)) as RunTerminalStepData[];
+
+  const clearConversation = (): void => {
+    setAsk("");
+    setPendingAsk("");
+    setResult(null);
+    setTurns([]);
+    setLiveSteps([]);
+    setError(null);
+    setOpenSteps(new Set());
+    setCompareIndex(null);
+  };
 
   // ChatGPT-style pill input: single auto-growing textarea, mode chip on
   // the right, round white send button, no chunky toolbar.
   const InputCard = (
-    <div className="relative rounded-[28px] bg-foreground/[0.04] hover:bg-foreground/[0.05] focus-within:bg-foreground/[0.055] transition-colors px-2 pt-2.5 pb-2">
+    <div
+      className="relative rounded-[28px] transition-colors px-2 pt-2.5 pb-2"
+      style={{ backgroundColor: "color-mix(in oklab, var(--foreground) 9%, transparent)" }}
+    >
       <div className="flex items-end gap-2">
         <textarea
           value={ask}
@@ -349,7 +375,7 @@ export default function Run() {
             disabled={!ask.trim() || running}
             className="inline-flex items-center justify-center h-8 w-8 rounded-full bg-foreground text-background hover:bg-foreground/90 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
           >
-            {running ? <ComposingSpinner size="sm" /> : <ArrowUp className="w-4 h-4" />}
+            {running ? <ComposingSpinner size="sm" label="" /> : <ArrowUp className="w-4 h-4" />}
           </button>
         </div>
       </div>
@@ -416,7 +442,7 @@ export default function Run() {
           <div className="flex flex-col items-stretch justify-center min-h-[calc(100vh-12rem)] pb-8 space-y-5">
             <div className="text-center select-none mb-1">
               <h1 className="text-[30px] font-medium tracking-tight text-foreground/90">
-                Where should we begin?
+                Can we begin soon?
               </h1>
             </div>
 
@@ -430,7 +456,8 @@ export default function Run() {
                   type="button"
                   onClick={() => setAsk(p.ask)}
                   title={p.ask}
-                  className="inline-flex items-center h-9 px-4 rounded-full bg-foreground/[0.04] hover:bg-foreground/[0.07] text-[13px] text-foreground/75 hover:text-foreground transition-colors"
+                  className="inline-flex items-center h-9 px-4 rounded-full text-[13px] text-foreground/85 hover:text-foreground transition-colors"
+                  style={{ backgroundColor: "color-mix(in oklab, var(--foreground) 8%, transparent)" }}
                 >
                   {p.label}
                 </button>
@@ -439,42 +466,75 @@ export default function Run() {
           </div>
         )}
 
-        {/* CONVERSATION — input on top, then user msg, tool calls, answer */}
+        {/* CONVERSATION — input on top, then every prior turn, then current */}
         {hasConversation && (
           <div className="pt-2 space-y-5">
             {InputCard}
 
-            {/* User message bubble */}
-            <div className="flex justify-end pt-2">
-              <div className="max-w-[85%] rounded-2xl rounded-tr-md bg-foreground/[0.06] px-4 py-2.5 text-[14px] leading-relaxed">
-                {result?.ask || ask || (running ? "…" : "")}
-              </div>
-            </div>
+            {/* Prior conversation turns (read-only history) */}
+            {turns.map((turn, i) => (
+              <ConversationTurn
+                key={i}
+                turn={turn}
+                onCompare={(stepIdx) => {
+                  // Stash the step into liveSteps so CompareDialog can find it
+                  setLiveSteps(turn.steps as Step[]);
+                  setCompareIndex(stepIdx);
+                }}
+                onOpenTerminal={() => setTerminalOpen(true)}
+              />
+            ))}
 
-            {/* Live tool calls inline */}
-            {liveSteps.length > 0 && (
-              <div className="space-y-2">
-                {liveSteps.map((step, i) => (
-                  <ToolCallChip
-                    key={i}
-                    step={step}
-                    onCompare={() => setCompareIndex(i)}
+            {/* In-flight (or just-finished) turn — user bubble + steps + answer */}
+            {(running || result || pendingAsk) && (
+              <>
+                <div className="flex justify-end pt-2">
+                  <div className="max-w-[85%] rounded-2xl rounded-tr-md bg-foreground/[0.06] px-4 py-2.5 text-[14px] leading-relaxed">
+                    {pendingAsk || result?.ask || ""}
+                  </div>
+                </div>
+
+                {liveSteps.length > 0 && (
+                  <div className="space-y-2">
+                    {liveSteps.map((step, i) => (
+                      <ToolCallChip
+                        key={i}
+                        step={step}
+                        onCompare={() => setCompareIndex(i)}
+                      />
+                    ))}
+                  </div>
+                )}
+
+                {running && !result && (
+                  <div className="flex items-center gap-2 text-muted-foreground text-[13px] py-2">
+                    <ComposingSpinner size="sm" label="composing" />
+                  </div>
+                )}
+
+                {!running && result?.answer && (
+                  <ConversationAnswer
+                    result={result}
+                    onOpenTerminal={() => setTerminalOpen(true)}
                   />
-                ))}
-              </div>
-            )}
+                )}
 
-            {/* Composing spinner while running */}
-            {running && !result && (
-              <div className="flex items-center gap-2.5 text-muted-foreground text-[13px] py-2">
-                <ComposingSpinner size="sm" />
-                <span>Composing…</span>
-              </div>
-            )}
-
-            {/* Final answer + metric strip */}
-            {!running && result?.answer && (
-              <ConversationAnswer result={result} onOpenTerminal={() => setTerminalOpen(true)} />
+                {!running && result && result.steps.length > 0 && (
+                  <details className="group">
+                    <summary className="flex items-center gap-2 text-[12px] text-muted-foreground/70 hover:text-foreground cursor-pointer select-none py-1">
+                      <ChevronDown className="w-3.5 h-3.5 group-open:rotate-180 transition-transform" />
+                      <span>Per-tool breakdown ({result.steps.length})</span>
+                    </summary>
+                    <div className="mt-3">
+                      <ResultPanel
+                        result={result}
+                        openSteps={openSteps}
+                        toggleStep={toggleStep}
+                      />
+                    </div>
+                  </details>
+                )}
+              </>
             )}
 
             {/* Error state */}
@@ -485,21 +545,20 @@ export default function Run() {
               </div>
             )}
 
-            {/* Per-tool full breakdown — collapsed by default */}
-            {!running && result && result.steps.length > 0 && (
-              <details className="group">
-                <summary className="flex items-center gap-2 text-[12px] text-muted-foreground/70 hover:text-foreground cursor-pointer select-none py-1">
-                  <ChevronDown className="w-3.5 h-3.5 group-open:rotate-180 transition-transform" />
-                  <span>Per-tool breakdown ({result.steps.length})</span>
-                </summary>
-                <div className="mt-3">
-                  <ResultPanel
-                    result={result}
-                    openSteps={openSteps}
-                    toggleStep={toggleStep}
-                  />
-                </div>
-              </details>
+            {/* Clear / new chat — bottom of the conversation, soft pill */}
+            {!running && (
+              <div className="flex justify-center pt-6 pb-4">
+                <button
+                  type="button"
+                  onClick={clearConversation}
+                  className="inline-flex items-center gap-1.5 h-8 px-3.5 rounded-full text-[12px] text-muted-foreground hover:text-foreground transition-colors"
+                  style={{ backgroundColor: "color-mix(in oklab, var(--foreground) 6%, transparent)" }}
+                  title="Clear and start fresh"
+                >
+                  <X className="w-3 h-3" />
+                  Clear chat
+                </button>
+              </div>
             )}
           </div>
         )}
@@ -552,6 +611,42 @@ function ToolCallChip({
   );
 }
 
+/** A frozen prior turn — user bubble + tool chips + final answer.
+ *  Kept simple (no expand/breakdown) so older turns stay visually quiet. */
+function ConversationTurn({
+  turn,
+  onCompare,
+  onOpenTerminal,
+}: {
+  turn: RunResult;
+  onCompare: (stepIdx: number) => void;
+  onOpenTerminal: () => void;
+}) {
+  return (
+    <div className="space-y-3 pt-2 border-t border-border/30">
+      <div className="flex justify-end pt-3">
+        <div className="max-w-[85%] rounded-2xl rounded-tr-md bg-foreground/[0.06] px-4 py-2.5 text-[14px] leading-relaxed">
+          {turn.ask}
+        </div>
+      </div>
+      {turn.steps.length > 0 && (
+        <div className="space-y-2">
+          {turn.steps.map((step, i) => (
+            <ToolCallChip
+              key={i}
+              step={step}
+              onCompare={() => onCompare(i)}
+            />
+          ))}
+        </div>
+      )}
+      {turn.answer && (
+        <ConversationAnswer result={turn} onOpenTerminal={onOpenTerminal} />
+      )}
+    </div>
+  );
+}
+
 function ConversationAnswer({
   result,
   onOpenTerminal,
@@ -562,8 +657,46 @@ function ConversationAnswer({
   const s = result.summary;
   return (
     <div className="space-y-3">
-      <div className="text-[14.5px] leading-[1.65] whitespace-pre-wrap">
-        {result.answer}
+      <div className="quava-md text-[14.5px] leading-[1.7]">
+        <ReactMarkdown
+          remarkPlugins={[remarkGfm]}
+          components={{
+            h1: ({ children }) => <h1 className="text-[20px] font-semibold tracking-tight mt-3 mb-2">{children}</h1>,
+            h2: ({ children }) => <h2 className="text-[17px] font-semibold tracking-tight mt-3 mb-1.5">{children}</h2>,
+            h3: ({ children }) => <h3 className="text-[15px] font-semibold tracking-tight mt-3 mb-1">{children}</h3>,
+            h4: ({ children }) => <h4 className="text-[14px] font-medium mt-2 mb-1">{children}</h4>,
+            p:  ({ children }) => <p className="my-2">{children}</p>,
+            ul: ({ children }) => <ul className="my-2 ml-5 list-disc space-y-0.5">{children}</ul>,
+            ol: ({ children }) => <ol className="my-2 ml-5 list-decimal space-y-0.5">{children}</ol>,
+            li: ({ children }) => <li className="leading-[1.6]">{children}</li>,
+            strong: ({ children }) => <strong className="font-semibold text-foreground">{children}</strong>,
+            em: ({ children }) => <em className="italic">{children}</em>,
+            code: ({ children, className }) => {
+              const isBlock = (className || "").includes("language-");
+              return isBlock ? (
+                <code className="block my-2 px-3 py-2 rounded-md text-[12.5px] font-mono overflow-x-auto"
+                      style={{ backgroundColor: "color-mix(in oklab, var(--foreground) 7%, transparent)" }}>
+                  {children}
+                </code>
+              ) : (
+                <code className="px-1.5 py-0.5 rounded text-[12.5px] font-mono"
+                      style={{ backgroundColor: "color-mix(in oklab, var(--foreground) 8%, transparent)" }}>
+                  {children}
+                </code>
+              );
+            },
+            pre: ({ children }) => <pre className="my-2 p-3 rounded-lg overflow-x-auto"
+                                         style={{ backgroundColor: "color-mix(in oklab, var(--foreground) 6%, transparent)" }}>{children}</pre>,
+            blockquote: ({ children }) => <blockquote className="my-2 pl-3 border-l-2 border-foreground/20 text-foreground/80">{children}</blockquote>,
+            a: ({ children, href }) => <a href={href} target="_blank" rel="noreferrer" className="underline underline-offset-2 hover:text-accent" style={{ color: "var(--quava-accent)" }}>{children}</a>,
+            hr: () => <hr className="my-3 border-foreground/10" />,
+            table: ({ children }) => <div className="my-3 overflow-x-auto"><table className="w-full text-[12.5px] border-collapse">{children}</table></div>,
+            th: ({ children }) => <th className="text-left font-medium px-2 py-1.5 border-b border-foreground/15">{children}</th>,
+            td: ({ children }) => <td className="px-2 py-1.5 border-b border-foreground/8">{children}</td>,
+          }}
+        >
+          {result.answer}
+        </ReactMarkdown>
       </div>
       <div className="flex items-center gap-3 text-[11px] text-muted-foreground/70 pt-1 border-t border-border/30">
         <span className="num">{s.tool_calls} {s.tool_calls === 1 ? "tool" : "tools"}</span>
@@ -635,7 +768,7 @@ function ModePill({
             aria-hidden
           />
           <div
-            className="absolute bottom-full mb-2 right-0 z-50 w-[220px] rounded-xl shadow-2xl overflow-hidden py-1.5 border border-border/70"
+            className="absolute top-full mt-2 right-0 z-50 w-[220px] rounded-xl shadow-2xl overflow-hidden py-1.5 border border-border/70"
             style={{ backgroundColor: "var(--quava-surface-container-high, #161616)" }}
           >
             <p className="px-3 pt-1 pb-1.5 text-[10.5px] uppercase tracking-wider text-muted-foreground/70">

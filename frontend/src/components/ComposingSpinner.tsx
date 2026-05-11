@@ -31,9 +31,11 @@ export function ComposingSpinner({
       >
         ✽
       </span>
-      <span className={`font-mono lowercase tracking-tight ${sizing.label}`}>
-        {label}…
-      </span>
+      {label && (
+        <span className={`font-mono lowercase tracking-tight ${sizing.label}`}>
+          {label}…
+        </span>
+      )}
     </span>
   );
 }

@@ -54,6 +54,7 @@ _DEFAULT_TOOLKITS = (
     "supabase",
     "linkedin",
     "reddit",
+    "youtube",
     "composio_search",   # Composio's web-search bundle (no auth)
     "codeinterpreter",   # Python sandbox (no auth)
     "hackernews",        # HN aggregator (no auth)
@@ -160,10 +161,14 @@ _CURATED_TOOL_SLUGS: dict[str, list[str]] = {
         "SUPABASE_LIST_FUNCTIONS",
     ],
     "youtube": [
-        # YouTube is connected on this account. Read-only browse only.
-        "YOUTUBE_SEARCH",
-        "YOUTUBE_VIDEO_DETAILS",
-        "YOUTUBE_LIST_USER_PLAYLISTS",
+        # Real YouTube tool slugs (verified against Composio's catalog).
+        # Discovery: handle (@PewDiePie) → channel id → list videos.
+        "YOUTUBE_GET_CHANNEL_ID_BY_HANDLE",
+        "YOUTUBE_LIST_CHANNEL_VIDEOS",
+        "YOUTUBE_GET_CHANNEL_STATISTICS",
+        "YOUTUBE_GET_CHANNEL_ACTIVITIES",
+        "YOUTUBE_GET_VIDEO_DETAILS_BATCH",
+        "YOUTUBE_LIST_COMMENT_THREADS2",
     ],
     "composio_search": [
         # General-purpose web search. The agent picks one of these when
@@ -610,61 +615,145 @@ def _normalize_toolkit_slug(slug: str) -> str:
     return aliases.get(normalized, normalized)
 
 
-def _toolkits_for_ask(ask: str, connected_toolkits: list[str]) -> list[str]:
-    """Constrain obvious single-domain asks before the model chooses tools."""
-    lowered = f" {(ask or '').lower()} "
-    requested: list[str] = []
-    signals: tuple[tuple[str, tuple[str, ...]], ...] = (
-        ("gmail", ("gmail", "email", "emails", "mail", "inbox", "thread", "threads")),
-        ("slack", ("slack", "channel", "channels", "dm ", "dms", "message", "messages")),
-        (
-            "github",
-            (
-                "github", "repo", "repos", "repository", "repositories", "commit",
-                "pr ", "pull request", "issue",
-            ),
-        ),
-        ("googlesheets", ("google sheet", "googlesheet", "spreadsheet", "sheet ", "sheets")),
-        ("notion", ("notion", "page", "pages", "database", "workspace doc", "docs")),
-        ("linear", ("linear", "ticket", "tickets", "linear issue")),
-        ("supabase", ("supabase", "sql", "database", "table", "rows")),
-    )
-    for toolkit, terms in signals:
-        if toolkit in connected_toolkits and any(term in lowered for term in terms):
-            requested.append(toolkit)
+# Per-toolkit keyword signals. Each entry: (toolkit_slug, (terms...)).
+# Order matters — first match wins on overlap (e.g. "youtube" beats "video").
+_TOOLKIT_SIGNALS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("youtube",        ("youtube", "yt ", "channel video", "video by", "video from", "pewdiepie", "mr beast", "mrbeast")),
+    ("gmail",          ("gmail", "email", "emails", "mail", "inbox", "thread", "threads")),
+    ("slack",          ("slack", "channel", "channels", "dm ", "dms")),
+    ("github",         ("github", "repo", "repos", "repository", "repositories", "commit",
+                        "pr ", "pull request", "issue")),
+    ("googlesheets",   ("google sheet", "googlesheet", "spreadsheet", "sheet ", "sheets")),
+    ("googlecalendar", ("calendar", "schedule", "meeting", "appointment", "free slot", "availability")),
+    ("googledrive",    ("drive", "my doc", "my pdf", "shared with me", "folder")),
+    ("notion",         ("notion", "page", "pages", "wiki", "workspace doc")),
+    ("linear",         ("linear", "ticket", "tickets")),
+    ("supabase",       ("supabase", "sql", "database", "table", "rows", "customers")),
+    ("linkedin",       ("linkedin")),
+    ("reddit",         ("reddit", "subreddit", "r/")),
+    ("hackernews",     ("hacker news", "hackernews", "hn ")),
+    ("weathermap",     ("weather", "temperature", "forecast", "raining", "humidity")),
+    ("composio_search", (
+        # Open-world / current events / live data — falls through to web search.
+        "stock", "stocks", "price", "ticker", "nasdaq", "crypto", "bitcoin",
+        "news", "current", "latest", "trending", "today",
+        "richest", "top 10", "top ten",
+        "who is", "what is",
+        "flight", "flights", "hotel", "hotels", "restaurant",
+        "buy", "shopping",
+    )),
+    ("codeinterpreter", (
+        "compute", "calculate", "fibonacci", "prime", "factorial",
+        "average of", "median of", "stdev", "variance",
+    )),
+)
 
-    return requested or connected_toolkits
+
+# Fallback toolkits — only used when no specific app matches.
+_FALLBACK_TOOLKITS: frozenset[str] = frozenset({"composio_search", "codeinterpreter"})
+
+
+def _toolkits_for_ask(ask: str, connected_toolkits: list[str]) -> list[str]:
+    """Constrain obvious single-domain asks before the model chooses tools.
+    Specific toolkit matches (youtube, gmail, supabase, …) win over fallback
+    matches (composio_search, codeinterpreter) — so a question containing
+    both 'pewdiepie' and 'latest' routes to YouTube, not web search."""
+    lowered = f" {(ask or '').lower()} "
+    specific: list[str] = []
+    fallback: list[str] = []
+    for toolkit, terms in _TOOLKIT_SIGNALS:
+        if toolkit in connected_toolkits and any(term in lowered for term in terms):
+            (fallback if toolkit in _FALLBACK_TOOLKITS else specific).append(toolkit)
+    if specific:
+        return specific
+    if fallback:
+        return fallback
+    return connected_toolkits
 
 
 def _ask_requires_connected_tool(ask: str) -> bool:
+    """True only when the ask references a CONNECTED user data source AND has
+    a clear retrieval verb. Open-world questions (weather, news, top-N lists)
+    return False because the agent can answer those via the web search bundle
+    without us forcing a tool."""
     lowered = f" {(ask or '').lower()} "
     source_terms = (
         "gmail", "email", "emails", "mail", "inbox",
-        "slack", "channel", "message", "messages",
+        "slack", "channel",
         "github", "repo", "repository", "commit", "pull request", "pr ", "issue",
-        "google sheet", "googlesheet", "spreadsheet", "sheet ", "sheets", "rows",
-        "notion", "page", "pages", "database",
-        "linear", "ticket", "supabase", "sql", "table",
+        "google sheet", "googlesheet", "spreadsheet", "sheet ", "sheets",
+        "notion", "page", "pages",
+        "linear", "ticket",
+        "supabase", "sql", "table",
+        "calendar", "drive", "my doc", "my pdf",
     )
     action_terms = (
         "read", "pull", "fetch", "get", "list", "show", "summarize", "summary",
-        "search", "find", "scan", "triage", "overview", "last", "first", "recent",
+        "find", "scan", "triage", "overview", "last", "first", "recent",
     )
     return any(term in lowered for term in source_terms) and any(
         term in lowered for term in action_terms
     )
 
 
+# Per-toolkit guidance line. Used by `_tool_prompt_for_ask` to add a SPECIFIC
+# routing hint only when the ask matches that toolkit's signals.
+_TOOLKIT_HINT: dict[str, str] = {
+    "youtube":        "Use the YouTube tools. For 'latest video from <creator>': call YOUTUBE_GET_CHANNEL_ID_BY_HANDLE with the handle (e.g. '@PewDiePie'), then YOUTUBE_LIST_CHANNEL_VIDEOS with that channel ID, max_results=1, sorted newest first. Don't fall back to web search.",
+    "gmail":          "Use the Gmail tools (FETCH/SEARCH/LIST_THREADS) — do NOT answer from assumptions.",
+    "slack":          "Use the Slack tools (FETCH_CONVERSATION_HISTORY etc.) — do NOT answer from assumptions.",
+    "github":         "Use the GitHub tools — do NOT answer from assumptions.",
+    "googlesheets":   "Use the Google Sheets tools (SEARCH_SPREADSHEETS, then BATCH_GET) — do NOT answer from assumptions.",
+    "googlecalendar": "Use Google Calendar — start with GET_CURRENT_DATE_TIME, then EVENTS_LIST_ALL_CALENDARS or FIND_FREE_SLOTS.",
+    "googledrive":    "Use Google Drive — FIND_FILE first, then DOWNLOAD_FILE for content.",
+    "notion":         "Use the Notion tools — do NOT answer from assumptions.",
+    "linear":         "Use the Linear tools — do NOT answer from assumptions.",
+    "supabase":       "Use SUPABASE_BETA_RUN_SQL_QUERY — discover the project + table first if you don't know them.",
+    "linkedin":       "Use the LinkedIn tools — GET_MY_INFO / GET_PERSON / GET_COMPANY_INFO.",
+    "reddit":         "Use the Reddit tools — SEARCH_ACROSS_SUBREDDITS or GET_R_TOP for a specific subreddit.",
+    "hackernews":     "Use Hacker News tools — GET_TOP_STORIES then GET_ITEM_WITH_ID for individual posts.",
+    "weathermap":     "Use the WeatherMap tools — GEOCODE_LOCATION then WEATHER.",
+    "composio_search": (
+        "This is an open-world question — answer it with COMPOSIO_SEARCH_TAVILY "
+        "(general), COMPOSIO_SEARCH_NEWS (current events), COMPOSIO_SEARCH_FINANCE "
+        "(stocks/markets), COMPOSIO_SEARCH_GOOGLE_MAPS (places), or "
+        "COMPOSIO_SEARCH_FETCH_URL_CONTENT (page text). Do NOT route to the user's "
+        "private data tools."
+    ),
+    "codeinterpreter": (
+        "Use the Python sandbox: CODEINTERPRETER_CREATE_SANDBOX then "
+        "CODEINTERPRETER_EXECUTE_CODE."
+    ),
+}
+
+
 def _tool_prompt_for_ask(ask: str, toolkits: list[str]) -> str:
-    if "googlesheets" in toolkits:
+    """Return a routing hint for the agent based on which toolkit(s) the ask
+    actually matches — never blindly bias toward one default."""
+    matched = _toolkits_for_ask(ask, toolkits)
+    # If the ask matched specific toolkit(s), nudge toward them.
+    if matched and matched != toolkits:
+        if len(matched) == 1 and matched[0] in _TOOLKIT_HINT:
+            return _TOOLKIT_HINT[matched[0]]
+        # Multiple matched — list them, let the agent pick.
         return (
-            "You must use the Google Sheets tools for this request. Do not answer "
-            "from general knowledge or assumptions. If the sheet/range is ambiguous, "
-            "use the available Google Sheets discovery/read tools first, then answer "
-            "from the tool result."
+            "This ask looks like it needs: "
+            + ", ".join(matched)
+            + ". Pick the most appropriate toolkit and use its tools — "
+            "do not answer from assumptions."
+        )
+    # No specific match — open-ended. If web search is available, prefer it
+    # for world questions; otherwise let the agent pick freely.
+    if "composio_search" in toolkits:
+        return (
+            "If this is a question about the world (current events, prices, "
+            "people, places, top-N lists, definitions), use COMPOSIO_SEARCH_TAVILY "
+            "or another COMPOSIO_SEARCH_* tool. If it's about the user's own "
+            "data, use the matching connected tool. Either way — do NOT answer "
+            "from assumptions."
         )
     return (
-        "You must use the connected tool that matches the user's data source before "
+        "Use the connected tool that matches the user's data source before "
         "answering. Do not answer from general knowledge or assumptions."
     )
 
