@@ -15,16 +15,30 @@ export function Reports() {
   const [groupBy, setGroupBy] = useState("meta_tool_slug");
   const [rows, setRows] = useState<UsageBucket[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    setLoading(true);
-    setError(null);
+    let cancelled = false;
+
     api
       .inputTokensContributed({ group_by: groupBy, page_size: 50 })
-      .then((res) => setRows(res.data))
-      .catch((err) => setError(String(err)))
-      .finally(() => setLoading(false));
+      .then((res) => {
+        if (cancelled) return;
+        setRows(res.data);
+        setError(null);
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        setError(String(err));
+      })
+      .finally(() => {
+        if (cancelled) return;
+        setLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, [groupBy]);
 
   return (
@@ -39,7 +53,11 @@ export function Reports() {
         <label style={{ fontSize: 13, color: "var(--muted)" }}>group by</label>
         <select
           value={groupBy}
-          onChange={(e) => setGroupBy(e.target.value)}
+          onChange={(e) => {
+            setGroupBy(e.target.value);
+            setLoading(true);
+            setError(null);
+          }}
           style={{
             background: "var(--panel)",
             border: "1px solid var(--border)",

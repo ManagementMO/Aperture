@@ -55,10 +55,10 @@ between the inbound and outbound halves of the round-trip.
 
 | Branch | Status | Notes |
 |---|---|---|
-| `v1-fixes` | **active** | implementation fixes plus docs polish; use `git log --oneline` for the current head |
+| `main` | **active** | current implementation; mirrors `v1-fixes` at the reviewed head |
+| `v1-fixes` | reviewed | implementation fixes plus docs polish; kept as the repair branch |
 | `v1-realignment` | parent | base for `v1-fixes`; do not merge `v1-fixes` here without review |
 | `demo` | parallel | the salvaged demo; never share files with v1 work |
-| `main` | upstream | merge target if/when ready |
 
 The implementation-fix sequence on `v1-fixes`:
 
@@ -106,11 +106,22 @@ Endpoints:
 ```bash
 APERTURE_COMPOSIO_MCP_URL_TEMPLATE="https://backend.composio.dev/tool_router/{session_id}/mcp" \
 APERTURE_SQLITE_EVENT_LOG=./events.db \
-APERTURE_REDIS_URL=redis://localhost:6379  \  # optional; falls back to in-memory
 python -m aperture.proxy
 ```
 
-Point your LLM client's MCP URL at `http://127.0.0.1:8001/mcp`.
+Add `APERTURE_REDIS_URL=redis://localhost:6379` only when Redis is running;
+otherwise the proxy uses an in-memory cache.
+
+When the upstream template contains `{session_id}`, point your LLM client's
+MCP URL at:
+
+```text
+http://127.0.0.1:8001/mcp/?session_id=<composio_tool_router_session>&user_id=<user>
+```
+
+`session_id` is the id segment from Composio's Tool Router MCP URL. If
+`APERTURE_COMPOSIO_MCP_URL_TEMPLATE` is a literal upstream URL with no
+placeholders, the query parameter is optional.
 
 ### 3. Dashboard (port 5180)
 
@@ -157,6 +168,7 @@ Three pages, all reading real data:
 uv run pytest                          # full pytest suite
 uv run ruff check aperture/ tests/ scripts/    # 0 findings
 uv run python scripts/secret_scan.py $(git ls-files)   # 0 findings
+cd aperture-v1-dashboard && npm run lint && npm run build
 ```
 
 CI runs no live LLM and no live Composio. Live integration tests are

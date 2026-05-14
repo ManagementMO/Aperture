@@ -50,7 +50,8 @@ markers = [
 package = true
 
 [tool.setuptools.packages.find]
-include = ["aperture*"]
+include = ["aperture", "aperture.*"]
+exclude = ["aperture-v1-dashboard*", "tests*"]
 
 [tool.setuptools.package-data]
 aperture = ["**/*.yaml", "**/*.json", "**/*.jsonl"]
