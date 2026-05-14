@@ -7,7 +7,7 @@ session meta-tool surface, and ships three compounding optimizations:
 1. **Safe execution cache** (Component A) — deny-by-default per-tool YAML
    policy, exact-match keys with policy-version coupling (`aperture:v1:p1:`),
    partial-batch caching for `MULTI_EXECUTE_TOOL`, public/account/user/project/session
-   scope isolation. **1768 tools classified** from live Composio across 15
+   scope isolation. **1,700+ tools classified** from live Composio across 15
    toolkits.
 2. **Token attribution observability** (Component B) — every meta-tool
    response tokenized in the proxy's hot path (background, never blocks
@@ -22,7 +22,7 @@ session meta-tool surface, and ships three compounding optimizations:
    when Anthropic credits permit a real judge run.
 
 Aperture does **not** replace Composio sessions, Tool Router, auth,
-workbench, usage metering, logs, or SDK modifiers. It adds the missing
+workbench, usage metering, logs, or SDK modifiers. It adds a focused
 token-economics layer around that traffic: per-meta-tool token attribution,
 safe read caching, partial-batch cache hits, and a quality-graded schema
 overlay.

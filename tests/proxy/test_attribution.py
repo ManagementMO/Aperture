@@ -66,6 +66,20 @@ def test_meta_tool_response_event_payload_kind_for_search_tools():
     assert event.payload_kind == "schema"
 
 
+@pytest.mark.parametrize(
+    "meta",
+    [
+        "COMPOSIO_MANAGE_CONNECTIONS",
+        "COMPOSIO_WAIT_FOR_CONNECTIONS",
+        "COMPOSIO_REMOTE_WORKBENCH",
+        "COMPOSIO_REMOTE_BASH_TOOL",
+    ],
+)
+def test_meta_tool_response_event_payload_kind_for_non_schema_meta_tools(meta):
+    event = build_meta_tool_response_event(context=_ctx(meta=meta), raw_count=_count())
+    assert event.payload_kind == "execution_result"
+
+
 def test_meta_tool_response_event_carries_session_turn():
     event = build_meta_tool_response_event(
         context=_ctx(), raw_count=_count(), session_turn=7

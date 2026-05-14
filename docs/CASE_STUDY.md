@@ -38,7 +38,7 @@ The project has three components:
 - **A — Cache.** Per-tool YAML policy with deny-by-default semantics, a
   policy-version-coupled cache key (`aperture:v1:p1:scope:scope_id:tool:hash`),
   partial-batch caching for `MULTI_EXECUTE_TOOL`, and scope isolation
-  across public/account/user/project/session boundaries. 1,768 tools
+  across public/account/user/project/session boundaries. 1,700+ tools
   classified across 15 toolkits.
 - **B — Token attribution.** Every meta-tool response tokenized in the
   proxy's hot path (background, never blocks the response), events flow
@@ -406,7 +406,7 @@ Every place I removed one of these felt like turning the lights on.
 
 **Read-only ranker filter as architectural insurance.** A late-stage fix.
 The optimizer ranks candidate fields by `tokens × frequency`. Without
-filtering, the live run on Composio's 1,768-tool registry spent budget
+filtering, the live run on Composio's 1,700+ tool registry spent budget
 on `GITHUB_ADD_*`/`GITHUB_OR_UPDATE_*` slugs that the safety filter would
 later reject. By filtering at rank time to `operation_type == "read"`,
 the live judge only ever sees candidates that *could* land in the
@@ -689,7 +689,7 @@ looks good from code that holds up under load.
 | Ruff findings | 0 | 0 |
 | Rewriter compression on top-15 fixtures | 0% | **26.4%** (locked in by `test_rewriter_achieves_at_least_20pct_reduction_on_top_15`) |
 | Prompt fixtures per toolkit | 30 | 50–60 (260 total) |
-| `policy.yaml` tools classified | 9 | **1,768** across 15 toolkits |
+| `policy.yaml` tools classified | 9 | **1,700+** across 15 toolkits |
 | Anthropic calls validated live | 0 verified-real | **654** (132 + 522) |
 | Independent reviewer sign-offs | 1 | 4 (3 subagents + 1 Codex audit) |
 | Overlay safety layers | 1 (writer only) | 4 (writer, loader, rewriter, judge guard) |
@@ -703,7 +703,8 @@ looks good from code that holds up under load.
 I scoped this carefully and I don't pretend otherwise.
 
 **The code is well-engineered.** Separated concerns. Type-checked.
-Defensively guarded. Adversarially reviewed. 235 passing tests, 0 ruff findings.
+Defensively guarded. Adversarially reviewed. The full test suite and ruff
+checks pass.
 Defense-in-depth verified live. Real bugs caught and locked in by
 regression tests. The Codex audit + 3 subagent reviews produced concrete
 findings, every one of which got addressed and committed with traceable

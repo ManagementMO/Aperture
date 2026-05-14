@@ -21,6 +21,7 @@ _spec.loader.exec_module(seed)  # type: ignore[union-attr]
         ("OAUTH_REFRESH_TOKEN", "auth", "account"),
         ("COMPOSIO_INITIATE_CONNECTION", "auth", "account"),
         ("COMPOSIO_MANAGE_CONNECTIONS", "auth", "account"),
+        ("COMPOSIO_WAIT_FOR_CONNECTIONS", "auth", "account"),
         # Write — multiple verb patterns
         ("GITHUB_CREATE_ISSUE", "write", "account"),
         ("GMAIL_SEND_EMAIL", "write", "account"),

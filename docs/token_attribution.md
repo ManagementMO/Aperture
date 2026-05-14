@@ -21,9 +21,10 @@ Canonical `event_type` values:
   compact one (`tokens_saved` is the rewrite reduction)
 
 Canonical `payload_kind` values:
-- `schema` — tools/list, GET_TOOL_SCHEMAS, SEARCH_TOOLS portion
-- `execution_result` — MULTI_EXECUTE outputs
-- `plan` — SEARCH_TOOLS execution-plan portion
+- `schema` — GET_TOOL_SCHEMAS and SEARCH_TOOLS schema/search responses
+- `execution_result` — MULTI_EXECUTE outputs plus auth, workbench, bash,
+  and connection-wait meta-tool responses
+- `plan` — reserved for a future split-out of SEARCH_TOOLS execution plans
 - `compressed_result` — post-compression payload
 
 Each event carries `session_id`, `session_turn`, `meta_tool_slug`,

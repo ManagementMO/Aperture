@@ -109,6 +109,7 @@ def test_load_cache_policy_returns_default_for_unknown_slug():
         ("GMAIL_SEARCH_EMAILS", "read", "account", True),
         ("GMAIL_SEND_EMAIL", "write", "account", False),
         ("COMPOSIO_MANAGE_CONNECTIONS", "auth", "account", False),
+        ("COMPOSIO_WAIT_FOR_CONNECTIONS", "auth", "account", False),
         ("OAUTH_REFRESH_TOKEN", "auth", "account", False),
     ],
 )

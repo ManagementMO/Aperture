@@ -16,7 +16,7 @@ The classifier is rule-based:
       *_ASSIGN_*, *_INVITE_*, *_PUBLISH_*, *_POST_*, *_PUT_*, *_PATCH_*
         → category WRITE, cacheable=False
     - Slug substring matches *OAUTH*, *_REFRESH_*, *_TOKEN_*, MANAGE_CONNECTIONS,
-      INITIATE_CONNECTION
+      INITIATE_CONNECTION, WAIT_FOR_CONNECTION
         → category AUTH, cacheable=False
     - Slug starts GMAIL_, SLACK_, LINEAR_, NOTION_ + read verb (GET/LIST/SEARCH/FETCH)
         → category PRIVATE, account scope, TTL 5 min
@@ -54,7 +54,7 @@ _WRITE_PATTERNS = (
 
 _AUTH_SUBSTRINGS = (
     "OAUTH", "_REFRESH_", "_TOKEN_", "MANAGE_CONNECTIONS",
-    "INITIATE_CONNECTION", "_AUTHORIZE", "_DISCONNECT",
+    "INITIATE_CONNECTION", "WAIT_FOR_CONNECTION", "_AUTHORIZE", "_DISCONNECT",
 )
 
 _PRIVATE_TOOLKITS = ("GMAIL_", "SLACK_", "LINEAR_", "NOTION_")

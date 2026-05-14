@@ -20,6 +20,20 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+_SCHEMA_META_TOOLS = frozenset({
+    "COMPOSIO_SEARCH_TOOLS",
+    "COMPOSIO_GET_TOOL_SCHEMAS",
+})
+
+
+def _meta_tool_payload_kind(meta_tool_slug: str | None) -> str:
+    """Classify what kind of payload the LLM received from a meta-tool call."""
+
+    if meta_tool_slug in _SCHEMA_META_TOOLS:
+        return "schema"
+    return "execution_result"
+
+
 def build_meta_tool_response_event(
     *,
     context: ExecutionContext,
@@ -50,9 +64,7 @@ def build_meta_tool_response_event(
         toolkit_slug=context.toolkit_slug,
         tool_slug=context.tool_slug,
         meta_tool_slug=context.meta_tool_slug,
-        payload_kind="execution_result"
-        if context.meta_tool_slug == "COMPOSIO_MULTI_EXECUTE_TOOL"
-        else "schema",
+        payload_kind=_meta_tool_payload_kind(context.meta_tool_slug),
         model=context.model,
         tokenizer=final_count.tokenizer,
         tokenizer_is_approximate=(

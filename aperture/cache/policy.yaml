@@ -1099,6 +1099,13 @@ tools:
     ttl_seconds: null
     matching: none
     reason: auth_operation
+  COMPOSIO_WAIT_FOR_CONNECTIONS:
+    cacheable: false
+    operation_type: auth
+    privacy_scope: account
+    ttl_seconds: null
+    matching: none
+    reason: auth_operation
   COMPOSIO_MULTI_EXECUTE_TOOL:
     cacheable: false
     operation_type: unknown
