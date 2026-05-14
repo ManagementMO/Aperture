@@ -52,10 +52,6 @@ The proxy's `SchemaOverlay` loader applies the same read-only filter at
 startup, so even a hand-edited or stale overlay can't apply rewrites to
 mutating tools.
 
-The proxy SchemaOverlay loader (`aperture/proxy/overlay.py`) applies the
-same `read`-only filter at startup. So even if a hand-edit puts a write
-tool in `_overlay.json`, the proxy refuses to substitute it.
-
 ## Pipeline
 
 ```
@@ -186,13 +182,16 @@ not in the overlay pass through unchanged.
 ## Running
 
 ```bash
-# Generate a structural-only report from fixtures. Fast and free, but yields
-# no overlay entries because write_overlay's safety filters require LLM-judged
-# cases (MIN_OVERLAY_VALIDATION_CASES=25) AND operation_type=read.
+# Generate a preview-grade structural-only overlay from fixtures. Fast and
+# free; output is stamped with quality_level="structural_only" and a warning.
 uv run python -c "
 from pathlib import Path
 from aperture.schema_optimizer.reports import optimize_schemas, write_overlay
-write_overlay(Path('aperture/schema_optimizer/_overlay.json'), optimize_schemas())
+write_overlay(
+    Path('aperture/schema_optimizer/_overlay.json'),
+    optimize_schemas(),
+    quality_level='structural_only',
+)
 "
 
 # Generate a live LLM-judged overlay (paid). The Haiku judge runs every prompt
@@ -213,7 +212,11 @@ results = optimize_schemas_with_llm_judge(
     spot_check_fraction=0.10,
 )
 print('budget:', tracker.summary())
-write_overlay(Path('aperture/schema_optimizer/_overlay.json'), results)
+write_overlay(
+    Path('aperture/schema_optimizer/_overlay.json'),
+    results,
+    quality_level='llm_judged',
+)
 "
 ```
 
@@ -228,14 +231,14 @@ a real overlay. Internally:
 4. Record the judge's `cases_run` in the result so `write_overlay` can
    gate on `>= MIN_OVERLAY_VALIDATION_CASES` and `operation_type == "read"`.
 
-`optimize_schemas()` (structural-only) is preserved as a free dry-run
-diagnostic and exists to populate the `reports/schema_optimization_baseline.md`
-report — it is **not** the path that writes a shippable overlay.
+`optimize_schemas()` (structural-only) is preserved as a free diagnostic
+and preview overlay path. It is not production-grade behavioral validation;
+ship a customer-facing overlay from `optimize_schemas_with_llm_judge()`.
 
 ## Verifying
 
 ```bash
-uv run pytest tests/schema_optimizer/   # 36 tests
+uv run pytest tests/schema_optimizer/
 ```
 
 Tests cover: structural validation, rewrite-rule output, candidate ranking,

@@ -1,8 +1,8 @@
 # Aperture v1 Architecture
 
-This is the system overview for the v1 realignment. The branch `v1-realignment`
-is the home for everything in this document; the `demo` branch is parallel
-and untouched.
+This is the system overview for the v1 fixes branch. `v1-fixes` is the
+home for the production-facing MCP proxy work; the `demo` branch is
+parallel and untouched.
 
 ## High-level data flow
 
@@ -35,6 +35,12 @@ LLM client (Claude Desktop, custom agent, OpenAI Agents SDK, ...)
     ▼
 Composio Tool Router  →  external APIs (GitHub, Gmail, ...)
 ```
+
+The stable Composio Tool Router session surface exposes six meta tools.
+If a newer or Connect-only meta tool such as
+`COMPOSIO_WAIT_FOR_CONNECTIONS` arrives, Aperture forwards it and still
+tokenizes the response; cache and overlay optimizations only apply to the
+explicitly safe tools.
 
 ## Where each component lives
 
@@ -79,14 +85,19 @@ Via env vars (read by `aperture.config.ApertureConfig` and `aperture.proxy.confi
 | `COMPOSIO_API_KEY` | — | live Composio paths (live_check, schema fetcher) |
 | `COMPOSIO_USER_ID` | `default` | live Composio session creation and proxy context fallback |
 | `COMPOSIO_CONNECTED_ACCOUNT_ID` | — | proxy/cache context fallback for account-scoped calls |
+| `COMPOSIO_PROJECT_ID` | — | attribution event project field |
 | `ANTHROPIC_API_KEY` | — | LLM judge live mode + Anthropic tokenizer |
 | `APERTURE_USE_ANTHROPIC_TOKENIZER` | `false` | enables real Claude tokenizer (privacy) |
+| `APERTURE_MODE` | `balanced` | legacy Path-2 runner mode |
+| `APERTURE_RAW_STORE_PATH` | `.aperture/raw_store` | legacy raw payload store path |
+| `APERTURE_ENABLE_LIVE_TESTS` | `false` | opt-in gate for live Composio tests |
 | `APERTURE_PROXY_HOST` | `127.0.0.1` | proxy bind |
 | `APERTURE_PROXY_PORT` | `8001` | proxy bind |
 | `APERTURE_COMPOSIO_MCP_URL_TEMPLATE` | `https://backend.composio.dev/tool_router/{session_id}/mcp` | upstream URL template |
 | `APERTURE_PROXY_LOG_LEVEL` | `INFO` | proxy log verbosity |
 | `APERTURE_PROXY_PARTIAL_BATCH` | `true` | MULTI_EXECUTE partial-batch cache |
 | `APERTURE_PROXY_UPSTREAM_TIMEOUT` | `30.0` | seconds |
+| `APERTURE_PROXY_FALLBACK_TOKENIZER` | `auto` | proxy tokenizer fallback mode |
 | `APERTURE_REDIS_URL` | — | Redis backing for the cache |
 | `APERTURE_SQLITE_EVENT_LOG` | — | SQLite event log path |
 | `APERTURE_EVENT_SINK_PATH` | `reports/events.jsonl` | JSONL event sink path |
@@ -114,7 +125,7 @@ api/                      legacy demo API (owned by demo branch)
 dashboard/                legacy Streamlit (owned by demo branch)
 frontend/                 legacy 14-page React (owned by demo branch)
 scripts/                  benchmark + seed_cache_policy CLIs
-tests/                    pytest suite (197+ tests)
+tests/                    pytest suite
 docs/                     this directory
 reports/                  generated artifacts (gitignored: events.jsonl)
 ```

@@ -1,8 +1,8 @@
-"""Composio's six meta tools — the surface this proxy intercepts.
+"""Composio meta tools — the surface this proxy understands.
 
-v1 §3 names these as the entry points for every Composio tool-router session.
-The proxy's router pattern-matches inbound `tools/call` requests against
-these slugs and dispatches to handlers in `aperture/proxy/intercept/`.
+The stable Tool Router session surface exposes six meta tools. Composio
+Connect also documents `COMPOSIO_WAIT_FOR_CONNECTIONS`; Aperture treats it
+as a known meta tool and forwards/tokenizes it without cache or overlay.
 """
 
 from __future__ import annotations
@@ -15,6 +15,7 @@ class MetaTool(str, Enum):
     GET_TOOL_SCHEMAS = "COMPOSIO_GET_TOOL_SCHEMAS"
     MULTI_EXECUTE_TOOL = "COMPOSIO_MULTI_EXECUTE_TOOL"
     MANAGE_CONNECTIONS = "COMPOSIO_MANAGE_CONNECTIONS"
+    WAIT_FOR_CONNECTIONS = "COMPOSIO_WAIT_FOR_CONNECTIONS"
     REMOTE_WORKBENCH = "COMPOSIO_REMOTE_WORKBENCH"
     REMOTE_BASH_TOOL = "COMPOSIO_REMOTE_BASH_TOOL"
 
@@ -31,6 +32,7 @@ META_TOOL_SLUGS: frozenset[str] = frozenset(m.value for m in MetaTool)
 #   GET_TOOL_SCHEMAS      N       Y        Y
 #   MULTI_EXECUTE_TOOL    Y*      Y        N
 #   MANAGE_CONNECTIONS    N       Y        N
+#   WAIT_FOR_CONNECTIONS  N       Y        N
 #   REMOTE_WORKBENCH      N       Y        N
 #   REMOTE_BASH_TOOL      N       Y        N
 #

@@ -14,8 +14,8 @@ from aperture.proxy import ProxyConfig, create_app
 from aperture.proxy.upstream import UpstreamClient
 
 
-def test_version_is_v1_realignment_baseline():
-    """Sanity: aperture is at v0.3.0+ on the v1-realignment branch."""
+def test_version_is_v1_fixes_baseline():
+    """Sanity: aperture is at v0.3.0+ on the v1 fixes branch."""
 
     major, minor, *_ = __version__.split(".")
     assert int(major) >= 0 and int(minor) >= 3

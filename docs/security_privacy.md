@@ -58,6 +58,8 @@ serving cached entries that were classified under an older policy.
 `aperture/cache/interceptor.py:_success_response` skips storage when:
 - `response.get("success") is False`
 - `response.get("error")` is truthy
+- the proxy attached the internal `_aperture_upstream_error` marker because
+  Composio returned an MCP `isError` response
 
 A transient API failure can't get cached and served to subsequent
 requests as if it were a successful result.

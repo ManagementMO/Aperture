@@ -1,8 +1,9 @@
 # Aperture v1 — Engineering Case Study
 
 A token-efficiency layer for Composio-powered LLM agents. Built across
-five "deep-fix" commits on `v1-fixes`, with adversarial review at every
-step. This is a writeup of what I built, the bugs that surfaced only
+four implementation-fix commits on `v1-fixes`, followed by docs polish
+and adversarial review at every step. This is a writeup of what I built,
+the bugs that surfaced only
 under live API testing, the engineering judgments those discoveries
 forced, and what I learned about engineering AI-augmented systems. It is
 deliberately specific and deliberately honest about gaps — the framing is
@@ -14,9 +15,12 @@ the point.
 
 Composio's "Tool Router" exposes thousands of third-party SDKs (GitHub,
 Gmail, Slack, Notion, Linear, etc.) to LLM agents through a Streamable-HTTP
-MCP endpoint. Six meta tools — `SEARCH_TOOLS`, `GET_TOOL_SCHEMAS`,
+MCP endpoint. The session Tool Router surface has six meta tools —
+`SEARCH_TOOLS`, `GET_TOOL_SCHEMAS`,
 `MULTI_EXECUTE_TOOL`, `MANAGE_CONNECTIONS`, `REMOTE_WORKBENCH`, and
 `REMOTE_BASH_TOOL` — gate the LLM's access to the underlying registry.
+Composio Connect also documents a seventh connection-wait tool; Aperture
+forwards and tokenizes that path but does not cache or overlay it.
 Every interaction with these meta tools is expensive: a single
 `SEARCH_TOOLS` round-trip can cost thousands of tokens, and a chatty agent
 makes dozens per session.
@@ -64,7 +68,7 @@ with output compression, a Redis-backed cache, and a 14-page React
 dashboard. It shipped. It was not what v1 was supposed to be.
 
 The v1 plan called for a *cross-agent* MCP proxy intercepting Composio's
-six meta tools — a fundamentally different architecture from the
+session meta-tool surface — a fundamentally different architecture from the
 demo's single-tenant userspace runner. Two paths forward:
 
 - **Path 1 — MCP proxy.** Build a Streamable-HTTP MCP server that
@@ -699,7 +703,7 @@ looks good from code that holds up under load.
 I scoped this carefully and I don't pretend otherwise.
 
 **The code is well-engineered.** Separated concerns. Type-checked.
-Defensively guarded. Adversarially reviewed. 234 tests, 0 ruff findings.
+Defensively guarded. Adversarially reviewed. 235 passing tests, 0 ruff findings.
 Defense-in-depth verified live. Real bugs caught and locked in by
 regression tests. The Codex audit + 3 subagent reviews produced concrete
 findings, every one of which got addressed and committed with traceable

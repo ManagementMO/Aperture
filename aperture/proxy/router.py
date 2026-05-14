@@ -1,8 +1,9 @@
 """Inbound `tools/call` dispatcher.
 
 Pattern-matches on the meta-tool slug and routes to the corresponding
-`intercept/*` handler. Anything outside the six meta tools (custom tools,
-SDK tool slugs that occasionally arrive over MCP) is forwarded transparently.
+`intercept/*` handler. Anything outside the known Composio meta-tool
+surface (custom tools, SDK tool slugs that occasionally arrive over MCP) is
+forwarded transparently.
 """
 
 from __future__ import annotations
@@ -58,8 +59,8 @@ async def dispatch(
             upstream_call_subset=upstream_call_subset,
         )
 
-    # GET_TOOL_SCHEMAS / MANAGE_CONNECTIONS / REMOTE_WORKBENCH / REMOTE_BASH_TOOL:
-    # forward verbatim. Tokenization + overlay happen in server.py above this
-    # layer (the overlay is applied via upstream_payload before the response
-    # reaches the cache).
+    # GET_TOOL_SCHEMAS / MANAGE_CONNECTIONS / WAIT_FOR_CONNECTIONS /
+    # REMOTE_WORKBENCH / REMOTE_BASH_TOOL: forward verbatim. Tokenization +
+    # overlay happen in server.py above this layer (the overlay is applied via
+    # upstream_payload before the response reaches the cache).
     return await upstream_call()

@@ -54,6 +54,7 @@ The decision matrix from `aperture/proxy/meta_tools.py`:
 | `COMPOSIO_MULTI_EXECUTE_TOOL` | yes (per-inner-tool) | Partial-batch fan-out — each inner tool checked against its own `policy.yaml` entry; misses are forwarded as a subset; results merged back into original ordering. |
 | `COMPOSIO_GET_TOOL_SCHEMAS` | no | Args almost always vary; cache hit rate would be near-zero. |
 | `COMPOSIO_MANAGE_CONNECTIONS` | no | Auth tool. |
+| `COMPOSIO_WAIT_FOR_CONNECTIONS` | no | Connect-only auth-flow wait primitive; forwarded and tokenized if present. |
 | `COMPOSIO_REMOTE_WORKBENCH` | no | Stateful sandbox. |
 | `COMPOSIO_REMOTE_BASH_TOOL` | no | Non-deterministic. |
 

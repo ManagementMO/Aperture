@@ -1,8 +1,8 @@
 # Aperture v1
 
 Token-efficiency layer for Composio-powered agents. Aperture sits between
-the LLM and Composio's Tool Router as an MCP proxy, intercepts the six
-meta tools, and ships three compounding optimizations:
+the LLM and Composio's Tool Router as an MCP proxy, intercepts the
+session meta-tool surface, and ships three compounding optimizations:
 
 1. **Safe execution cache** (Component A) — deny-by-default per-tool YAML
    policy, exact-match keys with policy-version coupling (`aperture:v1:p1:`),
@@ -21,6 +21,12 @@ meta tools, and ships three compounding optimizations:
    today (4 tools, 9 fields, 64 tokens saved); upgrade to `llm_judged`
    when Anthropic credits permit a real judge run.
 
+Aperture does **not** replace Composio sessions, Tool Router, auth,
+workbench, usage metering, logs, or SDK modifiers. It adds the missing
+token-economics layer around that traffic: per-meta-tool token attribution,
+safe read caching, partial-batch cache hits, and a quality-graded schema
+overlay.
+
 ## Architecture at a glance
 
 ```
@@ -32,8 +38,7 @@ meta tools, and ships three compounding optimizations:
                           │  schema overlay  │
                           │  tokenize bg     │
                           │  attribution → ──┼──► SQLite event log
-                          └──────────────────┘                          │
-                                                                        ▼
+                          └──────────────────┘
                           ┌──────────────────┐  fastapi   ┌─────────────────────┐
                           │ aperture-v1-     │ ◄────────  │ /api/v3.1/...       │
                           │ dashboard :5180  │            │  :8002              │
@@ -50,12 +55,12 @@ between the inbound and outbound halves of the round-trip.
 
 | Branch | Status | Notes |
 |---|---|---|
-| `v1-fixes` | **active** at `28f66883` | 4 deep-fix commits; production-ready code |
+| `v1-fixes` | **active** | implementation fixes plus docs polish; use `git log --oneline` for the current head |
 | `v1-realignment` | parent | base for `v1-fixes`; do not merge `v1-fixes` here without review |
 | `demo` | parallel | the salvaged demo; never share files with v1 work |
 | `main` | upstream | merge target if/when ready |
 
-The deep-fix sequence on `v1-fixes`:
+The implementation-fix sequence on `v1-fixes`:
 
 1. `13ff81d1` — wired the proxy through `dispatch`, `set_default_store`,
    `RedisCacheStore`, schema overlay, and attribution. Forwarded auth
@@ -69,6 +74,9 @@ The deep-fix sequence on `v1-fixes`:
    sweep across proxy docstrings.
 4. `28f66883` — read-only ranker filter at the optimizer entry, quality-graded
    overlay (`llm_judged` / `structural_only`), populated artifact.
+
+Later docs commits (`8d617e87` and newer) explain the verified state without
+changing the runtime contract.
 
 ## Run
 
@@ -128,18 +136,25 @@ Three pages, all reading real data:
 | `COMPOSIO_PROJECT_ID` | — | attribution event field |
 | `ANTHROPIC_API_KEY` | — | LLM judge live mode + opt-in tokenizer |
 | `APERTURE_USE_ANTHROPIC_TOKENIZER` | `false` | route `count_tokens_for_payload` through Anthropic's `count_tokens` API |
+| `APERTURE_MODE` | `balanced` | legacy Path-2 runner mode |
+| `APERTURE_RAW_STORE_PATH` | `.aperture/raw_store` | legacy raw payload store path |
+| `APERTURE_PROXY_HOST` | `127.0.0.1` | proxy bind |
 | `APERTURE_PROXY_PORT` | `8001` | proxy bind |
 | `APERTURE_COMPOSIO_MCP_URL_TEMPLATE` | `https://backend.composio.dev/tool_router/{session_id}/mcp` | upstream URL template |
 | `APERTURE_PROXY_LOG_LEVEL` | `INFO` | proxy log verbosity |
+| `APERTURE_PROXY_PARTIAL_BATCH` | `true` | enables per-inner-tool cache fan-out for `MULTI_EXECUTE_TOOL` |
+| `APERTURE_PROXY_UPSTREAM_TIMEOUT` | `30.0` | upstream Composio MCP timeout in seconds |
+| `APERTURE_PROXY_FALLBACK_TOKENIZER` | `auto` | proxy tokenizer fallback mode |
 | `APERTURE_REDIS_URL` | — | Redis backing for cache; falls back to in-memory store |
 | `APERTURE_SQLITE_EVENT_LOG` | — | SQLite event log path; events also still flow to JSONL |
 | `APERTURE_EVENT_SINK_PATH` | `reports/events.jsonl` | JSONL event sink path |
 | `APERTURE_OVERLAY_PATH` | `aperture/schema_optimizer/_overlay.json` | optional overlay override |
+| `APERTURE_ENABLE_LIVE_TESTS` | `false` | opt-in gate for live Composio tests |
 
 ## Test
 
 ```bash
-uv run pytest                          # 234 passed, 1 skipped
+uv run pytest                          # full pytest suite
 uv run ruff check aperture/ tests/ scripts/    # 0 findings
 uv run python scripts/secret_scan.py $(git ls-files)   # 0 findings
 ```
@@ -255,7 +270,7 @@ aperture-v1-dashboard/   Vite + React 19 dashboard (3 pages)
 docs/                    architecture, caching, token_attribution,
                          schema_optimization, security_privacy, benchmark_methodology
 scripts/                 seed_cache_policy.py, secret_scan.py
-tests/                   234 tests, 1 skipped
+tests/                   pytest suite
 ```
 
 ## Reports + benchmarks
